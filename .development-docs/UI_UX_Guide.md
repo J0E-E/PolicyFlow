@@ -331,7 +331,7 @@ or a final state before the event resolves.
 ### 6.2 Explainer affordance
 An info-icon (`id="explainer-<surface>-icon"`) on every showcase surface opens a dismissible
 margin-note popover with labeled small-caps sections: **PATTERN**, **HOW POLICYFLOW DOES IT**
-(names the real mechanism — outbox, RLS, blind index, envelope encryption, per-consumer retry,
+(names the real mechanism — outbox, schema-per-tenant isolation, blind index, envelope encryption, per-consumer retry,
 set in mono), **REAL VS SIMULATED**, and — where the requirements specify it — **CRM PARALLEL**
 (the real-world CRM equivalent, API names like `ConvertedContactId`, `StageName`, `__c` in
 mono). Renders identically for every role; never blocks the workflow.
@@ -383,7 +383,7 @@ seal mark, the 3px letterhead rule, product lines, pipeline stage labels, and CR
 mappings. The isolation proof (records created in Tenant 1 absent in Tenant 2) is a
 walkthrough beat — its empty state is a calm framed ledger note styled as information, never
 error: *"No records here. The records you created belong to Sunshine Senior Benefits."* with
-an explainer link to the RLS/tenant-isolation explainer.
+an explainer link to the schema-per-tenant / tenant-isolation explainer.
 
 ### 6.9 Intake prefill row
 On the intake form itself (not the stepper): a row of four labeled specimen cards — **Typical

@@ -243,15 +243,15 @@ Rules:
 
 ### Isolation Strategy
 
-- Shared database, shared schema. Every domain entity carries `tenant_id`.
-- Tenant context is derived **only** from the authenticated session — never from a request parameter — and injected by middleware into every query.
-- Database-enforced row-level security (e.g. PostgreSQL RLS; final choice belongs to the TDD) enforces tenant scoping as defense-in-depth beneath the application layer.
-- Every domain event and queue message carries `tenant_id`; sidecar services must scope all processing and field-mapping lookups by it.
+- Shared database, **one PostgreSQL schema per tenant** (schema-per-tenant). Tenant-scoped entities live in the tenant's own schema; cross-tenant operational data and shared reference data live in a shared `platform` schema. This is viable and clean given exactly two fixed, seed-created tenants.
+- Tenant context is derived **only** from the authenticated session — never from a request parameter — and injected by middleware, which sets the connection's `search_path` (and the tenant database role) for every query.
+- **Schema isolation is the enforcement boundary beneath the application layer:** each tenant schema is owned by / granted to a dedicated per-tenant database role, and middleware connects as that role. There is **no RLS** — a per-tenant schema makes row-level policies redundant.
+- Every domain event and queue message carries `tenant_id`; sidecar services must scope all processing and field-mapping lookups by it. (Events flow through the shared broker, so `tenant_id` on the envelope stays required even though database rows are isolated by schema.)
 - **Testable requirement:** automated tests shall verify that a user of Tenant A cannot read or modify any Tenant B record through any API endpoint.
 
 ### Platform Administrator Carve-Out
 
-Platform Administrators operate outside tenant scoping **for operational data only**: cross-tenant aggregates, integration health, queue status, and failure metadata — never unmasked customer PII. Cross-tenant queries run through a dedicated platform-scoped path (separate DB role / explicit RLS bypass), and every cross-tenant read is itself audit-logged. Demo-data management (seed/reset) is the one sanctioned operation that touches tenant records.
+Platform Administrators operate outside tenant scoping **for operational data only**: cross-tenant aggregates, integration health, queue status, and failure metadata — never unmasked customer PII. Cross-tenant queries run through a dedicated platform-scoped path (a platform-scoped database role with read access to the shared `platform` schema and, where sanctioned, across tenant schemas), and every cross-tenant read is itself audit-logged. Demo-data management (seed/reset) is the one sanctioned operation that touches tenant records.
 
 ### Tenant-Scoped Resources
 
@@ -643,7 +643,7 @@ The demo must explain its own engineering. Features alone are insufficient: a re
 
 **[MUST]**
 
-- **Explainer affordance:** every showcase surface — intake/enrichment, lead conversion, duplicate flag and resolution, masked-PII reveal, event timeline, end-to-end trace view, DLQ, CRM sync activity, dashboards, and the tenant switch — carries an info-icon affordance opening a dismissible popover/panel stating: (a) the pattern name, (b) how PolicyFlow implements it in 1–3 sentences referencing the actual mechanism (e.g. transactional outbox, RLS, blind index, envelope encryption, per-consumer retry), and (c) what in the visible behavior is real versus simulated. Explainers never block the workflow and render identically for every role.
+- **Explainer affordance:** every showcase surface — intake/enrichment, lead conversion, duplicate flag and resolution, masked-PII reveal, event timeline, end-to-end trace view, DLQ, CRM sync activity, dashboards, and the tenant switch — carries an info-icon affordance opening a dismissible popover/panel stating: (a) the pattern name, (b) how PolicyFlow implements it in 1–3 sentences referencing the actual mechanism (e.g. transactional outbox, schema-per-tenant isolation, blind index, envelope encryption, per-consumer retry), and (c) what in the visible behavior is real versus simulated. Explainers never block the workflow and render identically for every role.
 - **Stepper notes:** every guided-stepper step carries a short "what you're seeing / how it's built" note linking to the relevant explainer.
 - **CRM-parallel annotations:** screens embodying a standard CRM pattern name the real-world equivalent:
   - The conversion screen explains that conversion mirrors Salesforce lead conversion — Lead frozen read-only and stamped with converted-record IDs (the `ConvertedContactId` / `ConvertedAccountId` / `ConvertedOpportunityId` analog), with Contact/Household(Account)/Opportunities created atomically.
@@ -652,7 +652,7 @@ The demo must explain its own engineering. Features alone are insufficient: a re
   - The duplicate-resolution screen names its parallel to CRM duplicate/matching rules.
 
   These annotations lie on the guided walkthrough path; their visibility is part of the corresponding steps' how-it's-built notes.
-- **Simulated badges:** every simulated integration surface — carrier quote results, enrichment results, CRM sync records and sync activity, simulated carrier application decisions, and the outbox — displays a "Simulated" badge whose popover states: (a) what is mocked, (b) what surrounding machinery is real (message broker, per-consumer retries, DLQ, field-level encryption, RLS, audit), and (c) the adapter seam where a production implementation would plug in (e.g. `CRMAdapter`: `MockCRMAdapter` today, `SalesforceAdapter`-shaped). The demo never presents a simulated integration as real, and never lets a real mechanism be mistaken for a mock.
+- **Simulated badges:** every simulated integration surface — carrier quote results, enrichment results, CRM sync records and sync activity, simulated carrier application decisions, and the outbox — displays a "Simulated" badge whose popover states: (a) what is mocked, (b) what surrounding machinery is real (message broker, per-consumer retries, DLQ, field-level encryption, schema-per-tenant isolation, audit), and (c) the adapter seam where a production implementation would plug in (e.g. `CRMAdapter`: `MockCRMAdapter` today, `SalesforceAdapter`-shaped). The demo never presents a simulated integration as real, and never lets a real mechanism be mistaken for a mock.
 - **"How it's built" page:** a persistent page — linked from the stepper's final step and from a header/footer link on every page — containing: an annotated system diagram (core, broker, four sidecars, mock CRM) marking real vs simulated; an entity-relationship rendering of the Domain Model Decisions with the deliberate simplifications and why; a workflow map rendering the Workflow Orchestration Model (processes, decision points, edge cases); an index of every Technical Showcase Goal pattern deep-linking to the screen and explainer demonstrating it; the project motivation; the author's name and contact/portfolio link; and links to the public repository, this requirements document, and the TDD. Repository and author links also appear in the global footer.
 - **Phasing:** the explainer shell, badge component, and "How it's built" page shell ship in Phase 1 alongside the stepper shell; explainer copy, CRM-parallel annotations, and showcase-index entries are seed/content data delivered with each phase's demoable slice.
 
@@ -747,7 +747,7 @@ The entire delivery path is proven before features exist:
 Foundations cannot be retrofitted; they precede all feature work (only the Phase 0 skeleton comes before them):
 
 - Authentication (username/password, seeded users, `AuthProvider` interface) and server-side RBAC enforcement
-- Tenant-scoping middleware + RLS policies; `tenant_id` on every entity
+- Tenant-scoping middleware (schema-per-tenant via session-set `search_path` + per-tenant DB role); shared `platform` schema for cross-tenant data
 - Field-level encryption + blind indexes (the schema decisions), masking rendering
 - Audit-event emission from day one
 - Event bus with envelope + **inline stub consumers** (enrichment stub returning canned results, sync-logger stub) behind the same events Phase 3 will serve
