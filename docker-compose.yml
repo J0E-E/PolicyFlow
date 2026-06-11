@@ -32,6 +32,30 @@ services:
       retries: 5
       start_period: 40s
 
+  core:
+    build:
+      context: ./core
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    environment:
+      # Connection URLs composed from the existing credential vars so
+      # .env.example stays unchanged. Services are reached by compose name.
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - policyflow-internal
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
 networks:
   policyflow-internal:
     driver: bridge

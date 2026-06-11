@@ -27,12 +27,19 @@ this phase's go/no-go gate.
   - `.gitignore` keeps the pre-existing `.claude/` rule and adds `.env` plus standard Python/Node/Terraform noise; `.env.example` is the committed template, real `.env` never committed.
   - Verified locally: `docker compose config` parses; `docker compose up -d` brought both services to `healthy`; `docker compose ps` showed only internal container ports (no host publishing); torn down with `docker compose down -v`.
 
-## Epic 2 — FastAPI core skeleton + health check
+## Epic 2 — FastAPI core skeleton + health check — **COMPLETED**
 - **Goal:** The `core` FastAPI service runs in the stack and exposes `GET /api/health` that reports DB and broker reachability.
 - **Rough scope:** `core/` FastAPI app, health endpoint with DB + broker checks, Dockerfile, wired into compose with a container health check.
 - **Open questions / decisions for stakeholders:** Health payload shape (`status`/`version`/`checks`) and how `version` is sourced (commit SHA injection).
 - **Depends on:** Epic 1.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Payload shape: `{"status","version","checks":{"db","broker"}}` (TDD §5.4, no `time` field). All checks ok → `200` `status:"ok"`; any check fails → `503` `status:"degraded"` with the failing check marked `"error"`, which drives the container health check `unhealthy`.
+  - `version` source: Dockerfile `ARG GIT_SHA=dev` → `ENV APP_VERSION`, read by `config.py`; defaults to `dev` locally. Epic 8 CodeBuild injects the real short SHA via `--build-arg`. No git access at runtime.
+  - Base `python:3.12-slim` + `uvicorn`; DB probe via `asyncpg.connect` + `SELECT 1`; broker probe via `aio_pika.connect`/close (real AMQP handshake). Each probe wrapped so a failure reports `"error"` rather than crashing the endpoint.
+  - `DATABASE_URL` / `RABBITMQ_URL` / `GIT_SHA` composed in `docker-compose.yml` from existing `POSTGRES_*` / `RABBITMQ_*` vars — `.env.example` unchanged. `GIT_SHA` defaults to `dev` via `${GIT_SHA:-dev}`.
+  - `core` service has no host `ports:` (parity; nginx is the sole entry, Epic 4). Healthcheck curls `localhost:8000/api/health` with the same interval/timeout/retries/start_period style as Epic 1. `curl` installed in the image for it.
+  - Pinned deps: `fastapi==0.115.6`, `uvicorn[standard]==0.34.0`, `asyncpg==0.30.0`, `aio-pika==9.5.4`. Added `core/.dockerignore`.
+  - Verified locally end-to-end: `docker compose config` parses with no host port on `core`; `docker compose up -d --build` brought all three services `healthy`; endpoint returned `200 {"status":"ok","version":"dev","checks":{"db":"ok","broker":"ok"}}`; stopping postgres flipped the body to `503` `degraded` `db:"error"` and drove `core` `unhealthy`; restarting postgres returned it to `ok`/`healthy`; torn down with `docker compose down -v`.
 
 ## Epic 3 — Alembic empty baseline + migrate-on-boot hook
 - **Goal:** Migrations are wired with an empty baseline and run automatically as a boot/deploy step — proving the hands-off migrate-on-deploy seam early.
