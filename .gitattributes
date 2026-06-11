@@ -1,0 +1,6 @@
+# Pin shell scripts and the Alembic migration template to LF so that, with
+# core.autocrlf=true on Windows checkouts, Git never rewrites them to CRLF.
+# A CRLF in entrypoint.sh's shebang (#!/bin/sh\r) bakes a "bad interpreter"
+# into the Linux image and the container fails to boot.
+*.sh text eol=lf
+core/alembic/script.py.mako text eol=lf

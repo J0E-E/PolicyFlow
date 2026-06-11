@@ -41,12 +41,22 @@ this phase's go/no-go gate.
   - Pinned deps: `fastapi==0.115.6`, `uvicorn[standard]==0.34.0`, `asyncpg==0.30.0`, `aio-pika==9.5.4`. Added `core/.dockerignore`.
   - Verified locally end-to-end: `docker compose config` parses with no host port on `core`; `docker compose up -d --build` brought all three services `healthy`; endpoint returned `200 {"status":"ok","version":"dev","checks":{"db":"ok","broker":"ok"}}`; stopping postgres flipped the body to `503` `degraded` `db:"error"` and drove `core` `unhealthy`; restarting postgres returned it to `ok`/`healthy`; torn down with `docker compose down -v`.
 
-## Epic 3 — Alembic empty baseline + migrate-on-boot hook
+## Epic 3 — Alembic empty baseline + migrate-on-boot hook — **COMPLETED**
 - **Goal:** Migrations are wired with an empty baseline and run automatically as a boot/deploy step — proving the hands-off migrate-on-deploy seam early.
 - **Rough scope:** Alembic config in `core/`, one empty baseline migration, an entrypoint/hook that runs migrate (plus a seed placeholder) before the app serves.
 - **Open questions / decisions for stakeholders:** Where the seed placeholder hook lives; behavior on migrate failure (fail boot vs degrade).
 - **Depends on:** Epic 2.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Decisions: migrate failure → **fail boot** (`set -e` in `core/entrypoint.sh`); seed placeholder → **`core/app/seed.py`**, run via `python -m app.seed` from the entrypoint after migrate.
+  - Entrypoint order is migrate → seed → uvicorn inside the core container (no separate compose service); `ENTRYPOINT ["./entrypoint.sh"]` exec's the existing `CMD` (uvicorn). Epic 11 reuses the same `alembic upgrade head`.
+  - Sync migrations via `psycopg[binary]`; `env.py` rewrites the asyncpg-style `DATABASE_URL` scheme (`postgres://` / `postgresql://`) to `postgresql+psycopg://`. The async `asyncpg` health probe in `health.py` is untouched.
+  - Empty baseline (`0001_empty_baseline.py`, `down_revision=None`, `pass` bodies) — only the `alembic_version` table is created; real schema arrives P1+.
+  - `alembic.ini` leaves `sqlalchemy.url` blank (supplied by `env.py` from the environment); `target_metadata = None` (no models yet). Standard `script.py.mako` template added for future revisions.
+  - Pinned: `alembic==1.14.0`, `psycopg[binary]==3.2.3`. Dockerfile copies `alembic.ini`, `alembic/`, and `entrypoint.sh` (made executable); `.dockerignore` excludes neither.
+  - Verified locally end-to-end: `docker compose config` parses; `docker compose up -d --build` brought all three services `healthy`; core logs showed `Running upgrade  -> 0001_empty_baseline` then the seed placeholder line before uvicorn; `psql \dt` showed only `alembic_version` with `version_num=0001_empty_baseline`; `/api/health` returned `200 {"status":"ok",…}`; a second `alembic upgrade head` was a no-op (idempotent); torn down with `docker compose down -v`.
+  - Review fix: added a repo-root `.gitattributes` pinning `*.sh` (and `core/alembic/script.py.mako`) to `eol=lf` so `core.autocrlf=true` on Windows checkouts can't rewrite `entrypoint.sh` to CRLF and bake a `bad interpreter` into the Linux image.
+  - Review fix (defense-in-depth): `ENTRYPOINT ["/bin/sh", "./entrypoint.sh"]` so a stray CR in the shebang can't break interpreter resolution.
+  - Review fix (fail-boot consistency): `env.py:get_synchronous_database_url()` now raises a clear `RuntimeError` on a missing/unsupported `DATABASE_URL` scheme instead of returning a blank/raw URL, so a misconfigured deploy fails fast.
 
 ## Epic 4 — nginx as sole entry + React SPA shell (local)
 - **Goal:** A React app builds to static assets served by nginx, with nginx as the single entry point reverse-proxying `/api/*` to core — reachable end-to-end locally over HTTP.

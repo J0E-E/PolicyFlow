@@ -15,4 +15,21 @@ Hit it from inside the network:
 docker compose exec core curl -s localhost:8000/api/health
 ```
 
-Alembic database migrations land here in Epic 3.
+## Migrations on boot
+
+Alembic migrations run automatically as a boot step, never manually. The
+container entrypoint (`entrypoint.sh`) runs **migrate → seed → serve** in order:
+
+1. `alembic upgrade head` applies migrations.
+2. `python -m app.seed` runs the seed placeholder (`app/seed.py`) — the
+   importable seam P1.8 fills with real data.
+3. uvicorn starts and serves the app.
+
+The entrypoint uses `set -e`, so if migrate (or seed) fails the container exits
+non-zero and **fails its boot** rather than serving a half-migrated app.
+
+The baseline migration (`alembic/versions/0001_empty_baseline.py`) is empty —
+its `upgrade()`/`downgrade()` are no-ops, so running it creates only Alembic's
+`alembic_version` bookkeeping table. Real schema arrives in P1+. Migrations run
+synchronously via psycopg (`env.py` rewrites the `DATABASE_URL` scheme to
+`postgresql+psycopg://`); the async asyncpg health probe is untouched.
