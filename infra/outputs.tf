@@ -12,3 +12,13 @@ output "security_group_id" {
   description = "Id of the host security group."
   value       = aws_security_group.host.id
 }
+
+output "iam_instance_profile_name" {
+  description = "Name of the IAM instance profile attached to the host."
+  value       = aws_iam_instance_profile.host.name
+}
+
+output "ssm_parameter_names" {
+  description = "SSM SecureString parameter paths whose values the operator must populate out-of-band."
+  value       = keys(local.host_secret_parameters)
+}

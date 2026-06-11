@@ -26,8 +26,9 @@ if [ ! -x "$${COMPOSE_PLUGIN_PATH}" ]; then
 fi
 
 # --- CodeDeploy agent -------------------------------------------------------
-# Installed now but idle: it only becomes functional once Epic 7/9 give the host
-# an instance profile and a deployment group. Needs Ruby and wget.
+# Installed now but idle: Epic 7 gives the host its instance profile, but the
+# agent only becomes functional once Epic 9 adds a deployment group. Needs Ruby
+# and wget.
 dnf install -y ruby wget
 
 if ! systemctl is-active --quiet codedeploy-agent; then

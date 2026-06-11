@@ -105,12 +105,20 @@ this phase's go/no-go gate.
   - **Sizing:** ~14 files / ~430 changed lines, over the ~8-file/~150-line budget, but it is all Terraform config + bootstrap scaffolding (explicitly discounted by the conventions) and a network+host baseline is an atomic unit (the original TDD item was already split into Epic 6 here + Epic 7 for IAM/SSM). Kept whole — one focused concern.
   - **Review (Approve with nits — non-blocking, carry forward):** (1) `subnet_id = data.aws_subnets.default.ids[0]` selects a subnet by list index, whose order is not guaranteed stable — a later apply could pick a different AZ and force instance replacement; pin the AZ/subnet explicitly if that matters (low risk for one always-on host). (2) `user-data.sh` header comment mentions `$${region}` (the escaped/literal form) where the real template variable is `${region}` — comment wording only, code is correct. (3) `COMPOSE_VERSION` is intentionally pinned and will age (CodeDeploy agent installs `latest`). (4) the bootstrap state bucket has no noncurrent-version expiration lifecycle rule, so old state versions accumulate. None block; revisit as housekeeping.
 
-## Epic 7 — Terraform IAM instance profile + SSM secrets seam
+## Epic 7 — Terraform IAM instance profile + SSM secrets seam — **COMPLETED**
 - **Goal:** The host can pull from ECR, read SSM, and act with CodeDeploy via an instance profile; SSM SecureString parameter *resources* exist for the stack's secrets (values injected out-of-band).
 - **Rough scope:** IAM instance profile + policies attached to the EC2 host; SSM Parameter Store resource definitions (no values in code/state); stack reads them at boot.
 - **Open questions / decisions for stakeholders:** Exact parameter naming/paths; least-privilege policy boundaries.
 - **Depends on:** Epic 6.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **New `infra/iam.tf`:** `aws_iam_role.host` (EC2 `sts:AssumeRole` trust via `data.aws_iam_policy_document`) + `aws_iam_instance_profile.host`, attached to `aws_instance.host` in `ec2.tf` (in-place update, no replacement). Two inline `aws_iam_role_policy` resources, each from a policy document.
+  - **Policy scope (stakeholder decision):** custom **inline** policies scoped by **ARN prefix**, not AWS-managed. ECR pull = `ecr:GetAuthorizationToken` on `*` (token call can't be resource-scoped) + layer/image reads scoped to `arn:aws:ecr:${region}:${account}:repository/${project_name}-*`. SSM read = `ssm:GetParameter(s)`/`GetParametersByPath` scoped to `parameter/${project_name}/*`.
+  - **KMS-via-SSM condition:** `kms:Decrypt` on `*` gated by `kms:ViaService = ssm.${region}.amazonaws.com`, so SecureStrings decrypt through SSM (incl. the AWS-managed `aws/ssm` key) without naming a key ARN, and nothing else.
+  - **SSM params (stakeholder decision):** DB + broker passwords only — `/policyflow/postgres/password`, `/policyflow/rabbitmq/password`. No master key (deferred). `infra/ssm.tf` creates them via `for_each` over a `local.host_secret_parameters` (path => Name-tag) map.
+  - **ignore_changes / out-of-band placeholder pattern:** each parameter ships a non-secret `"CHANGE_ME"` placeholder with `lifecycle { ignore_changes = [value] }`; real values set out-of-band via `aws ssm put-parameter --type SecureString --overwrite` (documented in README), so secrets never enter repo, code, or state.
+  - **Deferred S3 grant:** CodeDeploy's S3 artifact read is **deferred to Epic 9** (where the bucket is created). Epic 7 grants ECR + SSM only — no S3 permissions added.
+  - **Other edits:** `data.tf` gains `aws_caller_identity.current` (account id for ARNs); `outputs.tf` gains `iam_instance_profile_name` + `ssm_parameter_names`; `user-data.sh` CodeDeploy comment updated (Epic 7 now supplies the profile, deployment group still in Epic 9 — comment only, no logic change); README documents `iam.tf`/`ssm.tf`, moves IAM/SSM out of "Not here yet", and adds the value-injection step.
+  - **Verification (local, no apply):** `terraform fmt -recursive infra/` clean (no reformatting); `cd infra && terraform init -backend=false && terraform validate` → "The configuration is valid." `infra/bootstrap` untouched.
 
 ## Epic 8 — Terraform ECR + CodeBuild image build
 - **Goal:** Terraform provisions image storage and a CodeBuild project that builds the frontend + core images, tags them with the commit SHA, and pushes them to ECR.

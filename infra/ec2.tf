@@ -5,6 +5,7 @@ resource "aws_instance" "host" {
   instance_type          = var.instance_type
   subnet_id              = data.aws_subnets.default.ids[0]
   vpc_security_group_ids = [aws_security_group.host.id]
+  iam_instance_profile   = aws_iam_instance_profile.host.name
 
   user_data = templatefile("${path.module}/user-data.sh", {
     region = var.region
