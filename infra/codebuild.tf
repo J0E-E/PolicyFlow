@@ -89,6 +89,39 @@ resource "aws_iam_role_policy" "build_logs" {
   policy = data.aws_iam_policy_document.build_logs.json
 }
 
+# --- Pipeline artifact bucket -----------------------------------------------
+# In pipeline mode (Epic 9) CodeBuild runs as the pipeline's Build action and
+# downloads the Source input artifact from the artifact bucket (artifacts.tf).
+# GetBucketLocation is on the bucket itself; the object read/write is scoped to
+# the bucket's objects.
+data "aws_iam_policy_document" "build_artifacts" {
+  statement {
+    sid       = "S3GetBucketLocation"
+    effect    = "Allow"
+    actions   = ["s3:GetBucketLocation"]
+    resources = [aws_s3_bucket.pipeline_artifacts.arn]
+  }
+
+  statement {
+    sid    = "S3ReadWriteArtifacts"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+      "s3:PutObject",
+    ]
+    resources = [
+      "${aws_s3_bucket.pipeline_artifacts.arn}/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "build_artifacts" {
+  name   = "${var.project_name}-build-artifacts"
+  role   = aws_iam_role.build.id
+  policy = data.aws_iam_policy_document.build_artifacts.json
+}
+
 resource "aws_codebuild_project" "build" {
   name         = "${var.project_name}-build"
   description  = "Builds the ${var.project_name} core + frontend images and pushes them to ECR."

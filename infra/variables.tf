@@ -25,3 +25,14 @@ variable "source_repository_url" {
   description = "HTTPS clone URL of the GitHub repository CodeBuild builds from, e.g. https://github.com/owner/PolicyFlow.git. REQUIRED with no default. A private repo needs a one-time CodeBuild source credential imported by hand (see infra/README.md)."
   type        = string
 }
+
+variable "github_repository_id" {
+  description = "FullRepositoryId of the GitHub repository the pipeline's Source action watches, in owner/repo form, e.g. owner/PolicyFlow. REQUIRED with no default — distinct from source_repository_url (the clone URL CodeBuild uses)."
+  type        = string
+}
+
+variable "github_branch" {
+  description = "Branch the pipeline's Source action watches; a push here auto-triggers the pipeline."
+  type        = string
+  default     = "main"
+}

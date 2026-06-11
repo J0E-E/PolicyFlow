@@ -1,7 +1,8 @@
 # The host's IAM identity: a role the EC2 service can assume, wrapped in an
 # instance profile and attached to aws_instance.host (see ec2.tf). Permissions
-# are granted by the least-privilege inline policies below — ECR pull and SSM
-# read only. CodeDeploy's S3 artifact read is deferred to Epic 9.
+# are granted by the least-privilege inline policies below — ECR pull, SSM read,
+# and (added in Epic 9) the CodeDeploy agent's read of the deploy bundle from the
+# pipeline artifact bucket.
 
 # Trust policy: only the EC2 service may assume this role.
 data "aws_iam_policy_document" "host_assume_role" {
@@ -103,4 +104,28 @@ resource "aws_iam_role_policy" "host_ssm_read" {
   name   = "${var.project_name}-host-ssm-read"
   role   = aws_iam_role.host.id
   policy = data.aws_iam_policy_document.host_ssm_read.json
+}
+
+# --- S3 read (deploy bundle) ------------------------------------------------
+# The CodeDeploy agent on the host downloads the deploy bundle (the Source
+# checkout the pipeline passes to the Deploy stage) from the pipeline artifact
+# bucket. Scoped to that bucket's objects only.
+data "aws_iam_policy_document" "host_artifact_read" {
+  statement {
+    sid    = "S3ReadDeployBundle"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectVersion",
+    ]
+    resources = [
+      "${aws_s3_bucket.pipeline_artifacts.arn}/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "host_artifact_read" {
+  name   = "${var.project_name}-host-artifact-read"
+  role   = aws_iam_role.host.id
+  policy = data.aws_iam_policy_document.host_artifact_read.json
 }

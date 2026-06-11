@@ -10,7 +10,12 @@ ssh_ingress_cidr = "203.0.113.4/32"
 # A private repo also needs a one-time CodeBuild source credential (see README).
 source_repository_url = "https://github.com/owner/PolicyFlow.git"
 
+# REQUIRED. FullRepositoryId (owner/repo) the pipeline's Source action watches.
+# No default — distinct from source_repository_url (the clone URL above).
+github_repository_id = "owner/PolicyFlow"
+
 # Optional — these have sensible defaults; uncomment only to override.
+# github_branch = "main"
 # region        = "us-east-1"
 # instance_type = "t3.small"
 # project_name  = "policyflow"

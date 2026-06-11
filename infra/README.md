@@ -3,7 +3,7 @@
 Terraform for all AWS resources (network, EC2 host, IAM, ECR, CodeBuild,
 CodePipeline, CodeDeploy, Route 53, TLS). Filled in across Epics 6–11.
 
-## What is here today (Epics 6–8 — network, host, IAM, SSM, ECR, CodeBuild)
+## What is here today (Epics 6–9 — network, host, IAM, SSM, ECR, CodeBuild, CodePipeline, CodeDeploy)
 
 - `bootstrap/` — a small standalone config (with **local** state) that creates the
   S3 bucket + DynamoDB table this root config uses for remote state. See
@@ -12,9 +12,10 @@ CodePipeline, CodeDeploy, Route 53, TLS). Filled in across Epics 6–11.
   block pointing at the bootstrap bucket/table.
 - `providers.tf` — the AWS provider, region from `var.region`, `default_tags` of
   `Project = policyflow` on every resource.
-- `variables.tf` — `region`, `project_name`, `instance_type`, and the **required**
-  `ssh_ingress_cidr` and `source_repository_url` (the GitHub clone URL CodeBuild
-  builds from).
+- `variables.tf` — `region`, `project_name`, `instance_type`, `github_branch`
+  (default `main`), and the **required** `ssh_ingress_cidr`, `source_repository_url`
+  (the GitHub clone URL CodeBuild builds from), and `github_repository_id` (the
+  `owner/repo` the pipeline's Source action watches).
 - `data.tf` — reads the default VPC + its subnets (never created), the latest
   AL2023 x86_64 AMI from the public SSM parameter, and the current account id
   (used to build the IAM policy ARNs).
@@ -22,7 +23,8 @@ CodePipeline, CodeDeploy, Route 53, TLS). Filled in across Epics 6–11.
   two least-privilege inline policies: ECR pull (token on `*`, layer/image reads
   scoped to `${project_name}-*` repositories) and SSM read (parameters under
   `/${project_name}/*`, plus `kms:Decrypt` gated to SSM-only via a `kms:ViaService`
-  condition). CodeDeploy's S3 artifact read is deferred to Epic 9.
+  condition), plus the CodeDeploy agent's S3 read of the deploy bundle scoped to
+  the pipeline artifact bucket (added in Epic 9).
 - `ecr.tf` — one ECR repository per image (`policyflow-core`, `policyflow-frontend`),
   created via `for_each` over a `local.ecr_repositories` set. Each is `MUTABLE`
   (every build pushes both an immutable `:<short-sha>` tag and a moving `:latest`
@@ -34,8 +36,28 @@ CodePipeline, CodeDeploy, Route 53, TLS). Filled in across Epics 6–11.
   (Docker builds), `NO_ARTIFACTS`, source `type = "GITHUB"` at
   `var.source_repository_url`. Its IAM role mirrors `iam.tf`: ECR push scoped to
   `${project_name}-*` repositories (token on `*`) and CloudWatch Logs scoped to the
-  project's `/aws/codebuild/${project_name}-build` group. The repo URLs + region
-  are passed to the buildspec as `environment_variable`s.
+  project's `/aws/codebuild/${project_name}-build` group, plus (Epic 9) read/write
+  on the pipeline artifact bucket — in pipeline mode CodeBuild downloads the Source
+  input artifact from S3. The repo URLs + region are passed to the buildspec as
+  `environment_variable`s.
+- `artifacts.tf` — a private S3 bucket (`${project_name}-pipeline-artifacts-${account_id}`,
+  account id folded in for global uniqueness) holding the pipeline's artifacts.
+  Hardened like the bootstrap state bucket (versioned, AES256, public-access-blocked),
+  plus a lifecycle rule expiring objects after 30 days.
+- `codedeploy.tf` — the `policyflow-app` CodeDeploy application and a deployment
+  group targeting the host by its `Name = ${project_name}-host` EC2 tag
+  (`CodeDeployDefault.AllAtOnce`, in-place, no ASG/ELB). Its service role mirrors
+  the inline-policy style with EC2/tag discovery on `*` (read-only lookups that
+  cannot be resource-scoped). The actual deploy logic (appspec + hooks) is Epic 11,
+  so the group is wired but stays red until then.
+- `codepipeline.tf` — the GitHub (CodeStar) connection plus the
+  `policyflow-pipeline` three-stage pipeline: Source (GitHub via the connection,
+  watching `github_branch`), Build (the existing `policyflow-build` project), Deploy
+  (the CodeDeploy group). Its service role's inline policy is ARN-scoped:
+  artifact-bucket read/write, `UseConnection` on the connection, `StartBuild` on the
+  build project, and the `CreateDeployment`/`Get*`/`RegisterApplicationRevision`
+  actions on the app + deployment-group + deployment-config ARNs. The connection is
+  created PENDING and must be authorized once (see below).
 - `ssm.tf` — two SecureString parameter resources for the stack's secrets
   (`/policyflow/postgres/password`, `/policyflow/rabbitmq/password`). Each holds a
   non-secret `CHANGE_ME` placeholder with `ignore_changes = [value]`; the real
@@ -47,8 +69,10 @@ CodePipeline, CodeDeploy, Route 53, TLS). Filled in across Epics 6–11.
 - `user-data.sh` — host bootstrap (installs Docker, the Docker Compose v2 CLI
   plugin, and the CodeDeploy agent binary). Idempotent.
 - `outputs.tf` — `public_ip` (the EIP), `instance_id`, `security_group_id`,
-  `iam_instance_profile_name`, `ssm_parameter_names`, `ecr_repository_urls`, and
-  `codebuild_project_name`.
+  `iam_instance_profile_name`, `ssm_parameter_names`, `ecr_repository_urls`,
+  `codebuild_project_name`, `github_connection_arn`, `codepipeline_name`,
+  `codedeploy_app_name`, `codedeploy_deployment_group_name`, and
+  `artifact_bucket_name`.
 - `terraform.tfvars.example` — template; copy to `terraform.tfvars` (git-ignored)
   and set the operator's real SSH CIDR and the GitHub source repository URL.
 
@@ -124,6 +148,25 @@ half of the push→build→deploy path; Epic 9 wires CodePipeline/CodeDeploy aro
 this same project. Running a build incurs real cost, so it is the author's manual
 step — not run in CI or during development.
 
+## Authorize the GitHub connection (one-time)
+
+`codepipeline.tf` creates the GitHub (CodeStar) connection in **PENDING** state —
+Terraform cannot complete the OAuth handshake, so this one interactive step in the
+AWS console is the sanctioned manual bootstrap (the connection equivalent of the
+CodeBuild source credential above). After `apply`:
+
+1. Open the AWS console → **Developer Tools → Settings → Connections**.
+2. Select the `policyflow-github` connection (PENDING) and choose **Update pending
+   connection**.
+3. Authorize the AWS Connector for GitHub against the repository named in
+   `github_repository_id`.
+
+`terraform output github_connection_arn` gives the connection to authorize. Once it
+is **Available**, a push to `github_branch` (default `main`) auto-triggers the
+pipeline (Source → Build → Deploy) with no webhook to configure. The **Deploy stage
+stays red** ("appspec not found") until Epic 11 supplies `ops/appspec.yml` + the
+lifecycle hooks — Epic 9 delivers the structural end-to-end path, not a green deploy.
+
 ## Local checks (no apply)
 
 ```sh
@@ -134,8 +177,6 @@ cd infra/bootstrap && terraform init -backend=false && terraform validate
 
 ## Not here yet
 
-- The CodeDeploy agent binary is installed and the host now has its instance
-  profile (Epic 7), but the agent stays idle until Epic 9 adds a deployment group.
-  CodeDeploy's S3 artifact read permission is granted alongside it in Epic 9.
-- CodePipeline/CodeDeploy wiring (Epic 9), Route 53 + TLS (Epic 10), and the
-  deploy hooks (Epic 11) follow in later epics.
+- The Deploy stage is wired but stays red until Epic 11 supplies `ops/appspec.yml`
+  + the lifecycle hooks; Source → Build runs green (images land in ECR).
+- Route 53 + TLS (Epic 10) and the deploy hooks (Epic 11) follow in later epics.
