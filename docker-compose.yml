@@ -56,6 +56,28 @@ services:
       retries: 5
       start_period: 40s
 
+  frontend:
+    # nginx is the sole public entry: it serves the SPA static build and
+    # reverse-proxies /api/ to core. This is the only host-published port;
+    # core keeps none (prod parity).
+    build:
+      context: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      core:
+        condition: service_healthy
+    networks:
+      - policyflow-internal
+    healthcheck:
+      # 127.0.0.1 (not localhost): nginx listens on IPv4 only, but localhost can
+      # resolve to ::1 first inside the alpine image, which would be refused.
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
 networks:
   policyflow-internal:
     driver: bridge

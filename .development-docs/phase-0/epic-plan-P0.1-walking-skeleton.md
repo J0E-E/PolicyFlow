@@ -58,12 +58,20 @@ this phase's go/no-go gate.
   - Review fix (defense-in-depth): `ENTRYPOINT ["/bin/sh", "./entrypoint.sh"]` so a stray CR in the shebang can't break interpreter resolution.
   - Review fix (fail-boot consistency): `env.py:get_synchronous_database_url()` now raises a clear `RuntimeError` on a missing/unsupported `DATABASE_URL` scheme instead of returning a blank/raw URL, so a misconfigured deploy fails fast.
 
-## Epic 4 — nginx as sole entry + React SPA shell (local)
+## Epic 4 — nginx as sole entry + React SPA shell (local) — **COMPLETED**
 - **Goal:** A React app builds to static assets served by nginx, with nginx as the single entry point reverse-proxying `/api/*` to core — reachable end-to-end locally over HTTP.
 - **Rough scope:** `frontend/` React build, `nginx` service serving the SPA + proxying the API, compose wiring; local dev ergonomics (hot reload) confined to the override file.
 - **Open questions / decisions for stakeholders:** Prod static-serving mechanism (assets copied into the nginx image vs shared volume); whether the override runs the Vite dev server.
 - **Depends on:** Epic 2.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Stakeholder decisions honored: prod static-serving → **baked into the nginx image** (multi-stage `frontend/Dockerfile`: `node:20-alpine` build → `nginx:1.27-alpine` runtime with `dist/` copied in); **one `frontend` service is the nginx image** (collapses the TDD "frontend"/"nginx" boxes into the single `policyflow-frontend` image, matching Epic 1's two-image ECR decision).
+  - **Vite dev server deferred** — no `docker-compose.override.yml` this epic; default `docker compose up --build` runs the exact prod-parity path (nginx serving the build). Rebuild the image to see changes; hot reload lands Epic 5 / P1.6.
+  - `frontend` is the **sole published host port** (`80:80`); `core` keeps no host port (parity unchanged). `depends_on: core` (`condition: service_healthy`), on `policyflow-internal`, same interval/timeout/retries/start_period style as the existing services.
+  - SPA fallback `try_files $uri $uri/ /index.html`; `/api/` reverse-proxies to `core:8000` with `Host`/`X-Real-IP`/`X-Forwarded-For`/`X-Forwarded-Proto` headers.
+  - **Fix (nginx boot):** `proxy_pass` to a static `core:8000` made nginx resolve the upstream at startup and crash with `host not found in upstream "core"`. Resolved by adding `resolver 127.0.0.11` (Docker DNS) + holding the upstream in a `set $core_upstream` variable so resolution is deferred to request time. The full `/api/health` URI is preserved (upstream has no path), which is what core expects.
+  - **Fix (healthcheck):** nginx `listen 80;` is IPv4-only, but `localhost` inside the alpine image resolves to `::1` first, so a `localhost` healthcheck was refused → `unhealthy`. Pointed the container healthcheck at `http://127.0.0.1/` (busybox `wget --spider`).
+  - Stack: TypeScript React via Vite (pinned deps + committed `package-lock.json` so the image's `npm ci` is reproducible). Throwaway shell only (heading + subtitle + a small typed `getHealth()` helper and `HealthStatus` component that fetches `/api/health` on load with loading/error/success states) — no router, no state library, no Guide styling (Epic 5 owns those). Every rendered element carries a descriptive `id`.
+  - Verified locally end-to-end: `npm install` + `npm run build` produced `frontend/dist/` (`index.html` + hashed JS); `docker compose up -d --build` brought all four services `healthy`; `http://localhost/` served the SPA (bundle references `/api/health` + shell copy); `curl http://localhost/api/health` → `200 {"status":"ok","version":"dev","checks":{"db":"ok","broker":"ok"}}` proxied through nginx; `docker compose ps` showed only `frontend` publishing a host port (`:80`), `core` none; `docker compose down -v` torn down cleanly.
 
 ## Epic 5 — Placeholder landing + tenant-selection pages [UI]
 - **Goal:** Minimal landing (`/`) and tenant-selection (`/select-tenant`) routes render through the SPA shell, following the UI/UX Guide, every element carrying an `id`.
