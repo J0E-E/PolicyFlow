@@ -12,12 +12,20 @@ The build proceeds in two layers: first a **thin walking skeleton that runs loca
 6–12). The final epic proves the hands-off push→build→deploy→live exit test that is
 this phase's go/no-go gate.
 
-## Epic 1 — Repo scaffold + compose base
+## Epic 1 — Repo scaffold + compose base — **COMPLETED**
 - **Goal:** A single-command local stack that brings up health-checked PostgreSQL and RabbitMQ, with the repository layout and example environment in place for everything that follows.
 - **Rough scope:** Repository directory layout (frontend/core/infra/ops), `docker-compose.yml` with Postgres + RabbitMQ as internal services, `.env.example`. No application containers yet.
 - **Open questions / decisions for stakeholders:** Single multi-image ECR repo vs one repo per image (decided here so layout matches); final directory names.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - ECR strategy: one repo per image (`policyflow-core`, `policyflow-frontend`) — fixes Epic 8's buildspec/tags and IAM scoping.
+  - Top-level layout: `frontend/ core/ infra/ ops/`, each with a placeholder `README.md` naming what lands there and in which epic.
+  - Added a top-level `README.md` beyond the plan: monorepo overview plus `cp .env.example .env` + `docker compose up` run instructions.
+  - `docker-compose.override.yml` deferred until app containers exist (Epic 2/4) — nothing to override yet.
+  - Both services are internal-only (no `ports:`) for local/prod parity, on a single named bridge network `policyflow-internal`, each with a named volume and a container healthcheck.
+  - No deprecated top-level `version:` key in `docker-compose.yml`.
+  - `.gitignore` keeps the pre-existing `.claude/` rule and adds `.env` plus standard Python/Node/Terraform noise; `.env.example` is the committed template, real `.env` never committed.
+  - Verified locally: `docker compose config` parses; `docker compose up -d` brought both services to `healthy`; `docker compose ps` showed only internal container ports (no host publishing); torn down with `docker compose down -v`.
 
 ## Epic 2 — FastAPI core skeleton + health check
 - **Goal:** The `core` FastAPI service runs in the stack and exposes `GET /api/health` that reports DB and broker reachability.

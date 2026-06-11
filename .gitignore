@@ -1,3 +1,17 @@
-
 # Local Claude Code config
 .claude/
+
+# Environment — real secrets live in .env (never committed); .env.example is the template
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
