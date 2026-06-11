@@ -3,7 +3,7 @@
 Terraform for all AWS resources (network, EC2 host, IAM, ECR, CodeBuild,
 CodePipeline, CodeDeploy, Route 53, TLS). Filled in across Epics 6–11.
 
-## What is here today (Epics 6–9 — network, host, IAM, SSM, ECR, CodeBuild, CodePipeline, CodeDeploy)
+## What is here today (Epics 6–10 — network, host, IAM, SSM, ECR, CodeBuild, CodePipeline, CodeDeploy, Route 53)
 
 - `bootstrap/` — a small standalone config (with **local** state) that creates the
   S3 bucket + DynamoDB table this root config uses for remote state. See
@@ -13,9 +13,11 @@ CodePipeline, CodeDeploy, Route 53, TLS). Filled in across Epics 6–11.
 - `providers.tf` — the AWS provider, region from `var.region`, `default_tags` of
   `Project = policyflow` on every resource.
 - `variables.tf` — `region`, `project_name`, `instance_type`, `github_branch`
-  (default `main`), and the **required** `ssh_ingress_cidr`, `source_repository_url`
-  (the GitHub clone URL CodeBuild builds from), and `github_repository_id` (the
-  `owner/repo` the pipeline's Source action watches).
+  (default `main`), `hosted_zone_name` (default `joeyshub.com`, the existing zone),
+  `domain_name` (default `policyflow.joeyshub.com`, the FQDN served over HTTPS), and
+  the **required** `ssh_ingress_cidr`, `source_repository_url` (the GitHub clone URL
+  CodeBuild builds from), and `github_repository_id` (the `owner/repo` the
+  pipeline's Source action watches).
 - `data.tf` — reads the default VPC + its subnets (never created), the latest
   AL2023 x86_64 AMI from the public SSM parameter, and the current account id
   (used to build the IAM policy ARNs).
@@ -66,13 +68,18 @@ CodePipeline, CodeDeploy, Route 53, TLS). Filled in across Epics 6–11.
   22 from `ssh_ingress_cidr`, all egress.
 - `ec2.tf` — the `t3.small` AL2023 host with an encrypted root volume, plus an
   Elastic IP and its association for a stable public address.
+- `route53.tf` — reads the **existing** hosted zone (`var.hosted_zone_name`) as a
+  `data` source (never created — it must already exist and be delegated) and creates
+  a plain A record (`var.domain_name`, TTL 300) pointing at the host's Elastic IP.
+  An EIP is a literal IPv4, so this is a simple A record, not an ALIAS. No
+  security-group change — `network.tf` already opens 80 + 443 to the internet.
 - `user-data.sh` — host bootstrap (installs Docker, the Docker Compose v2 CLI
   plugin, and the CodeDeploy agent binary). Idempotent.
 - `outputs.tf` — `public_ip` (the EIP), `instance_id`, `security_group_id`,
   `iam_instance_profile_name`, `ssm_parameter_names`, `ecr_repository_urls`,
   `codebuild_project_name`, `github_connection_arn`, `codepipeline_name`,
-  `codedeploy_app_name`, `codedeploy_deployment_group_name`, and
-  `artifact_bucket_name`.
+  `codedeploy_app_name`, `codedeploy_deployment_group_name`,
+  `artifact_bucket_name`, and `app_url` (`https://${domain_name}`).
 - `terraform.tfvars.example` — template; copy to `terraform.tfvars` (git-ignored)
   and set the operator's real SSH CIDR and the GitHub source repository URL.
 
@@ -167,6 +174,48 @@ pipeline (Source → Build → Deploy) with no webhook to configure. The **Deplo
 stays red** ("appspec not found") until Epic 11 supplies `ops/appspec.yml` + the
 lifecycle hooks — Epic 9 delivers the structural end-to-end path, not a green deploy.
 
+## TLS issuance + renewal (Epic 10 — one-time host bootstrap, then automatic)
+
+DNS (`route53.tf`) points `policyflow.joeyshub.com` at the EIP, but the certificate
+is issued and renewed by the compose stack on the host, not by Terraform. The base
+`docker-compose.yml` stays HTTP-only for local dev; the new root
+`docker-compose.prod.yml` overlay adds TLS termination (`frontend/nginx.tls.conf`),
+the named `letsencrypt` + `certbot-webroot` volumes, and an in-stack `certbot`
+renewal sidecar — **no host cron**.
+
+1. **Point DNS first.** After `apply`, confirm `policyflow.joeyshub.com` resolves to
+   the EIP (`terraform output public_ip`). HTTP-01 issuance needs the name reachable.
+2. **Set the certbot vars in `.env` on the host** — `CERTBOT_EMAIL`,
+   `CERTBOT_DOMAIN=policyflow.joeyshub.com`, `CERTBOT_STAGING` (`1` while testing the
+   flow against Let's Encrypt staging, `0` for the real trusted cert).
+3. **Run the one-time issuance bootstrap** (a sanctioned manual step, like
+   authorizing the GitHub connection):
+   ```sh
+   ./ops/init-letsencrypt.sh
+   ```
+   It downloads certbot's recommended TLS options into the `letsencrypt` volume,
+   boots nginx on a throwaway dummy cert, requests the real cert over HTTP-01, and
+   reloads nginx onto it. See `ops/README.md`.
+4. **Bring the full prod stack up** — the `certbot` sidecar then renews every 12h and
+   nginx reloads every 6h to pick up renewed certs:
+   ```sh
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+   ```
+
+`terraform output app_url` gives the resulting HTTPS URL. The live proof
+(run the bootstrap → real cert → `https://policyflow.joeyshub.com` valid) is the
+deferred manual verification exercised in Epics 11–12 — it is not run during
+development.
+
+**Fallback (Risk #2 — HTTP-01 issuance fails):** if Let's Encrypt HTTP-01 cannot
+validate the domain (e.g. port 80 blocked upstream, or a CAA/rate-limit problem),
+the contingency is to terminate TLS at an AWS-managed cert instead: request an **ACM
+certificate** for `policyflow.joeyshub.com` (DNS-validated via the same Route 53
+zone) and put an **Application Load Balancer** in front of the host with an HTTPS
+listener using that cert, forwarding to the instance on port 80. This trades the
+self-renewing in-stack cert for managed ACM renewal at the cost of an ALB. It is
+documented as a written contingency only — **no ALB is built in this epic.**
+
 ## Local checks (no apply)
 
 ```sh
@@ -179,4 +228,4 @@ cd infra/bootstrap && terraform init -backend=false && terraform validate
 
 - The Deploy stage is wired but stays red until Epic 11 supplies `ops/appspec.yml`
   + the lifecycle hooks; Source → Build runs green (images land in ECR).
-- Route 53 + TLS (Epic 10) and the deploy hooks (Epic 11) follow in later epics.
+- The deploy hooks (Epic 11) and the hands-off exit test (Epic 12) follow next.

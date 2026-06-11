@@ -57,3 +57,8 @@ output "artifact_bucket_name" {
   description = "Name of the S3 bucket holding CodePipeline artifacts."
   value       = aws_s3_bucket.pipeline_artifacts.bucket
 }
+
+output "app_url" {
+  description = "Public HTTPS URL the host serves once DNS resolves and the certbot cert is issued."
+  value       = "https://${var.domain_name}"
+}

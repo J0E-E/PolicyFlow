@@ -15,7 +15,9 @@ source_repository_url = "https://github.com/owner/PolicyFlow.git"
 github_repository_id = "owner/PolicyFlow"
 
 # Optional — these have sensible defaults; uncomment only to override.
-# github_branch = "main"
-# region        = "us-east-1"
-# instance_type = "t3.small"
-# project_name  = "policyflow"
+# github_branch    = "main"
+# region           = "us-east-1"
+# instance_type    = "t3.small"
+# project_name     = "policyflow"
+# hosted_zone_name = "joeyshub.com"               # the EXISTING Route 53 zone (never created)
+# domain_name      = "policyflow.joeyshub.com"    # the FQDN the host serves over HTTPS

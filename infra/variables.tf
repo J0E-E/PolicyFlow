@@ -36,3 +36,15 @@ variable "github_branch" {
   type        = string
   default     = "main"
 }
+
+variable "hosted_zone_name" {
+  description = "Name of the EXISTING Route 53 hosted zone the app record is created in. Read as a data source, never created by this config — the zone must already exist and be delegated."
+  type        = string
+  default     = "joeyshub.com"
+}
+
+variable "domain_name" {
+  description = "Fully-qualified domain the host serves over HTTPS; the Route 53 A record and the nginx/certbot TLS config all use this name."
+  type        = string
+  default     = "policyflow.joeyshub.com"
+}

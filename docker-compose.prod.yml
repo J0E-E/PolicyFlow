@@ -1,0 +1,50 @@
+# Production overlay — adds TLS termination and in-stack cert renewal on top of
+# the base docker-compose.yml. The base file stays HTTP-only for local dev; this
+# overlay is applied only on the host:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Issuance is a one-time manual bootstrap (ops/init-letsencrypt.sh). Renewal runs
+# inside the stack — no host cron — via the certbot service's 12h loop, and nginx
+# reloads every 6h to pick up renewed certificates.
+services:
+  frontend:
+    # Publish 443 alongside 80. Port 80 now only serves the ACME challenge and
+    # redirects to HTTPS (see frontend/nginx.tls.conf).
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Swap the HTTP-only dev config for the TLS config (mounted, not baked).
+      - ./frontend/nginx.tls.conf:/etc/nginx/conf.d/default.conf:ro
+      # The cert material certbot manages, and the ACME webroot it shares with nginx.
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot:ro
+    # Reload nginx every 6h so a running server picks up certs renewed by the
+    # certbot sidecar, then hand control to nginx in the foreground.
+    command: >
+      /bin/sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
+    healthcheck:
+      # The dev :80 check now returns a 301, so probe HTTPS instead. The cert is
+      # valid for the public domain, not 127.0.0.1, hence --no-check-certificate.
+      test: ["CMD", "wget", "--no-check-certificate", "--quiet", "--tries=1", "--spider", "https://127.0.0.1/"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # The no-host-cron renewal seam: a long-lived certbot container that attempts a
+  # renewal every 12 hours. certbot only re-issues when a cert is near expiry, so
+  # the 12h cadence is safe. nginx (above) reloads on its own 6h timer.
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    entrypoint: >
+      /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done"
+
+volumes:
+  # Cert material (certbot writes, nginx reads) and the shared ACME challenge webroot.
+  letsencrypt:
+  certbot-webroot:
