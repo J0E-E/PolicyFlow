@@ -1,21 +1,17 @@
-import HealthStatus from "./HealthStatus.tsx";
+import { Navigate, Route, Routes } from "react-router-dom";
+import LandingPage from "./pages/LandingPage.tsx";
+import SelectTenantPage from "./pages/SelectTenantPage.tsx";
 
-// Throwaway walking-skeleton shell (Epic 4). No UI/UX Guide design work here —
-// Epic 5 owns the real landing + tenant-selection pages. Every element carries
-// a descriptive id per CLAUDE.md.
+// Route table for the SPA shell. `/` is the landing page, `/select-tenant` is
+// the tenant-selection placeholder, and any unknown path redirects to the
+// landing page. nginx (try_files fallback) and the Vite dev server both serve
+// deep links, so these routes resolve on a hard refresh too.
 export default function App() {
   return (
-    <main id="app-shell">
-      <header id="app-header">
-        <h1 id="app-title">PolicyFlow</h1>
-        <p id="app-subtitle">
-          Walking-skeleton shell — placeholder pages arrive in Epic 5.
-        </p>
-      </header>
-      <section id="app-health-section">
-        <h2 id="app-health-heading">Live API health</h2>
-        <HealthStatus />
-      </section>
-    </main>
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/select-tenant" element={<SelectTenantPage />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
