@@ -6,6 +6,10 @@
 # The value below is a documentation-only placeholder (TEST-NET-3); replace it.
 ssh_ingress_cidr = "203.0.113.4/32"
 
+# REQUIRED. HTTPS clone URL of the GitHub repo CodeBuild builds from. No default.
+# A private repo also needs a one-time CodeBuild source credential (see README).
+source_repository_url = "https://github.com/owner/PolicyFlow.git"
+
 # Optional — these have sensible defaults; uncomment only to override.
 # region        = "us-east-1"
 # instance_type = "t3.small"

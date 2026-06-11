@@ -1,0 +1,28 @@
+# CodeBuild recipe (referenced by infra/codebuild.tf via source.buildspec).
+# Builds the core + frontend images, tags each with the resolved short commit
+# SHA and :latest, and pushes both to ECR. Epic 9's pipeline reuses this same
+# buildspec unchanged.
+#
+# The repository URLs and region come from CodeBuild environment variables
+# (set in infra/codebuild.tf), so no account id is hard-coded here:
+#   CORE_REPOSITORY_URL, FRONTEND_REPOSITORY_URL, AWS_DEFAULT_REGION
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      # Short commit SHA: first 7 chars of the source version CodeBuild resolves,
+      # falling back to "dev" when it is unset (e.g. a local/manual source).
+      - SHORT_SHA=$(echo "${CODEBUILD_RESOLVED_SOURCE_VERSION:-dev}" | cut -c1-7)
+      - echo "Building images tagged with SHORT_SHA=$SHORT_SHA and latest"
+      # Log Docker in to ECR using the build role's credentials.
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$CORE_REPOSITORY_URL"
+  build:
+    commands:
+      # core takes a GIT_SHA build-arg (baked into APP_VERSION); frontend does not.
+      - docker build --build-arg GIT_SHA="$SHORT_SHA" -t "$CORE_REPOSITORY_URL:$SHORT_SHA" -t "$CORE_REPOSITORY_URL:latest" core
+      - docker build -t "$FRONTEND_REPOSITORY_URL:$SHORT_SHA" -t "$FRONTEND_REPOSITORY_URL:latest" frontend
+  post_build:
+    commands:
+      - docker push --all-tags "$CORE_REPOSITORY_URL"
+      - docker push --all-tags "$FRONTEND_REPOSITORY_URL"

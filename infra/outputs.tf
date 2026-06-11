@@ -22,3 +22,13 @@ output "ssm_parameter_names" {
   description = "SSM SecureString parameter paths whose values the operator must populate out-of-band."
   value       = keys(local.host_secret_parameters)
 }
+
+output "ecr_repository_urls" {
+  description = "Map of ECR repository name to its push/pull URL (core + frontend)."
+  value       = { for name, repository in aws_ecr_repository.images : name => repository.repository_url }
+}
+
+output "codebuild_project_name" {
+  description = "Name of the CodeBuild project that builds and pushes the images; pass to `aws codebuild start-build --project-name`."
+  value       = aws_codebuild_project.build.name
+}
