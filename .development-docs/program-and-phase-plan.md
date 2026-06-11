@@ -42,6 +42,10 @@ very first thing we build is not a feature at all — it is the *delivery path i
   end-to-end.
 - **The demo is a feature, not packaging.** Explainers, badges, the stepper, and the
   "How it's built" page ship as first-class work, their shells in Phase 1.
+- **Tests ship with every slice.** Every change updates the relevant FE/BE test cases,
+  and a **pre-commit** gate runs the full suite on each commit and blocks on red — no
+  epic is "done" with an absent or failing suite for the behavior it adds. The harness
+  and gate are stood up in **P0.1a**.
 
 ---
 
@@ -85,6 +89,10 @@ extend. (Cross-cutting; the stack choices were settled at TDD time for Phase 0.)
     pulls on EC2; migrations + seed run as deploy steps (Alembic); TLS via Let's
     Encrypt/certbot at nginx; all AWS via Terraform; secrets in SSM Parameter Store.
     *Frozen P0.*
+11. **Test tooling & commit gate** — `pytest` (+ `httpx`, `pytest-asyncio`) for core and
+    sidecars, Vitest + Testing Library for the SPA, orchestrated by the **pre-commit**
+    framework as the commit gate; the same suites run in CI. Stood up in **P0.1a**; every
+    later phase only adds cases behind it. *Frozen P0.1a.*
 
 ---
 
@@ -140,6 +148,30 @@ under-specified plan.
 - **Why now / what this de-risks:** retires the single biggest delivery risk (can we
   ship hands-off to a parity environment at all?) before any feature investment.
 - **Size:** L (infra-heavy, mostly one-time).
+
+#### P0.1a — Test harness & commit gate
+
+- **Goal:** Stand up the automated FE/BE test harness and a **pre-commit** gate so that,
+  from here on, every phase ships with test cases that are updated and run on every commit.
+- **Shippable outcome / acceptance:** `pytest` runs core's suite (starting with the
+  `/api/health` **ok** and **degraded** paths) and Vitest runs the SPA suite (a smoke
+  test until the real React components land in P0.1 Epics 4–5); a **pre-commit** hook
+  runs both and **blocks the commit on any failure**; the same suites run in CI. A
+  deliberately broken test fails the commit — proving the gate is live, not decorative.
+- **Key components:** `pytest` (+ `httpx`, `pytest-asyncio`) under `core/`; Vitest +
+  Testing Library config under `frontend/`; `.pre-commit-config.yaml` wiring both; a CI
+  step running the suites; and a short `TESTING.md` stating the standing rule —
+  **every change updates the relevant test cases and the suite must be green to commit.**
+- **Faked / deferred:** real FE component tests (arrive with Epic 4–5 and P1.6+);
+  tenant-isolation / PII-masking fixtures (→ P1.2 / P1.3); end-to-end browser tests
+  (→ later, as UI surfaces land).
+- **Depends on:** P0.1 (Epic 2 provides the first backend surface to test). Does **not**
+  gate the P0.1 exit test, but should be green before Milestone 1 feature work begins.
+- **Isolation note:** no tenant data exists yet; the harness is structured so
+  tenant-scoping and masking assertions slot in from P1.2/P1.3 onward.
+- **Why now:** retrofitting a test culture after features exist is the same trap as
+  retrofitting isolation — cheap to establish now, painful later.
+- **Size:** S.
 
 ### Milestone 1 — Foundations & Core Platform
 
@@ -308,6 +340,7 @@ Real services replace P1–P2 stubs behind the same events.
 
 ```text
 M0  P0.1 ◄ Walking Skeleton & Pipeline        (exit test gates everything)
+        → P0.1a Test harness & commit gate     (tests + pre-commit gate from here on)
         |
 M1  P1.1 Auth/RBAC → P1.2 Tenant schemas → P1.3 Encryption → P1.4 Audit
         → P1.5 Event bus+stubs → P1.6 Demo shell [UI]
@@ -400,7 +433,8 @@ Each phase = **one TDD + one epic plan**, fed through
 `1-requirements-to-tdd` → `2-tdd-to-epic-plan` → the per-epic loop. Two work types:
 **implementation phases** carry the per-epic review budget (~150 lines · ~8 files ·
 one commit each); there are no research spikes in this program (the stack is
-committed).
+committed). From **P0.1a** on, every epic also updates its FE/BE test cases behind the
+**pre-commit** gate (see the *Tests ship with every slice* principle).
 
 **Worked example — decomposing P0.1 into named epics** (the actual TDD's work
 breakdown, for illustration):
@@ -431,4 +465,10 @@ updated to match. **Next moves:**
 
 1. Run `2-tdd-to-epic-plan` on the P0.1 TDD → `./phase-0/epic-plan-P0.1-walking-skeleton.md`.
 2. Execute the per-epic loop for P0.1; the **exit test** is the go/no-go gate.
-3. On a green exit test, start Milestone 1 with P1.1 (Auth/RBAC).
+3. Stand up **P0.1a** (test harness + `pre-commit` gate) — its own TDD/epic plan; lands
+   any time after P0.1 Epic 2, green before Milestone 1, and does not gate the exit test.
+4. On a green exit test, start Milestone 1 with P1.1 (Auth/RBAC).
+
+**2026-06-11** — Added **P0.1a** (test harness & commit gate) after noticing the plan
+carried no test strategy; tooling frozen (`pytest` + Vitest behind `pre-commit`) and the
+*Tests ship with every slice* principle recorded.
