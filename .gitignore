@@ -15,3 +15,7 @@ node_modules/
 .terraform/
 *.tfstate
 *.tfstate.*
+# Real variable files hold operator-specific values (e.g. SSH CIDR); keep the
+# committed *.example template. The .terraform.lock.hcl lock file is committed.
+*.tfvars
+!*.tfvars.example

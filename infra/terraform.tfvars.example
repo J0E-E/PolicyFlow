@@ -1,0 +1,12 @@
+# Copy this file to terraform.tfvars and fill in real values.
+# Real *.tfvars files are git-ignored; this .example template is committed.
+
+# REQUIRED. CIDR allowed to reach SSH (port 22). There is no default, on purpose.
+# Set this to the operator's own public IP as a /32 — never 0.0.0.0/0.
+# The value below is a documentation-only placeholder (TEST-NET-3); replace it.
+ssh_ingress_cidr = "203.0.113.4/32"
+
+# Optional — these have sensible defaults; uncomment only to override.
+# region        = "us-east-1"
+# instance_type = "t3.small"
+# project_name  = "policyflow"
