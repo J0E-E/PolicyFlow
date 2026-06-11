@@ -1,0 +1,34 @@
+# CodeDeploy appspec. Must live at the root of the deployment bundle, which here
+# is the GitHub source checkout (the whole repo) the pipeline's Deploy stage
+# feeds to CodeDeploy. It tells the on-host CodeDeploy agent where to install the
+# bundle and which lifecycle hook scripts to run.
+#
+# Flow: AfterInstall (write .env, ECR login, pull) -> ApplicationStart
+# (docker compose up -d — migrate + seed run inside core's entrypoint) ->
+# ValidateService (poll core health, fail the deploy if it never goes healthy).
+# No ApplicationStop: the first deploy has no prior revision, and up -d recreates
+# only the containers whose image or config changed.
+version: 0.0
+os: linux
+
+files:
+  - source: /
+    destination: /opt/policyflow
+
+# OVERWRITE so a redeploy replaces tracked files in place. The gitignored .env is
+# not in the bundle, so the deploy-written /opt/policyflow/.env is preserved.
+file_exists_behavior: OVERWRITE
+
+hooks:
+  AfterInstall:
+    - location: ops/deploy/after_install.sh
+      timeout: 300
+      runas: root
+  ApplicationStart:
+    - location: ops/deploy/application_start.sh
+      timeout: 300
+      runas: root
+  ValidateService:
+    - location: ops/deploy/validate_service.sh
+      timeout: 180
+      runas: root

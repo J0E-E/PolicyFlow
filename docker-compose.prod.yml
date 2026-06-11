@@ -8,7 +8,15 @@
 # inside the stack — no host cron — via the certbot service's 12h loop, and nginx
 # reloads every 6h to pick up renewed certificates.
 services:
+  # On the host, pull the freshly-built images from ECR instead of building. The
+  # base file keeps build: for local dev; the deploy hook pulls first so up -d
+  # uses the pulled image and never builds on the host. CORE_IMAGE/FRONTEND_IMAGE
+  # are written into /opt/policyflow/.env by ops/deploy/after_install.sh.
+  core:
+    image: ${CORE_IMAGE}
+
   frontend:
+    image: ${FRONTEND_IMAGE}
     # Publish 443 alongside 80. Port 80 now only serves the ACME challenge and
     # redirects to HTTPS (see frontend/nginx.tls.conf).
     ports:
