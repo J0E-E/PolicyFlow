@@ -23,12 +23,23 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - Test note: `app.db` builds its engine from `settings` at import, so the wiring test sets `DATABASE_URL`, reloads `app.config`, then imports/reloads `app.db` in that order so the engine is built against a valid URL.
   - Environment note (not an epic deliverable): the core suite must run under the project's `core/.venv` (Python 3.12); the global Python 3.14 cannot install the pinned `asyncpg==0.30.0` / `psycopg[binary]==3.2.3` wheels. Full suite green there (12 passed).
 
-## Epic 2 — Domain models + migration `0002`
+## Epic 2 — Domain models + migration `0002` — **COMPLETED**
 - **Goal:** Create the first real schema — the shared `platform` schema with `tenants`, `users`, and `auth_sessions` — as ORM models plus a matching hand-written Alembic migration, so the database carries identity, tenant, and session data.
 - **Rough scope:** The three model definitions (including the `Role` enum, the nullable `tenant_id`, the Platform-Admin CHECK constraint, unique indexes, and the SHA-256 `token_hash` column); a hand-written `0002` migration creating the schema + tables + enum; point Alembic's `target_metadata` at the models and enable schema-aware autogenerate so future drift is catchable.
 - **Open questions / decisions for stakeholders:** Exact column types/defaults (UUID generation, `timestamptz` defaults); whether to keep models and migration in one epic or split if the migration balloons.
 - **Depends on:** Epic 1.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - New `core/app/models/` package: `tenant.py` (`Tenant`), `user.py` (`Role` StrEnum + `User`), `auth_session.py` (`AuthSession`), `__init__.py` imports all three (registering the tables on `Base.metadata`) and re-exports `AuthSession`, `Role`, `Tenant`, `User`.
+  - All tables `schema="platform"`; `Uuid` PK `default=uuid.uuid4` (Python-side, no DB default); `created_at` `TIMESTAMP(timezone=True)` `server_default=text("now()")`.
+  - `User.role` maps to the Postgres enum `platform.user_role` with lowercase labels via `values_callable`; named CHECK `platform_admin_tenantless`; `is_active` `server_default=true()`; `tenant_id` nullable FK → `platform.tenants.id`; `username` unique.
+  - `AuthSession`: unique `token_hash`; `user_id` FK → `platform.users.id` `ON DELETE CASCADE`, not null; `expires_at` not null; `revoked_at` nullable.
+  - `db.py`: added a `MetaData(naming_convention=...)` (ix/uq/ck/fk/pk) on `Base.metadata` — the only change to the Epic-1 file — so model + migration constraint names agree by construction. Verified the model side emits exactly `pk_*`, `uq_*`, `fk_users_tenant_id_tenants`, `fk_auth_sessions_user_id_users`, `ck_users_platform_admin_tenantless`, matching `0002` verbatim.
+  - Hand-wrote `0002_platform_identity.py` (`down_revision = "0001_empty_baseline"`): `CREATE SCHEMA IF NOT EXISTS platform`, create the `user_role` enum (`create_type=False` on the shared `Enum`, created once explicitly), the three tables with the convention names; downgrade drops tables in reverse, then the enum, then the schema.
+  - `env.py`: `import app.models` + `from app.db import Base`, `target_metadata = Base.metadata`, `include_schemas=True` in both offline and online `context.configure(...)` calls.
+  - `conftest.py`: `os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://...")` at the very top (before `from app.main import app`) so the eager engine build never raises on an unset URL; `setdefault` lets a real CI/dev URL win.
+  - `test_models.py`: pure-Python metadata assertions, no live DB. Note — `alembic/versions/` is not an importable package and the file name starts with a digit, so the `0002` revision-chain test loads the migration by file path via `importlib.util` rather than `import_module`.
+  - Suite green under `core/.venv` (Python 3.12): **20 passed** (existing 12 + new 8). Live `alembic upgrade head` / `alembic check` against real Postgres remains deferred to Epic 11 (not attempted).
+  - Caveat for Epic 11 (from review): `include_schemas=True` has no `include_object`/`include_name` filter, so a live `alembic check`/autogenerate will reflect `public` + `information_schema` (which `target_metadata` doesn't declare) and report them as drift. Epic 11 must add a `platform`-only object filter when it wires the real-DB check.
 
 ## Epic 3 — Password hashing helper
 - **Goal:** A tiny, well-isolated module that hashes and verifies passwords with bcrypt, proven by a hash → verify round-trip test that also guards against the known passlib/bcrypt version-compatibility trap.

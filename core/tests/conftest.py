@@ -5,6 +5,16 @@ Provides an async HTTP client wired directly to the FastAPI app in-process via
 binding a network port or running a server.
 """
 
+import os
+
+# Importing the app (and, through it, `app.db` / `app.models`) builds the async
+# engine eagerly at import time, which needs a well-formed DATABASE_URL. Default
+# one here so a bare test run never fails on an unset URL. `setdefault` means a
+# real CI or dev URL already in the environment still wins.
+os.environ.setdefault(
+    "DATABASE_URL", "postgresql+asyncpg://user:secret@localhost:5432/policyflow"
+)
+
 import httpx
 import pytest_asyncio
 
