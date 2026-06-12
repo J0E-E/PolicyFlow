@@ -122,7 +122,7 @@ under-specified plan.
 
 ### Milestone 0 — Walking Skeleton & Deployment Pipeline `◄`
 
-#### P0.1 — Walking Skeleton & Deployment Pipeline ◄
+#### P0.1 — Walking Skeleton & Deployment Pipeline ◄ — **COMPLETE**
 
 - **Goal:** Prove the entire delivery path — code pushed to GitHub builds and deploys
   to production with zero manual steps — and stand up the full container topology
@@ -148,6 +148,12 @@ under-specified plan.
 - **Why now / what this de-risks:** retires the single biggest delivery risk (can we
   ship hands-off to a parity environment at all?) before any feature investment.
 - **Size:** L (infra-heavy, mostly one-time).
+- **Status:** **COMPLETE** (2026-06-12). All 12 epics done; the exit test passed live
+  — a push to `main` reached `https://policyflow.joeyshub.com` over valid HTTPS with
+  zero manual steps, cert self-issued on deploy. Risks #1 and #2 retired. The
+  end-to-end run surfaced 8 glue/hardening fixes, all captured in the P0.1 epic plan
+  (Epic 12 notes, `./phase-0/epic-plan-P0.1-walking-skeleton.md`) and recorded in
+  `../ops/exit-test-runbook.md` → "Record the run".
 
 #### P0.1a — Test harness & commit gate
 
@@ -339,7 +345,7 @@ Real services replace P1–P2 stubs behind the same events.
 ## Build Order at a glance
 
 ```text
-M0  P0.1 ◄ Walking Skeleton & Pipeline        (exit test gates everything)
+M0  P0.1 ✓ Walking Skeleton & Pipeline        (exit test PASSED 2026-06-12 — gate cleared)
         → P0.1a Test harness & commit gate     (tests + pre-commit gate from here on)
         |
 M1  P1.1 Auth/RBAC → P1.2 Tenant schemas → P1.3 Encryption → P1.4 Audit
@@ -390,8 +396,8 @@ Terraform/CI surprise during P0.1 as a finding to record, not a re-architecture.
 
 | # | Riskiest unknown | Retired by | Kill / pivot criteria (falsifiable) |
 |---|---|---|---|
-| 1 | Hands-off push→prod on parity infra | P0.1 exit test | If a push to `main` does not reach `policyflow.joeyshub.com` with zero manual steps, halt feature work until fixed. |
-| 2 | TLS at nginx on a single EC2 without an ALB | P0.1 | If certbot cannot issue/renew for the host, fall back to ACM+ALB and accept the added cost/infra. |
+| 1 | Hands-off push→prod on parity infra | P0.1 exit test ✓ **retired 2026-06-12** | If a push to `main` does not reach `policyflow.joeyshub.com` with zero manual steps, halt feature work until fixed. |
+| 2 | TLS at nginx on a single EC2 without an ALB | P0.1 ✓ **retired 2026-06-12** (certbot issued; no ALB needed) | If certbot cannot issue/renew for the host, fall back to ACM+ALB and accept the added cost/infra. |
 | 3 | Schema-per-tenant + app-layer encryption coexisting without breaking blind-index search | P1.3 | If blind-index exact-match can't run within a tenant schema, revisit per-tenant key derivation before building intake. |
 | 4 | Stub→real sidecar swap staying invisible | P1.5 / M3 | If M3 cannot replace a stub without changing callers, the envelope contract was wrong — fix the contract, not the callers. |
 | 5 | Demo-session purge cascading across core + sidecar stores | P1.8 / M3 | If session purge leaves orphaned sidecar records, tighten the `demo_session_id` propagation before M4. |
@@ -472,3 +478,19 @@ updated to match. **Next moves:**
 **2026-06-11** — Added **P0.1a** (test harness & commit gate) after noticing the plan
 carried no test strategy; tooling frozen (`pytest` + Vitest behind `pre-commit`) and the
 *Tests ship with every slice* principle recorded.
+
+**2026-06-12** — **P0.1 COMPLETE — the go/no-go gate is green.** All 12 epics shipped
+and the live exit test passed: a push to `main` ran Source → Build → ECR → Deploy
+hands-off and the landing went live at `https://policyflow.joeyshub.com` over valid
+HTTPS with zero manual steps (TLS cert self-issued on deploy). Risks #1 and #2 retired.
+Standing the cloud up surfaced 8 glue/hardening fixes (subnet AZ, ECR-Public base
+images, SSM Session Manager shell, certbot bootstrap robustness, restart policy,
+edge-aware ValidateService, committed TLS options, deploy-time cert auto-issuance) —
+all captured in the Epic 12 notes. **Next moves:**
+
+1. Stand up **P0.1a** (test harness + `pre-commit` gate) — its own TDD/epic plan; the
+   one remaining piece of Milestone 0.
+2. Then start **Milestone 1** with **P1.1 (Auth/RBAC)**.
+3. Optional infra follow-up (recorded, not blocking): Terraform-generate the DB/broker
+   passwords into SSM to remove the manual `put-parameter` step and the volume-init
+   footgun.
