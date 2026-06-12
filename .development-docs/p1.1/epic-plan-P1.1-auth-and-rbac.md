@@ -41,12 +41,16 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - Suite green under `core/.venv` (Python 3.12): **20 passed** (existing 12 + new 8). Live `alembic upgrade head` / `alembic check` against real Postgres remains deferred to Epic 11 (not attempted).
   - Caveat for Epic 11 (from review): `include_schemas=True` has no `include_object`/`include_name` filter, so a live `alembic check`/autogenerate will reflect `public` + `information_schema` (which `target_metadata` doesn't declare) and report them as drift. Epic 11 must add a `platform`-only object filter when it wires the real-DB check.
 
-## Epic 3 — Password hashing helper
+## Epic 3 — Password hashing helper — **COMPLETED**
 - **Goal:** A tiny, well-isolated module that hashes and verifies passwords with bcrypt, proven by a hash → verify round-trip test that also guards against the known passlib/bcrypt version-compatibility trap.
 - **Rough scope:** A `hash_password` / `verify_password` pair behind one helper module; pin the compatible bcrypt/passlib versions in the runtime deps.
 - **Open questions / decisions for stakeholders:** `passlib[bcrypt]` vs the `bcrypt` library directly (the TDD prefers passlib but names a direct fallback if pinning proves fragile).
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Decision: bcrypt directly, no passlib.** Took the TDD's pre-authorized fallback to sidestep the unmaintained-passlib version trap. Added `bcrypt==5.0.0` to `core/requirements.txt` (verified installable in the 3.12 venv).
+  - New `core/app/auth/` package: `__init__.py` (package docstring marker) + `passwords.py` with `hash_password` / `verify_password`. `hash_password` uses `bcrypt.hashpw` over the UTF-8 password with a fresh `bcrypt.gensalt()`, returns a decoded `str`. `verify_password` calls `bcrypt.checkpw` and catches `ValueError` → returns `False` (corrupt stored hash reads as "no match", never a 500).
+  - **72-byte limit — confirmed actual behavior:** pinned bcrypt 5.0.0 does NOT truncate; `hashpw` *raises* `ValueError` on >72-byte input. Documented in the module docstring. Note this means `verify_password`'s `except ValueError` also catches an over-long password (returns `False`); acceptable since seed/demo passwords are short.
+  - Tests: `core/tests/test_passwords.py`, pure unit (no DB/Docker) — round-trip, wrong-password rejected, salt randomness, `$2b$` hash-shape trap-guard, malformed-hash → `False`. Full suite green: 25 passed (existing 20 + 5 new) under `core/.venv` (Python 3.12).
 
 ## Epic 4 — Pluggable AuthProvider (local password)
 - **Goal:** Introduce the pluggable authentication seam — an `AuthProvider` interface plus the MVP local implementation that looks up an active user by username, verifies the password, and returns an identity (or nothing, so failures stay generic).
