@@ -118,12 +118,18 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - Mounted in `main.py` via `app.include_router(auth_router)`.
   - Tests: new `core/tests/test_router.py` (6 pure-unit cases, no DB) — login success/failure, logout with/without cookie, `me` authed/unauthed. Full core suite: 58 passed (52 prior + 6 new), all green under `core/.venv`.
 
-## Epic 9 — Guarded RBAC demonstrator (`GET /api/tenant/config`)
+## Epic 9 — Guarded RBAC demonstrator (`GET /api/tenant/config`) — **COMPLETED**
 - **Goal:** Prove the capability matrix end-to-end over HTTP against a real table — a Tenant-Admin-only endpoint that reads the session tenant's seeded config, with every other role rejected (403) and the anonymous caller rejected (401).
 - **Rough scope:** A small `tenant` router exposing `GET /api/tenant/config` behind `require_capability(VIEW_TENANT_CONFIG)`, reading the current session's tenant row; mount it in the app.
 - **Open questions / decisions for stakeholders:** Which minimal tenant fields the config view returns (name, slug — the seam P1.8 expands).
 - **Depends on:** Epics 7, 8.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Added `core/app/tenant/` package (`__init__.py` + `router.py`) and mounted `tenant_router` in `core/app/main.py` alongside health + auth.
+  - `GET /api/tenant/config` guarded by `require_capability(Capability.VIEW_TENANT_CONFIG)`; reads the caller's own tenant via `select(Tenant).where(Tenant.id == identity.tenant_id)`. Body is the settled `{"tenant": {"id", "name", "slug"}}` envelope; raw `UUID` left for FastAPI's encoder.
+  - Missing tenant handled defensively as `404 {"detail": "tenant not found"}` per the plan (effectively unreachable given the FK + tenantless-platform-admin CHECK).
+  - `router.py` imports auth pieces as siblings (`..auth.dependencies`/`..auth.rbac`/`..auth.provider`) since `tenant` is a peer package of `auth`; no auth logic redeclared.
+  - Tests (`core/tests/test_tenant_router.py`): pure-unit, override `get_current_identity` (so the real `require_capability` matrix runs) + `get_db` with a `FakeAsyncSession` mirroring `test_provider.py`. Covers Tenant Admin → 200 exact body; Agent / Read-Only / Platform Admin → 403; anonymous → 401.
+  - Suite green: `core/.venv/Scripts/python -m pytest core/tests -q` → 63 passed (58 prior + 5 new), no live Postgres.
 
 ## Epic 10 — Seed the demo personas (2 tenants + 9 users)
 - **Goal:** Make the whole role matrix signable-in today — idempotently seed the two demo tenants and the nine demo users (two Agents, one Tenant Admin, one Read-Only per tenant, plus one global Platform Admin) on every boot.
