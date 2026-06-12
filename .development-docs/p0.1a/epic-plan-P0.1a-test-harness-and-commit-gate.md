@@ -43,12 +43,17 @@ Source TDD: [./tdd-P0.1a-test-harness-and-commit-gate.md](./tdd-P0.1a-test-harne
   - No hardcoded literals: reused `CHECK_OK` / `CHECK_ERROR` from `app.health` and `settings` from `app.config`; ok-path asserts `version == settings.app_version`. Reused the async `client` fixture from `conftest.py`.
   - Verified green via `core/.venv` (Python 3.12): `python -m pytest -q` → `5 passed` (4 new + Epic 1 harness test). No live Postgres/RabbitMQ needed.
 
-## Epic 4 — Frontend harness skeleton
+## Epic 4 — Frontend harness skeleton — **COMPLETED**
 - **Goal:** A runnable Vitest + Testing Library + jsdom setup under `frontend/`, wired but not yet exercising components.
 - **Rough scope:** Add dev deps and `test`/`test:watch` scripts to `package.json`; add a Vitest `test` block (prefer extending `vite.config.ts`) and a `src/test/setup.ts`.
 - **Open questions / decisions for stakeholders:** Extend `vite.config.ts` vs a dedicated `vitest.config.ts` (TDD leans toward extending).
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Resolved open question: extended `vite.config.ts` with a `test` block (`environment: "jsdom"`, `globals: true`, `setupFiles: ["./src/test/setup.ts"]`) — no separate `vitest.config.ts`. Added `/// <reference types="vitest/config" />` at the top so the `test` key is typed.
+  - Added trivial `src/test/harness.test.ts` (one passing `expect(true).toBe(true)`, no component import/render) to prove the harness is runnable — parallels backend Epic 1's `test_harness.py` and keeps `vitest run` from exiting non-zero on zero test files. Epic 5 adds the real `<App>` smoke test. This file stays permanently.
+  - New files: `src/test/setup.ts` (`import "@testing-library/jest-dom/vitest";`) and `src/test/harness.test.ts`. Edited: `package.json` (scripts + devDeps), `vite.config.ts` (reference + test block), `tsconfig.app.json` (`"types": ["vitest/globals", "@testing-library/jest-dom"]`).
+  - Dependency pins installed (exact, Vite 5-compatible): `vitest` `2.1.9`, `@testing-library/react` `16.1.0`, `@testing-library/dom` `10.4.0`, `@testing-library/jest-dom` `6.6.3`, `jsdom` `25.0.1`. Scripts added: `test` = `vitest run`, `test:watch` = `vitest`.
+  - Verified green: `npm install` resolved cleanly (116 packages added; `package-lock.json` created); `npm test` → `1 passed` (exit 0, jsdom env); `npm run build` (`tsc -b && vite build`) succeeded (typecheck + build, exit 0), confirming the added types/config don't break the build.
 
 ## Epic 5 — Frontend smoke test
 - **Goal:** Prove the frontend harness wires React + Testing Library + jsdom end-to-end with a passing shell render test.
