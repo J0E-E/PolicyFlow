@@ -155,7 +155,7 @@ under-specified plan.
   (Epic 12 notes, `./phase-0/epic-plan-P0.1-walking-skeleton.md`) and recorded in
   `../ops/exit-test-runbook.md` → "Record the run".
 
-#### P0.1a — Test harness & commit gate
+#### P0.1a — Test harness & commit gate — **COMPLETE**
 
 - **Goal:** Stand up the automated FE/BE test harness and a **pre-commit** gate so that,
   from here on, every phase ships with test cases that are updated and run on every commit.
@@ -178,6 +178,12 @@ under-specified plan.
 - **Why now:** retrofitting a test culture after features exist is the same trap as
   retrofitting isolation — cheap to establish now, painful later.
 - **Size:** S.
+- **Status:** **COMPLETE** (2026-06-12). All 9 epics done. Backend `pytest` (5 passed:
+  health ok + three degraded combos + harness) and frontend Vitest (2 passed: `<App>`
+  smoke + harness) both green; the blocking `pre-commit` gate runs both on every commit
+  and a deliberately broken test was proven to reject the commit (Epic 9). The same two
+  suites mirror in CodeBuild `pre_build` and GitHub Actions (`.github/workflows/tests.yml`);
+  the standing rule is documented in `../../TESTING.md`. Milestone 0 is now fully done.
 
 ### Milestone 1 — Foundations & Core Platform
 
@@ -346,7 +352,7 @@ Real services replace P1–P2 stubs behind the same events.
 
 ```text
 M0  P0.1 ✓ Walking Skeleton & Pipeline        (exit test PASSED 2026-06-12 — gate cleared)
-        → P0.1a Test harness & commit gate     (tests + pre-commit gate from here on)
+        → P0.1a ✓ Test harness & commit gate   (tests + pre-commit gate live from here on)
         |
 M1  P1.1 Auth/RBAC → P1.2 Tenant schemas → P1.3 Encryption → P1.4 Audit
         → P1.5 Event bus+stubs → P1.6 Demo shell [UI]
@@ -494,3 +500,10 @@ all captured in the Epic 12 notes. **Next moves:**
 3. Optional infra follow-up (recorded, not blocking): Terraform-generate the DB/broker
    passwords into SSM to remove the manual `put-parameter` step and the volume-init
    footgun.
+
+**2026-06-12** — **P0.1a COMPLETE — Milestone 0 fully done.** All 9 epics shipped: a
+backend `pytest` suite (5 passed) and frontend Vitest suite (2 passed) behind a blocking
+`pre-commit` gate, proven live by a deliberately broken test that rejected the commit,
+mirrored in CodeBuild `pre_build` and GitHub Actions, with the standing rule in
+`../../TESTING.md`. Every later phase now adds cases behind a green gate. **Next move:**
+start **Milestone 1** with **P1.1 (Auth/RBAC)**.
