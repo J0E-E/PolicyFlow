@@ -106,12 +106,17 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - Tests: `core/tests/test_dependencies.py`, pure unit (no DB/Docker) — a throwaway FastAPI app + `TestClient` with `app.dependency_overrides[get_db]` stubbed and `dependencies.get_session_identity` monkeypatched. Covers: no cookie → 401, token resolves → 200 identity, token does not resolve → 401, `get_current_identity` → `None` (not 401) without a cookie, and the guard's Tenant-Admin 200 / Agent 403 / no-session 401. Followed `asyncio_mode = auto` (no `@pytest.mark.asyncio`). Set cookies on the client instance (not per-request) to stay warning-clean.
   - Full core suite green under `core/.venv` (Python 3.12): **52 passed** (prior 45 + 7 new), no live Postgres.
 
-## Epic 8 — Auth router (login / logout / me)
+## Epic 8 — Auth router (login / logout / me) — **COMPLETED**
 - **Goal:** The HTTP surface for authentication — log in (authenticate, issue a session, set the cookie), log out (revoke + clear), and a `me` endpoint returning the current identity and capabilities — mounted on the app.
 - **Rough scope:** A `auth` router with `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`, using the provider (Epic 4), sessions (Epic 5), and dependencies (Epic 7); mount it in the app. Login failures return a single generic 401 (never distinguishing unknown-user from bad-password).
 - **Open questions / decisions for stakeholders:** The exact success-response body for login/`me` (which user fields + capability list shape).
 - **Depends on:** Epics 4, 5, 7.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - New `core/app/auth/router.py`: `APIRouter(prefix="/api/auth")` composing the existing provider/sessions/dependencies/RBAC pieces — no new auth logic. `get_auth_provider()` dependency returns `LocalPasswordAuthProvider()` so tests override the seam via `dependency_overrides`. Shared `_identity_response(identity)` builds the body for both login and `me`: `{"user": {id, username, role, tenant_id}, "capabilities": [...]}` with capabilities = `sorted(c.value for c in CAPABILITIES[role])` (flat sorted strings). Raw `UUID`/`StrEnum` left for FastAPI's encoder.
+  - Confirmed decisions honored: `me` mirrors login's body exactly; capabilities is a flat sorted array; login failure → single generic `401 {"detail": "invalid credentials"}`; `logout` → `200 {"detail": "logged out"}` (unguarded, idempotent revoke, always clears cookie).
+  - Integration adjustment (Epic 5): `sessions.create_session` now takes `user_id: uuid.UUID` instead of `user: User` — sessions are keyed by user id and login already holds it on the `Identity`, avoiding a wasteful re-query. Updated docstring, body, the `uuid` import, and the 3 call sites in `test_sessions.py` (assertions unchanged).
+  - Mounted in `main.py` via `app.include_router(auth_router)`.
+  - Tests: new `core/tests/test_router.py` (6 pure-unit cases, no DB) — login success/failure, logout with/without cookie, `me` authed/unauthed. Full core suite: 58 passed (52 prior + 6 new), all green under `core/.venv`.
 
 ## Epic 9 — Guarded RBAC demonstrator (`GET /api/tenant/config`)
 - **Goal:** Prove the capability matrix end-to-end over HTTP against a real table — a Tenant-Admin-only endpoint that reads the session tenant's seeded config, with every other role rejected (403) and the anonymous caller rejected (401).

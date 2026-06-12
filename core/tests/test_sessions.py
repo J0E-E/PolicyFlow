@@ -107,7 +107,7 @@ async def test_create_session_stores_hash_and_returns_raw_token():
     session = FakeAsyncSession()
 
     before = datetime.now(timezone.utc)
-    raw_token = await create_session(session, user, lifetime_seconds=28800)
+    raw_token = await create_session(session, user.id, lifetime_seconds=28800)
     after = datetime.now(timezone.utc)
 
     # A url-safe token came back (token_urlsafe(32) yields ~43 chars, no padding).
@@ -138,7 +138,7 @@ async def test_create_session_defaults_to_configured_lifetime():
     session = FakeAsyncSession()
 
     before = datetime.now(timezone.utc)
-    await create_session(session, user)
+    await create_session(session, user.id)
     after = datetime.now(timezone.utc)
 
     stored_session = session.added_objects[0]
@@ -151,8 +151,8 @@ async def test_create_session_returns_unique_tokens():
     """Two `create_session` calls return different random tokens."""
     user = make_user()
 
-    first_token = await create_session(FakeAsyncSession(), user)
-    second_token = await create_session(FakeAsyncSession(), user)
+    first_token = await create_session(FakeAsyncSession(), user.id)
+    second_token = await create_session(FakeAsyncSession(), user.id)
 
     assert first_token != second_token
 

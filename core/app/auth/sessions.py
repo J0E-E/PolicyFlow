@@ -16,6 +16,7 @@ because the app and the database share one host and one wall clock.
 
 import hashlib
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import sqlalchemy as sa
@@ -70,16 +71,18 @@ def _hash_token(raw_token: str) -> str:
 
 
 async def create_session(
-    db: AsyncSession, user: User, *, lifetime_seconds: int | None = None
+    db: AsyncSession, user_id: uuid.UUID, *, lifetime_seconds: int | None = None
 ) -> str:
-    """Mint a session for `user`, store its token hash, and return the raw token.
+    """Mint a session for `user_id`, store its token hash, and return the raw token.
 
     Generates an opaque url-safe token, records a new `AuthSession` row holding
     only the token's SHA-256 hash and its expiry, commits, and hands back the
-    raw token for the caller to set in the cookie. When `lifetime_seconds` is
-    `None` the configured `session_lifetime_seconds` is used; an explicit value
-    (including a negative one, to forge an already-expired session in tests)
-    overrides it.
+    raw token for the caller to set in the cookie. Sessions are keyed by user id,
+    so the caller passes the id directly — login already holds it on the
+    authenticated `Identity` and need not re-query the `User`. When
+    `lifetime_seconds` is `None` the configured `session_lifetime_seconds` is
+    used; an explicit value (including a negative one, to forge an already-expired
+    session in tests) overrides it.
     """
     if lifetime_seconds is None:
         lifetime_seconds = settings.session_lifetime_seconds
@@ -89,7 +92,7 @@ async def create_session(
 
     db.add(
         AuthSession(
-            user_id=user.id,
+            user_id=user_id,
             token_hash=_hash_token(raw_token),
             expires_at=expires_at,
         )
