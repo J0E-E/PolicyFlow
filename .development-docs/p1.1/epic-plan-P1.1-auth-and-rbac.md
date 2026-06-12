@@ -52,12 +52,18 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - **72-byte limit — confirmed actual behavior:** pinned bcrypt 5.0.0 does NOT truncate; `hashpw` *raises* `ValueError` on >72-byte input. Documented in the module docstring. Note this means `verify_password`'s `except ValueError` also catches an over-long password (returns `False`); acceptable since seed/demo passwords are short.
   - Tests: `core/tests/test_passwords.py`, pure unit (no DB/Docker) — round-trip, wrong-password rejected, salt randomness, `$2b$` hash-shape trap-guard, malformed-hash → `False`. Full suite green: 25 passed (existing 20 + 5 new) under `core/.venv` (Python 3.12).
 
-## Epic 4 — Pluggable AuthProvider (local password)
+## Epic 4 — Pluggable AuthProvider (local password) — **COMPLETED**
 - **Goal:** Introduce the pluggable authentication seam — an `AuthProvider` interface plus the MVP local implementation that looks up an active user by username, verifies the password, and returns an identity (or nothing, so failures stay generic).
 - **Rough scope:** A small immutable `Identity` value, the `AuthProvider` Protocol, and `LocalPasswordAuthProvider` wired to the user model and the password helper. No OAuth/OIDC — the external-identity field on the model is the documented future seam only.
 - **Open questions / decisions for stakeholders:** Whether the provider takes a DB session as an argument or resolves its own; how "active user" is filtered.
 - **Depends on:** Epics 2, 3.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - New `core/app/auth/provider.py` holds all three pieces: `Identity` (`@dataclass(frozen=True)`: `user_id`, `tenant_id: uuid.UUID | None`, `role: Role`, `username`), the `AuthProvider` `typing.Protocol` (single `async authenticate(db, username, password) -> Identity | None`), and `LocalPasswordAuthProvider`.
+  - `authenticate`: `select(User).where(User.username == username, User.is_active.is_(True))` → `scalar_one_or_none()`; no row → `None`; `verify_password` false → `None`; else returns `Identity`. Exact, case-sensitive username; `is_active = true` only; every miss returns `None` so failures stay generic (settled with stakeholder).
+  - Reused `verify_password` (`auth/passwords.py`), `Role`/`User` (`models/user.py`), `AsyncSession` (type hint only). No `auth/__init__.py` change — submodule import path is consistent with how `passwords.py` is used.
+  - Deliberately not built (named deferrals): no timing-attack mitigation / dummy-hash on unknown user (per TDD §7 brute-force-hardening deferral), no rate limiting, no case-insensitive matching.
+  - Tests: `core/tests/test_provider.py`, pure unit (no DB/Docker) via a `FakeAsyncSession` whose `execute` returns a stub result yielding a chosen in-memory `User` or `None` — `Identity` frozen, happy path (real bcrypt hash via `hash_password`), wrong password → `None`, unknown/inactive (row is `None`) → `None`. Followed the suite's `asyncio_mode = auto` convention: async tests carry no `@pytest.mark.asyncio` decorator, matching `test_db.py`.
+  - Full core suite green under `core/.venv` (Python 3.12): **29 passed** (existing 25 + 4 new).
 
 ## Epic 5 — Server-side sessions (create / resolve / revoke)
 - **Goal:** The session spine — issue an opaque token on login (stored only as its SHA-256 hash in `auth_sessions`), resolve a token back to the current identity, and revoke on logout — plus the cookie helpers that carry it.
