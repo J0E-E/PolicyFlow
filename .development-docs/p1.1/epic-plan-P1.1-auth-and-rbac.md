@@ -91,12 +91,20 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - Full core suite green under `core/.venv` (Python 3.12): **45 passed** (prior 41 + 4 new). No code changes outside the two new files.
   - Caveat (from review, non-blocking): the test proves the enum→table direction (every `Capability` is covered by the expectation) and asserts each cell, but does not assert the table→enum direction (that `CAPABILITIES` values contain only valid `Capability` members). The cell-by-cell + completeness checks already fail on any real drift; a `set().union(*CAPABILITIES.values()) <= set(Capability)` guard would close the remaining direction if a future epic wants belt-and-suspenders.
 
-## Epic 7 — Auth dependencies (identity resolution + capability guard)
+## Epic 7 — Auth dependencies (identity resolution + capability guard) — **COMPLETED**
 - **Goal:** The reusable enforcement seam every protected endpoint will lean on — resolve the cookie to a current identity, reject the unauthenticated, and a `require_capability(...)` factory that returns the identity or a 403.
 - **Rough scope:** A `dependencies` module composing the session resolver (Epic 5) and the matrix (Epic 6): `get_current_identity`, `require_authenticated`, and the `require_capability` dependency factory (401 when no session, 403 when the capability is missing).
 - **Open questions / decisions for stakeholders:** Exact error bodies/shapes for 401 vs 403.
 - **Depends on:** Epics 5, 6.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - New `core/app/auth/dependencies.py` holds all three dependencies and adds no new auth logic — it composes the existing pieces: `get_session_identity`/`SESSION_COOKIE_NAME` (Epic 5), `has_capability`/`Capability` (Epic 6), `Identity` (Epic 4), `get_db` (Epic 1). No re-declaration.
+  - Phase 1: `get_current_identity(request, db=Depends(get_db))` reads `request.cookies.get(SESSION_COOKIE_NAME)` → `None` if absent, else `await get_session_identity(db, raw_token)`. `require_authenticated(identity=Depends(get_current_identity))` raises `HTTPException(401, "not authenticated")` when `None`, else returns the `Identity`.
+  - Phase 2: `require_capability(capability)` is a factory returning a dependency that takes `identity=Depends(require_authenticated)` (so the 401 path is inherited for free), then raises `HTTPException(403, "insufficient permissions")` when `has_capability(identity.role, capability)` is `False`, else returns the `Identity`.
+  - **Settled error bodies (stakeholder):** flat FastAPI shape — `401 {"detail": "not authenticated"}`, `403 {"detail": "insufficient permissions"}`; no `WWW-Authenticate` header.
+  - **Naming note:** kept the plan's `get_current_identity` / `get_session_identity` names verbatim (reuse-from-one-place rule). The CLAUDE.md "resolve → get" guidance is already honored — these are `get_*`, not `resolve_*`; the prose word "resolve" stays only in docstrings to describe behavior.
+  - Backend-only epic: no route mounting (Epic 8 mounts), no migration, no new runtime dependency, no frontend (HTML-id rule N/A).
+  - Tests: `core/tests/test_dependencies.py`, pure unit (no DB/Docker) — a throwaway FastAPI app + `TestClient` with `app.dependency_overrides[get_db]` stubbed and `dependencies.get_session_identity` monkeypatched. Covers: no cookie → 401, token resolves → 200 identity, token does not resolve → 401, `get_current_identity` → `None` (not 401) without a cookie, and the guard's Tenant-Admin 200 / Agent 403 / no-session 401. Followed `asyncio_mode = auto` (no `@pytest.mark.asyncio`). Set cookies on the client instance (not per-request) to stay warning-clean.
+  - Full core suite green under `core/.venv` (Python 3.12): **52 passed** (prior 45 + 7 new), no live Postgres.
 
 ## Epic 8 — Auth router (login / logout / me)
 - **Goal:** The HTTP surface for authentication — log in (authenticate, issue a session, set the cookie), log out (revoke + clear), and a `me` endpoint returning the current identity and capabilities — mounted on the app.
