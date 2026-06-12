@@ -96,12 +96,22 @@ Source TDD: [./tdd-P0.1a-test-harness-and-commit-gate.md](./tdd-P0.1a-test-harne
   - Verified YAML validity via `yaml.safe_load`: phases parse as `install`, `pre_build`, `build`, `post_build`; runtime-versions and the three gate commands sit before `SHORT_SHA`/ECR-login. Live CodeBuild verification (a red `pre_build` failing the build before ECR push) is deferred per the TDD — out of scope for local review.
   - Post-review nit applied: the runtime versions are quoted as strings (`python: "3.12"`, `nodejs: "20"`) so a future YAML re-serializer can't read `3.12` as a float and risk truncation to `3.1`. Cosmetic only — CodeBuild accepts both forms.
 
-## Epic 8 — CI: GitHub Actions workflow
+## Epic 8 — CI: GitHub Actions workflow — **COMPLETED**
 - **Goal:** Branch/PR-level test signal mirroring the hook and buildspec commands.
 - **Rough scope:** `.github/workflows/tests.yml` on push + PR — a Python 3.12 job (pytest) and a Node 20 job (vitest).
 - **Open questions / decisions for stakeholders:** Caching strategy for pip/npm (optional, can be deferred).
 - **Depends on:** Epics 3, 5.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - One new file `.github/workflows/tests.yml`. Purely additive CI config — no app code, no Terraform, no behavior change. The `.github/workflows/` directory is created by this epic (none existed).
+  - Two independent jobs run in parallel on `ubuntu-latest`: `backend` (checkout → setup-python 3.12 → pip install → pytest) and `frontend` (checkout → setup-node 20 → npm ci → npm test).
+  - Resolved open question (caching): **enabled, not deferred** — `setup-python@v5` with `cache: "pip"` and `cache-dependency-path` covering both `core/requirements.txt` + `core/requirements-dev.txt`; `setup-node@v4` with `cache: "npm"` and `cache-dependency-path: frontend/package-lock.json`. Built-in to the setup actions, so it adds no extra steps.
+  - Command parity (the third mirror of the same gate, with the hook + buildspec): backend install/run and frontend commands are verbatim from `ops/buildspec.yml` lines 25–27. Diff confirmed: installed packages identical, `python -m pytest -q` exact match, `npm ci`/`npm test --silent` exact match.
+  - Two intentional, cosmetic deviations from the buildspec strings: (1) CI drops the buildspec's `--quiet` flag on `pip install` (GH Actions captures logs natively); (2) the buildspec's `npm ci && npm test --silent` is split into two separate `run:` steps, each with `working-directory: frontend`, since GH Actions has no subshell wrapper — `working-directory` replaces the buildspec's `(cd frontend && …)`. Both `cd`-via-subshell idioms from the buildspec become `working-directory:` here.
+  - CI uses plain `python -m pytest` (no venv) because `setup-python` provides 3.12 on a clean runner — unlike the Windows hook (Epic 6), which calls `core/.venv/Scripts/python.exe` directly to dodge the host's Python 3.14.
+  - Triggers: `on: [push, pull_request]`, no branch filter. (PyYAML parses the bare `on:` key as boolean `True` — a known YAML 1.1 quirk; the value `[push, pull_request]` and structure are correct.)
+  - Added a top comment block describing the file's role as the branch/PR mirror of the hook + buildspec, consistent with the comment style of `ops/buildspec.yml` and `.pre-commit-config.yaml`.
+  - Verified via `yaml.safe_load`: top-level `on`/`jobs` parse; `jobs.backend` + `jobs.frontend` both `ubuntu-latest` with the mirrored commands present. Live GitHub Actions run is deferred (no app behavior to exercise locally).
+  - Out of scope (Epic 9): `TESTING.md` and the broken-test proof.
 
 ## Epic 9 — Prove the gate + TESTING.md
 - **Goal:** Demonstrate the gate is live (a deliberately broken test blocks a commit, then revert) and document the standing rule and one-time setup.

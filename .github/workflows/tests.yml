@@ -1,0 +1,43 @@
+# Branch/PR test gate — runs BOTH suites on every push and pull request.
+# This is the third mirror of the same test gate, keeping all three in lockstep:
+#   - .pre-commit-config.yaml  — local, blocks a red commit on the dev machine.
+#   - ops/buildspec.yml        — CodeBuild, blocks a red image build on push to main.
+#   - this workflow            — GitHub Actions, the branch/PR-level signal.
+# The install/run commands below are verbatim from ops/buildspec.yml so a green
+# tree here means the same suites that gate the build and the commit have passed.
+# Purely additive CI config — no app code, no Terraform, no behavior change.
+name: tests
+
+on: [push, pull_request]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: |
+            core/requirements.txt
+            core/requirements-dev.txt
+      # Both requirement files: pytest imports app.main, which needs the runtime
+      # deps (asyncpg, aio-pika, fastapi) on top of the dev-only test deps.
+      - run: pip install --requirement core/requirements.txt --requirement core/requirements-dev.txt
+      - run: python -m pytest -q
+        working-directory: core
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm test --silent
+        working-directory: frontend
