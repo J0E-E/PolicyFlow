@@ -18,6 +18,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import ENUM
 
 # revision identifiers, used by Alembic.
 revision: str = "0002_platform_identity"
@@ -27,10 +28,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 # The Postgres enum backing `users.role`. The labels are the lowercase `Role`
-# values, matching the ORM model's `values_callable`. `create_type=False` keeps
-# the column definitions from trying to create the type a second time — it is
-# created once, explicitly, in `upgrade()`.
-user_role_enum = sa.Enum(
+# values, matching the ORM model's `values_callable`. This must be the
+# PostgreSQL-specific `ENUM` (not the generic `sa.Enum`) so that `create_type`
+# is honored: on generic `sa.Enum` the keyword is silently ignored, so the table
+# create still auto-emits `CREATE TYPE` and a real apply fails with
+# "type already exists". `create_type=False` keeps the column definition from
+# creating the type a second time — it is created once, explicitly, in
+# `upgrade()`.
+user_role_enum = ENUM(
     "agent",
     "tenant_admin",
     "read_only",

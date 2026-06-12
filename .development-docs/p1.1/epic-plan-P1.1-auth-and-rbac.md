@@ -145,12 +145,21 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - **Tests** (`core/tests/test_seed.py`, 8 cases, pure unit, no Docker) reuse the `FakeAsyncSession`/`FakeResult` idiom — extended to replay multiple `execute` results in order and record `add`/`commit`. Cover spec correctness, empty→11 inserts with verifiable password, full→0 inserts, and partial→only-missing. Suite: **63 → 71 passed**.
   - Docs: `seed.py` docstring rewritten (placeholder framing dropped) and `core/README.md` "Migrations on boot" step 2 updated. No migration, no new dependency, no HTTP route (matches plan's out-of-scope).
 
-## Epic 11 — Test substrate (ephemeral Postgres)
+## Epic 11 — Test substrate (ephemeral Postgres) — **COMPLETED**
 - **Goal:** A real-database test foundation — a session-scoped ephemeral Postgres (testcontainers) that runs the migrations and a DB-backed HTTP client fixture — so the auth suite exercises real schemas, roles, and enums; skips gracefully when Docker is absent locally.
 - **Rough scope:** Add `testcontainers` to the dev deps; a shared Postgres fixture + a DB-backed client fixture in the test conftest; a smoke test proving the fixture connects and migrations apply.
 - **Open questions / decisions for stakeholders:** Container reuse strategy; the exact local skip signal when Docker is unavailable.
 - **Depends on:** Epics 1, 2.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Deviation — Docker absent → FAIL ALWAYS (confirmed gate choice).** The container fixtures have no skip logic or exception handling, so a missing Docker daemon errors every DB test rather than skipping. This deliberately overrides this epic's written "skips gracefully when Docker is absent locally" goal, per the approved plan's gate decision.
+  - **Image / scope:** `postgres:16-alpine` (matches `docker-compose.yml`), session-scoped `postgres_container` (boots once per `pytest` run, torn down at end).
+  - **Wiring:** `database_engine` points `DATABASE_URL` at the container, runs `alembic upgrade head` via `alembic.command.upgrade` (env.py rewrites the scheme to sync psycopg), then yields an asyncpg async engine. `db_session` (function-scoped) yields a real `AsyncSession`; `db_client` overrides `app.dependency_overrides[get_db]` to a container-backed session and cleans it up after — the seams Epics 12/13 build on.
+  - **`NullPool` on the test async engine** (deviation from `app.db`, which pools): with pytest-asyncio's function-scoped event loop, a pooled asyncpg connection from a finished loop fails on teardown on Windows ("proactor NoneType has no attribute send"). Opening a fresh connection per session sidesteps it without changing observable behavior.
+  - **Migration bug fixed (out-of-scope but blocking) — backlog-worthy.** The substrate immediately caught that `0002_platform_identity.py` used the **generic** `sa.Enum(..., create_type=False)`; `create_type` is a PostgreSQL-specific `ENUM` keyword and is silently ignored on the generic type, so the `users` table create auto-emitted a second `CREATE TYPE` and `upgrade head` failed against real Postgres with "type user_role already exists" — the migration had never been applied live before this epic. Fixed minimally by switching that one enum to `sqlalchemy.dialects.postgresql.ENUM` so `create_type=False` is honored. This is the exact class of defect this epic exists to surface; flagging for reviewer awareness since Epic 11 was nominally "no migration changes".
+  - `testcontainers[postgres]==4.14.2` pinned in `core/requirements-dev.txt` (stays out of the runtime image).
+  - **Smoke tests** (`core/tests/test_substrate.py`): migrations created the three `platform` tables + the `user_role` enum; a tenant write/read round-trip through `db_session`; `db_client` reaches a DB-touching guarded path (`GET /api/tenant/config` no cookie → 401).
+  - Suite: `core/.venv/Scripts/python -m pytest core/tests -q` → **74 passed** (71 prior + 3 new), real container boots, migrations apply.
+  - Review verdict **Approve with nits** (no changes required). Non-blocking suggestions captured as deferred, none implemented this epic: migration fix ideally its own commit (acceptable bundled, already noted above); no per-test DB rollback isolation — flagged for Epic 12; duplicated `async_sessionmaker` between `app.db` and the test engine (DRY cleanup); `database_engine` never calls `engine.dispose()` on teardown; `container.port` is an undocumented testcontainers attribute.
 
 ## Epic 12 — Session & provider lifecycle tests
 - **Goal:** Prove the auth internals against a real database — session create → resolve → revoke, an expired session not resolving, and provider authentication succeeding/failing on the right inputs.
