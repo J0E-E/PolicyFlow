@@ -7,12 +7,21 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
 > This is a high-level agile roadmap. Each epic's design specifics are confirmed
 > with stakeholders at epic time (`3-plan-epic`) before any code is written.
 
-## Epic 1 — ORM + async engine skeleton
+## Epic 1 — ORM + async engine skeleton — **COMPLETED**
 - **Goal:** Stand up SQLAlchemy 2.0 (async) over the existing Alembic wiring so the rest of the phase has a database session to work with — proven by the engine connecting, with no tables yet.
 - **Rough scope:** Add `sqlalchemy[asyncio]` to the core runtime deps; a new engine/session module (async engine from `DATABASE_URL`, a session-maker, a request-scoped `get_db` dependency, and the declarative base every model will extend).
 - **Open questions / decisions for stakeholders:** Module name/home for the engine; whether to verify connectivity via a throwaway check or lean on the existing health probe.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Engine home: `core/app/db.py` (per TDD §5).
+  - `DATABASE_URL` rewritten to `postgresql+asyncpg://` via `get_asynchronous_database_url()` — the async twin of `env.py`'s sync `postgresql+psycopg://` rewrite, same fail-fast `RuntimeError` on a missing/unsupported scheme.
+  - `engine = create_async_engine(...)` is built at import but lazy (no connection until first use); `session_factory = async_sessionmaker(engine, expire_on_commit=False)`; `Base(DeclarativeBase)` (models in Epic 2); `get_db()` yields a request-scoped `AsyncSession` and closes it.
+  - Deliberately untouched this epic: `main.py` (no consumer of `get_db` until Epics 7–8), `config.py` (`session_*` settings are Epic 5), `alembic/env.py` (`target_metadata`/`include_schemas` is Epic 2).
+  - `sqlalchemy[asyncio]==2.0.36` pinned (the `[asyncio]` extra pulls `greenlet`); `asyncpg==0.30.0` already present, so no driver change.
+  - Connectivity proven by a no-Docker wiring test (`core/tests/test_db.py`, 7 cases) plus the existing health probe; live engine-vs-Postgres deferred to the Epic 11 substrate (stakeholder decision).
+  - Caveat for future tests: `engine` is built from `settings` at import, so a test changing `DATABASE_URL` must reload `app.config` before `app.db` (the wiring test does this via a reload helper).
+  - Test note: `app.db` builds its engine from `settings` at import, so the wiring test sets `DATABASE_URL`, reloads `app.config`, then imports/reloads `app.db` in that order so the engine is built against a valid URL.
+  - Environment note (not an epic deliverable): the core suite must run under the project's `core/.venv` (Python 3.12); the global Python 3.14 cannot install the pinned `asyncpg==0.30.0` / `psycopg[binary]==3.2.3` wheels. Full suite green there (12 passed).
 
 ## Epic 2 — Domain models + migration `0002`
 - **Goal:** Create the first real schema — the shared `platform` schema with `tenants`, `users`, and `auth_sessions` — as ORM models plus a matching hand-written Alembic migration, so the database carries identity, tenant, and session data.
