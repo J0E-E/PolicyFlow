@@ -178,7 +178,7 @@ this phase's go/no-go gate.
   - **Caveat for Epic 12 (review nit, non-blocking):** the comment at `infra/codepipeline.tf:163` is now stale — it says the Deploy checkout "will carry `ops/appspec.yml`" and that the stage "stays red ('appspec not found')". The appspec correctly landed at the repo **root** (CodeDeploy requires it there) and the stage is now wired to run. `codepipeline.tf` is outside this epic's touched set, so the comment was left as-is; correct it in Epic 12. `validate_service.sh`'s health probe also depends on `curl` existing in the core image — it does (core's own healthcheck uses it), but the dependency is implicit.
   - **Verification (local, no AWS apply — apply needs credentials and costs money, per prior epics):** `appspec.yml` parses as valid YAML (version 0.0, os linux, 3 hooks). `docker compose -f docker-compose.yml -f docker-compose.prod.yml config` with dummy `CORE_IMAGE`/`FRONTEND_IMAGE` exit 0 — core/frontend resolve to the ECR `image:` refs, rest of overlay unchanged. All four `ops/deploy/*.sh` pass `sh -n` and carry an LF `#!/bin/sh` shebang (no CR); exec bit confirmed `100755` in the git index. `infra/` byte-for-byte untouched (`git status --porcelain infra/` empty), `terraform fmt -recursive -check infra/` clean, `terraform validate` → "The configuration is valid." Live host proof (push → Build → ECR → Deploy swaps the stack, migrate runs, HTTPS live) is the Epic 12 go/no-go gate, not run here.
 
-## Epic 12 — Prove the exit test (go/no-go gate) — **PENDING REVIEW**
+## Epic 12 — Prove the exit test (go/no-go gate) — **COMPLETED**
 - **Goal:** A trivial visible change pushed to `main` appears at `https://policyflow.joeyshub.com` over valid HTTPS with **zero manual steps** — the phase acceptance gate.
 - **Rough scope:** Make a trivial change (e.g. landing placeholder text), push, observe Source → Build → ECR → Deploy complete hands-off, confirm it is live over HTTPS. Capture any final glue/fixes the end-to-end run reveals.
 - **Open questions / decisions for stakeholders:** None expected — this is verification of everything prior; any failure routes back to the relevant epic.
@@ -271,3 +271,8 @@ this phase's go/no-go gate.
     clean; `terraform init -backend=false && terraform validate` → "configuration
     is valid" (comment-only edits don't change behavior). `git status --porcelain`
     scoped to the expected files only.
+  - **Live exit test PASSED (2026-06-12, commit `a982b43`):** a push to `main` ran
+    Source → Build → ECR → Deploy hands-off; the deploy self-issued the TLS cert and
+    the landing went live over HTTPS at `https://policyflow.joeyshub.com` with zero
+    manual steps. P0.1's go/no-go gate is green. Full record in
+    `ops/exit-test-runbook.md` → "Record the run".

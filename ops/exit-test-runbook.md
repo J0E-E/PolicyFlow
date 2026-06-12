@@ -73,12 +73,20 @@ If all three hold with zero manual steps, P0.1 passes.
 
 ## Record the run
 
-Fill in after the live run.
-
-- **Date / commit:** _pending live run_
-- **Result:** _PASS / FAIL — pending_
-- **What passed:** _Source / Build / ECR / Deploy / HTTPS — pending_
-- **Glue or fixes discovered:** _pending_ (note which epic each fix routes back to).
+- **Date / commit:** 2026-06-12 / `a982b43`
+- **Result:** **PASS** — a push to `main` reached the live site hands-off through
+  Source → Build → ECR → Deploy, with the TLS cert self-issued on the deploy (no
+  host steps).
+- **What passed:** Source ✓ · Build ✓ (ECR Public base images) · ECR ✓ · Deploy ✓
+  (auto-issued cert, `up -d`, ValidateService gated core + HTTPS edge) · landing
+  live over HTTPS ✓.
+- **Glue or fixes discovered (all captured in Epic 12's Implementation notes):**
+  (1) subnet AZ must offer the instance type (origin Epic 6); (2) base images via
+  ECR Public to dodge Docker Hub's anon rate limit (Epic 8); (3) host shell via
+  SSM Session Manager (Epic 6/7); (4) init-letsencrypt used curl, switched to wget
+  then removed the download entirely; (5) `restart:` policy; (6) ValidateService
+  also probes the HTTPS edge; (7) committed TLS options, dropped dhparam; (8) the
+  deploy self-issues the cert (Epic 10/11 lineage). All landed in this epic.
 
 ## Rollback
 
