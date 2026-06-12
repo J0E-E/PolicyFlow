@@ -79,12 +79,17 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - `SESSION_COOKIE_NAME = "pf_session"` is the single place the cookie name lives.
   - Backend-only: no route, no migration, no new dependency. Files: edited `core/app/config.py`; added `core/app/auth/sessions.py` and `core/tests/test_sessions.py`. Suite: 41 passed (29 prior green + 12 new), no live Postgres.
 
-## Epic 6 — RBAC capability matrix
+## Epic 6 — RBAC capability matrix — **COMPLETED**
 - **Goal:** The single source of truth for authorization — the role enum, the capability enum (one per Requirements row), and the role → capabilities matrix — proven cell-by-cell against the normative table so the matrix can never silently drift.
 - **Rough scope:** A declarative `rbac` module (`Role`, `Capability`, the `CAPABILITIES` dict, a `has_capability` check) plus an exhaustive unit test asserting every (role, capability) cell. No DB, no HTTP.
 - **Open questions / decisions for stakeholders:** None expected — the matrix is transcribed verbatim from the Requirements §Authorization table in the TDD.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - New `core/app/auth/rbac.py`: `Capability(StrEnum)` (10 members, values are the lowercase snake-case of each name), `CAPABILITIES: dict[Role, frozenset[Capability]]` transcribing the normative §Authorization table verbatim, and `has_capability(role, capability) -> bool` returning `capability in CAPABILITIES[role]`. Pure logic — no DB, no HTTP, no async, no migration, no new dependency.
+  - **Reused `Role` (single source of truth):** `from ..models.user import Role`, not a second definition; re-exported via `__all__ = ["Role", "Capability", "CAPABILITIES", "has_capability"]` so callers can take both names from one place (honors the model docstring's directive).
+  - Tests: `core/tests/test_rbac.py`, pure sync unit (no asyncio decorator, matching `test_models.py`). An **independent** `EXPECTED_CELLS` table (hand-transcribed, separate from the production dict) asserts all 40 (role, capability) cells via `has_capability`; plus completeness checks (all 4 roles keyed; every `Capability` covered by the expectation) and a `frozenset`-shape check on each matrix value.
+  - Full core suite green under `core/.venv` (Python 3.12): **45 passed** (prior 41 + 4 new). No code changes outside the two new files.
+  - Caveat (from review, non-blocking): the test proves the enum→table direction (every `Capability` is covered by the expectation) and asserts each cell, but does not assert the table→enum direction (that `CAPABILITIES` values contain only valid `Capability` members). The cell-by-cell + completeness checks already fail on any real drift; a `set().union(*CAPABILITIES.values()) <= set(Capability)` guard would close the remaining direction if a future epic wants belt-and-suspenders.
 
 ## Epic 7 — Auth dependencies (identity resolution + capability guard)
 - **Goal:** The reusable enforcement seam every protected endpoint will lean on — resolve the cookie to a current identity, reject the unauthenticated, and a `require_capability(...)` factory that returns the identity or a 403.
