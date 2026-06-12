@@ -113,9 +113,35 @@ Source TDD: [./tdd-P0.1a-test-harness-and-commit-gate.md](./tdd-P0.1a-test-harne
   - Verified via `yaml.safe_load`: top-level `on`/`jobs` parse; `jobs.backend` + `jobs.frontend` both `ubuntu-latest` with the mirrored commands present. Live GitHub Actions run is deferred (no app behavior to exercise locally).
   - Out of scope (Epic 9): `TESTING.md` and the broken-test proof.
 
-## Epic 9 — Prove the gate + TESTING.md
+## Epic 9 — Prove the gate + TESTING.md — **COMPLETED**
 - **Goal:** Demonstrate the gate is live (a deliberately broken test blocks a commit, then revert) and document the standing rule and one-time setup.
 - **Rough scope:** Manual proof per the TDD's verification steps; write root `TESTING.md` (standing rule, setup, how to run each suite, how the gate and CI mirror each other).
 - **Open questions / decisions for stakeholders:** None expected.
 - **Depends on:** Epics 6, 7, 8.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **No-production-code / no-frontend-DOM epic.** Only durable artifact = new root `TESTING.md` (additive). No app, config, or test code changed; the Phase 1 proof file was created, used, and deleted, leaving the tree clean.
+  - **Phase 1 — gate proof (transient).** Added throwaway `core/tests/test_gate_proof.py` (`assert False`), staged it, and ran `git commit`. The installed `pre-commit` hook ran both suites; `backend-tests` went red and the hook **rejected the commit** with exit code 1. Then deleted the file and unstaged it. Verified: `git status --porcelain` empty, HEAD unchanged at `4398b27` (Epic 8) — **no commit was created**. Committing is left to the human per build-epic, so the proof is the *failed* commit attempt only.
+  - **Captured gate-proof output (verbatim):**
+    ```
+    backend-tests............................................................Failed
+    - hook id: backend-tests
+    - exit code: 1
+
+    F.....                                                                   [100%]
+    ================================== FAILURES ===================================
+    _______________________________ test_gate_proof _______________________________
+
+        def test_gate_proof():
+    >       assert False
+    E       assert False
+
+    tests\test_gate_proof.py:2: AssertionError
+    =========================== short test summary info ===========================
+    FAILED tests/test_gate_proof.py::test_gate_proof - assert False
+    1 failed, 5 passed in 6.61s
+
+    frontend-tests...........................................................Passed
+    ```
+  - **Phase 2 — `TESTING.md`.** Wrote root [TESTING.md](../../TESTING.md): standing rule (both suites green to commit), one-time setup (backend Python 3.12 `core/.venv` + `requirements.txt`/`requirements-dev.txt`; frontend `npm install`; gate `pip install pre-commit && pre-commit install`), how to run each suite (`cd core && python -m pytest -q`; `cd frontend && npm test`), the gate and its three mirrors (hook / buildspec / GitHub Actions), and the Windows-venv caveat (`core/.venv/Scripts/python.exe` here vs `core/.venv/bin/python` on POSIX).
+  - **Command parity cross-checked verbatim** against the as-built configs: hook entries from `.pre-commit-config.yaml` (lines 12, 19), `pre_build` commands from `ops/buildspec.yml` (lines 25–27), and the workflow steps from `.github/workflows/tests.yml` (lines 27–28, 40–42). Documented commands match the source files exactly.
+  - **No regressions:** both suites still green via `core/.venv` (`pytest -q` → `5 passed`; `npm test` → `2 passed`). `git status --porcelain` shows only `?? TESTING.md`.
