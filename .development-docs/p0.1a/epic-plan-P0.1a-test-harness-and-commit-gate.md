@@ -7,12 +7,18 @@ Source TDD: [./tdd-P0.1a-test-harness-and-commit-gate.md](./tdd-P0.1a-test-harne
 > This is a high-level agile roadmap. Each epic's design specifics are confirmed
 > with stakeholders at epic time (`3-plan-epic`) before any code is written.
 
-## Epic 1 — Backend harness skeleton
+## Epic 1 — Backend harness skeleton — **COMPLETED**
 - **Goal:** A runnable `pytest` suite under `core/` proven by one trivial passing test — the foundation every later backend test builds on.
 - **Rough scope:** New `core/requirements-dev.txt` (test-only deps kept out of the production image), pytest config (async mode, test paths, import path), and a `tests/` package with a shared client fixture.
 - **Open questions / decisions for stakeholders:** Pytest config home (`pytest.ini` vs `pyproject.toml`); client fixture style (`TestClient` vs `httpx.ASGITransport`).
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Config home = `core/pytest.ini` (no `pyproject.toml` exists; lightest touch). Settings: `asyncio_mode = auto`, `asyncio_default_fixture_loop_scope = function` (pins the async-fixture loop scope to silence the pytest-asyncio deprecation warning), `testpaths = tests`, `pythonpath = .`.
+  - Fixture style = `httpx.ASGITransport` + `httpx.AsyncClient` (async-native; exercises the real async path; makes `asyncio_mode = auto` load-bearing).
+  - Trivial test `test_health_endpoint_is_reachable` asserts `/api/health` reachability (a valid HTTP status code comes back), NOT ok/degraded content — that is Epic 3. A 503 "degraded" with no live Postgres/RabbitMQ is a valid reachable response here.
+  - Files added: `core/requirements-dev.txt` (pytest, httpx, pytest-asyncio, pinned), `core/pytest.ini`, `core/tests/__init__.py`, `core/tests/conftest.py`, `core/tests/test_harness.py`. Purely additive — no production code touched.
+  - Verified green on Python 3.12.10 (project target): `cd core && python -m pytest -q` → `1 passed`. Added `.venv/` and `.pytest_cache/` to root `.gitignore` (local verification venv must never be committed).
+  - Env note (resolved): the project targets Python 3.12 (per `core/Dockerfile`), but only 3.14 was installed locally, and the pre-existing **runtime** pins `asyncpg==0.30.0` / `psycopg[binary]==3.2.3` have no 3.14 wheels — so `from app.main import app` could not import under 3.14. Resolved by installing Python 3.12.10 and creating `core/.venv` (gitignored); both runtime + dev deps install cleanly there. No production pins were loosened and no imports were stubbed.
 
 ## Epic 2 — Health endpoint mocking seam
 - **Goal:** Make the `/api/health` db and broker checks individually mockable so the ok/degraded paths can be tested deterministically — no behavior change to the endpoint.

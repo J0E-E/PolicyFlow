@@ -7,6 +7,9 @@
 # Python
 __pycache__/
 *.pyc
+# Local virtual environments (dev test setup; never committed)
+.venv/
+.pytest_cache/
 
 # Node
 node_modules/
