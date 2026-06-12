@@ -55,12 +55,17 @@ Source TDD: [./tdd-P0.1a-test-harness-and-commit-gate.md](./tdd-P0.1a-test-harne
   - Dependency pins installed (exact, Vite 5-compatible): `vitest` `2.1.9`, `@testing-library/react` `16.1.0`, `@testing-library/dom` `10.4.0`, `@testing-library/jest-dom` `6.6.3`, `jsdom` `25.0.1`. Scripts added: `test` = `vitest run`, `test:watch` = `vitest`.
   - Verified green: `npm install` resolved cleanly (116 packages added; `package-lock.json` created); `npm test` → `1 passed` (exit 0, jsdom env); `npm run build` (`tsc -b && vite build`) succeeded (typecheck + build, exit 0), confirming the added types/config don't break the build.
 
-## Epic 5 — Frontend smoke test
+## Epic 5 — Frontend smoke test — **COMPLETED**
 - **Goal:** Prove the frontend harness wires React + Testing Library + jsdom end-to-end with a passing shell render test.
 - **Rough scope:** `src/App.test.tsx` renders `<App>` inside a router and asserts a stable shell element (e.g. a wordmark/heading from `PageLayout`).
 - **Open questions / decisions for stakeholders:** Which stable element to anchor the assertion on.
 - **Depends on:** Epic 4.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - One new file `frontend/src/App.test.tsx`; purely additive — no production code, no rendered DOM, so the frontend `id` rule and `[UI]` tag do not apply.
+  - Resolved open question: anchor on the shared-shell wordmark from `PageLayout` via the header's accessible `banner` role (`screen.getByRole("banner")` + `within(header).getByText("PolicyFlow")`). Chosen over the landing `<h1>` (page content changing in P1.6) and over a raw id lookup. `within(header)` disambiguates "PolicyFlow", which appears in both the header wordmark `<p>` and the hero `<h1>`.
+  - `<App>` renders `<Routes>`, so it is wrapped in `MemoryRouter` for router context.
+  - No test-framework imports — `vite.config.ts` sets `globals: true`, so `describe`/`it`/`expect` are global (matches `harness.test.ts`). `.toBeInTheDocument()` comes from the jest-dom matchers loaded in `src/test/setup.ts`.
+  - Verified green: `cd frontend && npm test` → `2 passed` (this test + `harness.test.ts`), exit 0. `cd frontend && npm run build` (`tsc -b && vite build`) succeeded, exit 0. Test run logs two React Router v7 future-flag advisory warnings (stderr only, not failures).
 
 ## Epic 6 — Commit gate (pre-commit)
 - **Goal:** A blocking `pre-commit` gate that runs both suites on every commit and rejects any red commit.
