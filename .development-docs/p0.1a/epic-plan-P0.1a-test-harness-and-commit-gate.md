@@ -31,12 +31,17 @@ Source TDD: [./tdd-P0.1a-test-harness-and-commit-gate.md](./tdd-P0.1a-test-harne
   - Verified mockable: `get_health` resolves both checks by module-level name at call time, so `monkeypatch.setattr("app.health.check_database", …)` / `check_broker` works for Epic 3.
   - Public `/api/health` response unchanged (`status` + `version` + `checks` dict); harness verified still green via `core/.venv`: `python -m pytest -q` → `1 passed`.
 
-## Epic 3 — Health tests (ok + degraded)
+## Epic 3 — Health tests (ok + degraded) — **COMPLETED**
 - **Goal:** The first real backend tests — assert the `200/"ok"` path and the `503/"degraded"` path (including a single-check-down case) by mocking the seam from Epic 2.
 - **Rough scope:** `core/tests/test_health.py` monkeypatching `check_database` / `check_broker`; no live Postgres/RabbitMQ.
 - **Open questions / decisions for stakeholders:** Which degraded combinations to cover (one check down vs both).
 - **Depends on:** Epic 2.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - One new file `core/tests/test_health.py`; zero production/config change (purely additive).
+  - Stakeholder decision honored: 4 tests — ok path + all three degraded combos (db-down, broker-down, both-down).
+  - Seam mocked via `monkeypatch.setattr("app.health.check_database"/"check_broker", …)` with a module-level `make_check_returning(status)` factory yielding an `async` stub (real checks are async).
+  - No hardcoded literals: reused `CHECK_OK` / `CHECK_ERROR` from `app.health` and `settings` from `app.config`; ok-path asserts `version == settings.app_version`. Reused the async `client` fixture from `conftest.py`.
+  - Verified green via `core/.venv` (Python 3.12): `python -m pytest -q` → `5 passed` (4 new + Epic 1 harness test). No live Postgres/RabbitMQ needed.
 
 ## Epic 4 — Frontend harness skeleton
 - **Goal:** A runnable Vitest + Testing Library + jsdom setup under `frontend/`, wired but not yet exercising components.
