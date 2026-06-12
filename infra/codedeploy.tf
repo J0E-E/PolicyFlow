@@ -1,8 +1,8 @@
 # The deploy target: a CodeDeploy application + deployment group pointed at the
 # EC2 host by its Name tag (set in ec2.tf). The pipeline's Deploy stage
 # (codepipeline.tf) hands this group the Source checkout; the actual deploy
-# logic (appspec.yml + lifecycle hooks) is owned by Epic 11, so the group is
-# wired but stays red until then.
+# logic (appspec.yml at the repo root + lifecycle hooks) landed in Epic 11, so
+# the group is wired and active: the hooks run on deploy.
 #
 # IAM mirrors iam.tf/codebuild.tf: an assume-role trust document plus an inline
 # least-privilege policy.

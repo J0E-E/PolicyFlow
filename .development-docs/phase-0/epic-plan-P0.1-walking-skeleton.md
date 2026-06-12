@@ -178,9 +178,96 @@ this phase's go/no-go gate.
   - **Caveat for Epic 12 (review nit, non-blocking):** the comment at `infra/codepipeline.tf:163` is now stale — it says the Deploy checkout "will carry `ops/appspec.yml`" and that the stage "stays red ('appspec not found')". The appspec correctly landed at the repo **root** (CodeDeploy requires it there) and the stage is now wired to run. `codepipeline.tf` is outside this epic's touched set, so the comment was left as-is; correct it in Epic 12. `validate_service.sh`'s health probe also depends on `curl` existing in the core image — it does (core's own healthcheck uses it), but the dependency is implicit.
   - **Verification (local, no AWS apply — apply needs credentials and costs money, per prior epics):** `appspec.yml` parses as valid YAML (version 0.0, os linux, 3 hooks). `docker compose -f docker-compose.yml -f docker-compose.prod.yml config` with dummy `CORE_IMAGE`/`FRONTEND_IMAGE` exit 0 — core/frontend resolve to the ECR `image:` refs, rest of overlay unchanged. All four `ops/deploy/*.sh` pass `sh -n` and carry an LF `#!/bin/sh` shebang (no CR); exec bit confirmed `100755` in the git index. `infra/` byte-for-byte untouched (`git status --porcelain infra/` empty), `terraform fmt -recursive -check infra/` clean, `terraform validate` → "The configuration is valid." Live host proof (push → Build → ECR → Deploy swaps the stack, migrate runs, HTTPS live) is the Epic 12 go/no-go gate, not run here.
 
-## Epic 12 — Prove the exit test (go/no-go gate)
+## Epic 12 — Prove the exit test (go/no-go gate) — **PENDING REVIEW**
 - **Goal:** A trivial visible change pushed to `main` appears at `https://policyflow.joeyshub.com` over valid HTTPS with **zero manual steps** — the phase acceptance gate.
 - **Rough scope:** Make a trivial change (e.g. landing placeholder text), push, observe Source → Build → ECR → Deploy complete hands-off, confirm it is live over HTTPS. Capture any final glue/fixes the end-to-end run reveals.
 - **Open questions / decisions for stakeholders:** None expected — this is verification of everything prior; any failure routes back to the relevant epic.
 - **Depends on:** Epics 10 and 11.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **No payload/UI change.** Nothing is deployed yet, so there is no "before" to
+    diff against — the first successful deploy of the existing app IS the proof.
+    Skipped the trivial-change steer from Rough scope per the approved plan.
+  - **Verification/ops epic only:** no `terraform apply`, no live AWS, no payload.
+    Repo deliverables + runbook now; the human runs the live apply/observe.
+  - **Corrected stale "stays red until Epic 11" references** (comment/doc-only, no
+    Terraform behavior change): `infra/codepipeline.tf` (Deploy-stage comment),
+    `infra/codedeploy.tf` (header comment), and three spots in `infra/README.md`
+    (codedeploy.tf bullet, "Deploy stage stays red" line, "Not here yet"). The
+    Deploy stage is now wired and active since Epic 11 landed `appspec.yml` at the
+    repo root + the lifecycle hooks.
+  - **New `ops/exit-test-runbook.md`** — orchestration doc that points to the
+    existing per-step docs (single source of truth), captures the ordered one-time
+    bring-up, the steady-state exit test, a pass/fail record block, and rollback.
+  - **Cert-ordering caveat documented, not pre-fixed:** `init-letsencrypt.sh` needs
+    the ECR frontend image + deploy-written `.env`, and the `letsencrypt` named
+    volume is compose-project-scoped, so issuance must run from `/opt/policyflow`
+    after the first Build/Deploy. The first `ApplicationStart` may fail on the
+    missing cert (expected). If the live run shows a hook fix is warranted, it
+    routes back to Epic 11.
+  - **`ops/README.md`** — added a pointer to the runbook and replaced the trailing
+    "…is Epic 12" forward-reference with a pointer to the runbook as the live-proof
+    procedure.
+  - **Live proof + green completion are a human-run follow-up:** `5-complete-epic`
+    should follow the actual passing live run, not this build.
+  - **Live-run glue fix #1 (subnet AZ):** the first `terraform apply` brought up
+    every resource except `aws_instance.host`, which failed RunInstances because
+    `subnet_id = data.aws_subnets.default.ids[0]` had landed on `us-east-1e` — an
+    AZ that doesn't offer `t3.small` (the exact `ids[0]` instability Epic 6's
+    review flagged). Fixed in `data.tf`: added `data.aws_ec2_instance_type_offerings.host`
+    and an `availability-zone` filter on `data.aws_subnets.default` so the subnet
+    is always in an AZ that offers `var.instance_type`. `ec2.tf` is unchanged; re-run
+    `terraform apply` to create the host.
+  - **Live-run glue fix #2 (Docker Hub rate limit):** the first CodeBuild run built
+    + pushed core, then failed building frontend on `429 Too Many Requests` pulling
+    `node:20-alpine` — CodeBuild's shared-IP fleet exhausts Docker Hub's anonymous
+    pull quota. Fixed by pointing all three base images at Amazon ECR Public's
+    mirror of the Docker Official Images (`public.ecr.aws/docker/library/python`,
+    `/node`, `/nginx`) in `core/Dockerfile` + `frontend/Dockerfile` — same images
+    and tags, no Docker Hub auth/secret, free + unthrottled from inside AWS, and
+    still builds locally. Re-run the pipeline (or `start-build`).
+  - **Live-run glue fix #3 (no shell access):** the host had no way in — `ec2.tf`
+    sets no `key_name` (so no SSH; adding one now forces instance replacement) and
+    the host role lacked the SSM Session Manager channels. Attached the AWS-managed
+    `AmazonSSMManagedInstanceCore` to `aws_iam_role.host` in `iam.tf` so
+    `aws ssm start-session --target <id>` gives a shell with no key/port-22 and no
+    instance replacement. Deliberate exception to Epic 7's "inline policies only"
+    style — replicating this canonical enablement inline is error-prone. Needs the
+    local Session Manager plugin; AL2023 ships the SSM agent.
+  - **Live-run glue fix #4 (init-letsencrypt used curl):** `ops/init-letsencrypt.sh`
+    fetched certbot's TLS option files with `curl`, but the alpine-based
+    `certbot/certbot` image has no curl (`/bin/sh: curl: not found`). Switched both
+    downloads to busybox `wget -qO` (which the image ships). Found running the
+    issuance bootstrap live on the host for the first time. **Superseded by glue
+    fix #7**, which removes the download entirely.
+  - **Hardening #5 (restart policy):** the stack had no `restart:` policy, so a
+    host reboot/stop left all five containers `Exited` (seen live after the SSM
+    stop/start) — the always-on site would stay down until a manual `compose up`.
+    Added `restart: unless-stopped` to all five services in `docker-compose.prod.yml`
+    (data services get an override stub; base stays dev-only). Survives reboots/crashes.
+  - **Hardening #6 (ValidateService probes the edge):** `validate_service.sh` only
+    checked `core` from inside its container, so a deploy could go green with a
+    dead/crash-looping frontend (exactly today's pre-cert state). It now also polls
+    the public HTTPS edge (`curl -k https://127.0.0.1/`) and fails the deploy if
+    nginx isn't serving — with a note that a brand-new host fails here until the
+    one-time cert issuance, which is expected.
+  - **Hardening #7 (commit TLS options, drop dhparam):** `init-letsencrypt.sh`
+    fetched `options-ssl-nginx.conf` + `ssl-dhparams.pem` from GitHub at bootstrap
+    (the fragile step that surfaced fix #4). Committed `ops/tls/options-ssl-nginx.conf`
+    (ECDHE-only, no dhparam needed), mounted it into the frontend container via
+    `docker-compose.prod.yml`, pointed `nginx.tls.conf`'s `include` at the mounted
+    path, dropped the `ssl_dhparam` directive, and removed the download step from
+    `init-letsencrypt.sh`. Issuance/deploy now has no external download to fail.
+  - **Hardening #8 (auto-issue TLS in the deploy):** made `application_start.sh`
+    self-bootstrap the cert — if no real (certbot-managed) cert exists it lays down
+    a dummy so nginx boots, `up -d`s, then runs `certbot certonly --webroot` and
+    reloads; idempotent (no-op once issued, keyed on `renewal/<domain>.conf`). A
+    fresh deploy now stands up HTTPS with **zero host steps** (manual
+    `init-letsencrypt.sh` stays as a fallback). Bumped the ApplicationStart appspec
+    timeout 300→600s for the issuance path; updated `appspec.yml`,
+    `ops/exit-test-runbook.md`, and `ops/README.md`. The deploy handles cert
+    ordering itself (Build precedes Deploy → image exists; hook runs from
+    `/opt/policyflow` → `letsencrypt` volume correctly scoped).
+  - **Verification (local, no AWS apply):** `terraform fmt -recursive -check infra/`
+    clean; `terraform init -backend=false && terraform validate` → "configuration
+    is valid" (comment-only edits don't change behavior). `git status --porcelain`
+    scoped to the expected files only.

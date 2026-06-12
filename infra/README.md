@@ -50,8 +50,8 @@ CodePipeline, CodeDeploy, Route 53, TLS). Filled in across Epics 6–11.
   group targeting the host by its `Name = ${project_name}-host` EC2 tag
   (`CodeDeployDefault.AllAtOnce`, in-place, no ASG/ELB). Its service role mirrors
   the inline-policy style with EC2/tag discovery on `*` (read-only lookups that
-  cannot be resource-scoped). The actual deploy logic (appspec + hooks) is Epic 11,
-  so the group is wired but stays red until then.
+  cannot be resource-scoped). The actual deploy logic (appspec at the repo root +
+  hooks) landed in Epic 11, so the group is wired and active: the hooks run on deploy.
 - `codepipeline.tf` — the GitHub (CodeStar) connection plus the
   `policyflow-pipeline` three-stage pipeline: Source (GitHub via the connection,
   watching `github_branch`), Build (the existing `policyflow-build` project), Deploy
@@ -171,8 +171,9 @@ CodeBuild source credential above). After `apply`:
 `terraform output github_connection_arn` gives the connection to authorize. Once it
 is **Available**, a push to `github_branch` (default `main`) auto-triggers the
 pipeline (Source → Build → Deploy) with no webhook to configure. The **Deploy stage
-stays red** ("appspec not found") until Epic 11 supplies `ops/appspec.yml` + the
-lifecycle hooks — Epic 9 delivers the structural end-to-end path, not a green deploy.
+is wired and active** since Epic 11 landed `appspec.yml` at the repo root + the
+lifecycle hooks — the hooks run on deploy. Epic 9 delivered the structural
+end-to-end path; Epic 11 made the deploy green.
 
 ## TLS issuance + renewal (Epic 10 — one-time host bootstrap, then automatic)
 
@@ -226,6 +227,7 @@ cd infra/bootstrap && terraform init -backend=false && terraform validate
 
 ## Not here yet
 
-- The Deploy stage is wired but stays red until Epic 11 supplies `ops/appspec.yml`
-  + the lifecycle hooks; Source → Build runs green (images land in ECR).
-- The deploy hooks (Epic 11) and the hands-off exit test (Epic 12) follow next.
+- The full Source → Build → ECR → Deploy path is wired (Epic 11 landed
+  `appspec.yml` at the repo root + the lifecycle hooks). The remaining step is the
+  hands-off exit test (Epic 12) — the live go/no-go gate, orchestrated by
+  `ops/exit-test-runbook.md`.

@@ -4,8 +4,9 @@
 # bundle and which lifecycle hook scripts to run.
 #
 # Flow: AfterInstall (write .env, ECR login, pull) -> ApplicationStart
-# (docker compose up -d — migrate + seed run inside core's entrypoint) ->
-# ValidateService (poll core health, fail the deploy if it never goes healthy).
+# (self-bootstrap the TLS cert if missing, then docker compose up -d — migrate +
+# seed run inside core's entrypoint) -> ValidateService (poll core health AND the
+# public HTTPS edge, fail the deploy if either never comes up).
 # No ApplicationStop: the first deploy has no prior revision, and up -d recreates
 # only the containers whose image or config changed.
 version: 0.0
@@ -25,8 +26,9 @@ hooks:
       timeout: 300
       runas: root
   ApplicationStart:
+    # 600s: first run may issue the TLS cert (dummy + up + certbot + reload).
     - location: ops/deploy/application_start.sh
-      timeout: 300
+      timeout: 600
       runas: root
   ValidateService:
     - location: ops/deploy/validate_service.sh

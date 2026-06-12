@@ -106,6 +106,17 @@ resource "aws_iam_role_policy" "host_ssm_read" {
   policy = data.aws_iam_policy_document.host_ssm_read.json
 }
 
+# --- SSM Session Manager (shell access) -------------------------------------
+# Enables `aws ssm start-session` for a shell on the host without an SSH key or
+# an open port 22 (the instance has no key pair). This is the AWS-managed policy
+# that registers the instance with SSM and grants the Session Manager message
+# channels — replicating it inline is error-prone, so we make the deliberate
+# exception to the "inline only" style for this one canonical enablement.
+resource "aws_iam_role_policy_attachment" "host_ssm_core" {
+  role       = aws_iam_role.host.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 # --- S3 read (deploy bundle) ------------------------------------------------
 # The CodeDeploy agent on the host downloads the deploy bundle (the Source
 # checkout the pipeline passes to the Deploy stage) from the pipeline artifact

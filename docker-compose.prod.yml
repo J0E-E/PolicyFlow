@@ -14,9 +14,12 @@ services:
   # are written into /opt/policyflow/.env by ops/deploy/after_install.sh.
   core:
     image: ${CORE_IMAGE}
+    # Always-on host: come back after a crash or a host reboot.
+    restart: unless-stopped
 
   frontend:
     image: ${FRONTEND_IMAGE}
+    restart: unless-stopped
     # Publish 443 alongside 80. Port 80 now only serves the ACME challenge and
     # redirects to HTTPS (see frontend/nginx.tls.conf).
     ports:
@@ -25,6 +28,8 @@ services:
     volumes:
       # Swap the HTTP-only dev config for the TLS config (mounted, not baked).
       - ./frontend/nginx.tls.conf:/etc/nginx/conf.d/default.conf:ro
+      # certbot's recommended TLS settings, committed and mounted (no download).
+      - ./ops/tls/options-ssl-nginx.conf:/etc/nginx/options-ssl-nginx.conf:ro
       # The cert material certbot manages, and the ACME webroot it shares with nginx.
       - letsencrypt:/etc/letsencrypt:ro
       - certbot-webroot:/var/www/certbot:ro
@@ -46,11 +51,20 @@ services:
   # the 12h cadence is safe. nginx (above) reloads on its own 6h timer.
   certbot:
     image: certbot/certbot
+    restart: unless-stopped
     volumes:
       - letsencrypt:/etc/letsencrypt
       - certbot-webroot:/var/www/certbot
     entrypoint: >
       /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done"
+
+  # Data services live in the base file; the overlay only adds the prod restart
+  # policy so the whole stack survives a host reboot (no host-side `compose up`).
+  postgres:
+    restart: unless-stopped
+
+  rabbitmq:
+    restart: unless-stopped
 
 volumes:
   # Cert material (certbot writes, nginx reads) and the shared ACME challenge webroot.

@@ -31,13 +31,9 @@ fi
 
 LIVE_PATH="/etc/letsencrypt/live/$CERTBOT_DOMAIN"
 
-echo "### Downloading certbot's recommended TLS options into the letsencrypt volume ..."
-# nginx.tls.conf includes these two files; place them before nginx first boots.
-$COMPOSE run --rm --entrypoint "/bin/sh -c \"\
-  curl -fsSL https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf \
-    -o /etc/letsencrypt/options-ssl-nginx.conf && \
-  curl -fsSL https://raw.githubusercontent.com/certbot/certbot/master/certbot/certbot/ssl-dhparams.pem \
-    -o /etc/letsencrypt/ssl-dhparam.pem\"" certbot
+# nginx's TLS settings (options-ssl-nginx.conf) are committed at ops/tls/ and
+# mounted into the frontend container by docker-compose.prod.yml — there is no
+# longer a file to download here. nginx only needs the cert itself, issued below.
 
 echo "### Creating a temporary dummy self-signed certificate so nginx can boot ..."
 $COMPOSE run --rm --entrypoint "/bin/sh -c \"\

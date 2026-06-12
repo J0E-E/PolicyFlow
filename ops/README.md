@@ -67,7 +67,17 @@ CI/CD recipe files used by the AWS build and deploy services.
 ### One-time host bootstrap order
 
 The deploy regenerates `/opt/policyflow/.env` on every run, so there is nothing to
-place by hand for it. The one-time TLS issuance (`init-letsencrypt.sh`, above) must
-still run before the first HTTPS-serving deploy, since nginx needs a real
-certificate to boot the prod overlay. The live end-to-end proof (push → Build →
-ECR → Deploy swaps the stack, migrate runs, site live over HTTPS) is Epic 12.
+place by hand for it. TLS issuance is **automatic on the first deploy**:
+`application_start.sh` self-issues the cert (dummy cert → `up -d` → certbot →
+reload) when none exists yet and no-ops once a real cert is present, so no host
+step is required; `init-letsencrypt.sh` (above) stays as a manual fallback. For the
+full ordered bring-up and the live end-to-end proof (push → Build → ECR → Deploy
+swaps the stack, migrate runs, site live over HTTPS), see `exit-test-runbook.md`.
+
+## The live proof runbook (Epic 12 — go/no-go gate)
+
+- `exit-test-runbook.md` — orchestrates the one-time bring-up across the existing
+  per-step docs into the correct end-to-end order (including the cert/image/volume
+  ordering the first HTTPS deploy hits), defines the steady-state exit test, and
+  records the live pass/fail result. It points to the per-step docs rather than
+  restating them.

@@ -159,9 +159,10 @@ resource "aws_codepipeline" "pipeline" {
   stage {
     name = "Deploy"
 
-    # Input is the Source checkout (source_output), which will carry
-    # ops/appspec.yml + lifecycle hooks once Epic 11 lands them. Until then this
-    # stage is wired but stays red ("appspec not found").
+    # Input is the Source checkout (source_output), which carries appspec.yml
+    # (at the repo root, where CodeDeploy requires it) + the lifecycle hooks in
+    # ops/deploy/. Landed in Epic 11, so this stage is wired and active: the
+    # hooks run on deploy.
     action {
       name            = "Deploy"
       category        = "Deploy"

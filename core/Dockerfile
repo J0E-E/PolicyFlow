@@ -1,4 +1,7 @@
-FROM python:3.12-slim
+# Base image pulled from Amazon ECR Public's mirror of the Docker Official Images
+# (not Docker Hub) so CodeBuild's shared-IP fleet doesn't hit Docker Hub's
+# anonymous pull rate limit. Same official image + tag; works locally too.
+FROM public.ecr.aws/docker/library/python:3.12-slim
 
 # curl is used by the docker-compose container health check that hits /api/health.
 RUN apt-get update \
