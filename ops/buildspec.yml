@@ -3,14 +3,28 @@
 # SHA and :latest, and pushes both to ECR. Epic 9's pipeline reuses this same
 # buildspec unchanged.
 #
+# pre_build runs both test suites (backend pytest + frontend vitest) before any
+# ECR login or docker build, so a red tree fails the build and no image is pushed.
+#
 # The repository URLs and region come from CodeBuild environment variables
 # (set in infra/codebuild.tf), so no account id is hard-coded here:
 #   CORE_REPOSITORY_URL, FRONTEND_REPOSITORY_URL, AWS_DEFAULT_REGION
 version: 0.2
 
 phases:
+  install:
+    runtime-versions:
+      python: "3.12"
+      nodejs: "20"
   pre_build:
     commands:
+      # Test gate — both suites must pass before any ECR login or image build.
+      # A non-zero exit here fails the whole build, so no image is pushed from a
+      # red tree. Each cd is wrapped in a subshell so the working directory does
+      # not leak into the later "docker build core" / "docker build frontend".
+      - pip install --quiet --requirement core/requirements.txt --requirement core/requirements-dev.txt
+      - (cd core && python -m pytest -q)
+      - (cd frontend && npm ci && npm test --silent)
       # Short commit SHA: first 7 chars of the source version CodeBuild resolves,
       # falling back to "dev" when it is unset (e.g. a local/manual source).
       - SHORT_SHA=$(echo "${CODEBUILD_RESOLVED_SOURCE_VERSION:-dev}" | cut -c1-7)

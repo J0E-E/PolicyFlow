@@ -80,12 +80,21 @@ Source TDD: [./tdd-P0.1a-test-harness-and-commit-gate.md](./tdd-P0.1a-test-harne
   - Out of scope (Epic 9): proving a deliberately broken test blocks a commit, and `TESTING.md`. CI mirrors (buildspec / GitHub Actions) are Epics 7–8.
   - Caveat for Epic 9 `TESTING.md`: the backend `./.venv/Scripts/python.exe` path is Windows-venv-specific (POSIX venvs use `.venv/bin/python`) — document a one-line adjustment so a non-Windows contributor can run the hook locally. Local-dev tradeoff only; CI parity is owned by Epics 7–8.
 
-## Epic 7 — CI: CodeBuild test step
+## Epic 7 — CI: CodeBuild test step — **COMPLETED**
 - **Goal:** Gate the image build on both suites — a red tree fails CodeBuild before any `docker build`, so no image is pushed.
 - **Rough scope:** Add install + run steps for both suites to the `pre_build` phase of `ops/buildspec.yml`, before the build steps.
 - **Open questions / decisions for stakeholders:** Whether Python 3.12 + Node 20 are present in the CodeBuild base image or must be installed in the `install` phase.
 - **Depends on:** Epics 3, 5.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - One file changed: `ops/buildspec.yml`. Purely additive gate — no code, no Terraform. `build`/`post_build` phases untouched, so image build/push is functionally unchanged.
+  - Resolved open question (runtimes): the base image bundles Python 3.12 + Node 20, so they are selected declaratively via a `runtime-versions` block (`python: 3.12`, `nodejs: 20`) in a new `install` phase — no manual install. *(Confirmed with stakeholder.)*
+  - Resolved open question (frontend deps): `npm ci` (clean, lockfile-exact CI install). *(Confirmed with stakeholder.)*
+  - Test gate prepended to `pre_build`, before `SHORT_SHA`/ECR-login: `pip install --quiet --requirement core/requirements.txt --requirement core/requirements-dev.txt`, then `(cd core && python -m pytest -q)`, then `(cd frontend && npm ci && npm test --silent)`. Both requirement files are needed because pytest imports `app.main` (runtime deps: asyncpg, aio-pika, fastapi) and `requirements-dev.txt` supplies pytest/httpx/pytest-asyncio.
+  - Each `cd` wrapped in a subshell `(...)` so the working directory does not leak into the later root-relative `docker build core` / `docker build frontend`.
+  - Updated the file's top comment with a one-line note about the pre_build test gate.
+  - Command parity confirmed with the Epic 6 hook and the TDD primary flow: `pytest -q` in `core`, `npm test` in `frontend`.
+  - Verified YAML validity via `yaml.safe_load`: phases parse as `install`, `pre_build`, `build`, `post_build`; runtime-versions and the three gate commands sit before `SHORT_SHA`/ECR-login. Live CodeBuild verification (a red `pre_build` failing the build before ECR push) is deferred per the TDD — out of scope for local review.
+  - Post-review nit applied: the runtime versions are quoted as strings (`python: "3.12"`, `nodejs: "20"`) so a future YAML re-serializer can't read `3.12` as a float and risk truncation to `3.1`. Cosmetic only — CodeBuild accepts both forms.
 
 ## Epic 8 — CI: GitHub Actions workflow
 - **Goal:** Branch/PR-level test signal mirroring the hook and buildspec commands.
