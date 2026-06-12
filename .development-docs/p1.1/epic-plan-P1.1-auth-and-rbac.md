@@ -174,12 +174,16 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - Per the plan + `pytest.ini` `asyncio_mode = auto`, the new async tests carry **no** `@pytest.mark.asyncio` decorator (note: the older `test_substrate.py` still uses the decorator; not touched, out of scope).
   - Suite: `core/.venv/Scripts/python -m pytest core/tests -q` → **84 passed** (74 prior + 10 new), real container boots, migrations apply. No guesses, no failures, nothing blocked.
 
-## Epic 13 — Endpoint enforcement tests (per-role, end-to-end)
+## Epic 13 — Endpoint enforcement tests (per-role, end-to-end) — **COMPLETED**
 - **Goal:** Lock down the HTTP contract — login success/failure, `me` authed/unauthed/revoked, `/api/tenant/config` returning 200 for Tenant Admin and 403/401 for everyone else, and logout revoking the session.
 - **Rough scope:** Endpoint tests driving the real routers (Epics 8, 9) against seeded users (Epic 10) over the DB-backed client (Epic 11).
 - **Open questions / decisions for stakeholders:** None expected — the cases are enumerated in the TDD's verification section.
 - **Depends on:** Epics 8, 9, 10, 11.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Test-only epic: one new file `core/tests/test_endpoints_db.py`, 11 cases, zero production-code change. Full core suite: 84 → 95 passed.
+  - Used the real `seed()` + real personas via a local function-scoped `seeded` fixture (idempotent); `conftest.py` untouched. Picked personas by role from `demo_user_specs()` via `email_for_role`; logged in with `settings.seed_user_password`. No `insert_active_user` factory.
+  - Added a small `tenant_slug_for_role` helper (alongside `email_for_role`) so the Tenant-Admin 200 case asserts the returned slug against the persona's seeded tenant, rather than hardcoding a slug — robust to seed edits.
+  - Asserted exact 401/403 detail bodies (`"invalid credentials"`, `"not authenticated"`, `"insufficient permissions"`) and verified the `pf_session` cookie is set on login; matched the `_db.py` siblings' style with no `@pytest.mark.asyncio` decorator.
 
 ## Epic 14 — CI: Postgres/Docker for the DB suite
 - **Goal:** Keep the new DB-backed suite inside the commit gate everywhere — ensure GitHub Actions and CodeBuild provide Postgres/Docker so the auth integration tests always run in CI (not just skip locally), and the gate stays green before P1.2 begins.
