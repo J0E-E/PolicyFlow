@@ -21,5 +21,17 @@ class Settings:
         # aio-pika (AMQP) connection URL for the RabbitMQ reachability probe.
         self.rabbitmq_url: str = os.environ.get("RABBITMQ_URL", "")
 
+        # How long a login session stays valid, in seconds. Defaults to 8 hours
+        # (28800s); override via SESSION_LIFETIME_SECONDS.
+        self.session_lifetime_seconds: int = int(
+            os.environ.get("SESSION_LIFETIME_SECONDS", "28800")
+        )
+
+        # Whether the session cookie carries the Secure flag (HTTPS-only).
+        # Default off for local HTTP; prod sets SESSION_COOKIE_SECURE=true.
+        self.session_cookie_secure: bool = os.environ.get(
+            "SESSION_COOKIE_SECURE", "false"
+        ).strip().lower() in ("true", "1", "yes")
+
 
 settings = Settings()

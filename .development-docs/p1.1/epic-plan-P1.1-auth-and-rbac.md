@@ -65,12 +65,19 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - Tests: `core/tests/test_provider.py`, pure unit (no DB/Docker) via a `FakeAsyncSession` whose `execute` returns a stub result yielding a chosen in-memory `User` or `None` — `Identity` frozen, happy path (real bcrypt hash via `hash_password`), wrong password → `None`, unknown/inactive (row is `None`) → `None`. Followed the suite's `asyncio_mode = auto` convention: async tests carry no `@pytest.mark.asyncio` decorator, matching `test_db.py`.
   - Full core suite green under `core/.venv` (Python 3.12): **29 passed** (existing 25 + 4 new).
 
-## Epic 5 — Server-side sessions (create / resolve / revoke)
+## Epic 5 — Server-side sessions (create / resolve / revoke) — **COMPLETED**
 - **Goal:** The session spine — issue an opaque token on login (stored only as its SHA-256 hash in `auth_sessions`), resolve a token back to the current identity, and revoke on logout — plus the cookie helpers that carry it.
 - **Rough scope:** `create_session` / `get_session_identity` / `revoke_session` against the `auth_sessions` table; the `pf_session` httpOnly cookie (SameSite=Lax, Path, Secure-in-prod, Max-Age); new session-related settings (cookie-secure flag, lifetime).
 - **Open questions / decisions for stakeholders:** Default session lifetime; exact cookie attribute defaults per environment (local HTTP vs prod HTTPS).
 - **Depends on:** Epic 2.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Settled decisions implemented: 8h default lifetime via `SESSION_LIFETIME_SECONDS` (28800s); cookie `Secure` default off, prod overrides via `SESSION_COOKIE_SECURE` (true on `"true"/"1"/"yes"`, case-insensitive).
+  - The three session functions **commit themselves** (self-contained discrete operations), so Epic 8/12 callers don't manage the transaction.
+  - `expires_at` is written from the app's UTC clock while resolution compares against the DB clock (`func.now()`) — acceptable because app and DB share one host/wall clock.
+  - `_hash_token` keeps the SHA-256 prefix and lives as a private helper; the raw token is never stored.
+  - `create_session(..., *, lifetime_seconds=None)` defaults to the configured lifetime; an explicit (incl. negative/past) value lets Epic 12 forge an already-expired session.
+  - `SESSION_COOKIE_NAME = "pf_session"` is the single place the cookie name lives.
+  - Backend-only: no route, no migration, no new dependency. Files: edited `core/app/config.py`; added `core/app/auth/sessions.py` and `core/tests/test_sessions.py`. Suite: 41 passed (29 prior green + 12 new), no live Postgres.
 
 ## Epic 6 — RBAC capability matrix
 - **Goal:** The single source of truth for authorization — the role enum, the capability enum (one per Requirements row), and the role → capabilities matrix — proven cell-by-cell against the normative table so the matrix can never silently drift.
