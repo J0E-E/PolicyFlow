@@ -131,12 +131,19 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - Tests (`core/tests/test_tenant_router.py`): pure-unit, override `get_current_identity` (so the real `require_capability` matrix runs) + `get_db` with a `FakeAsyncSession` mirroring `test_provider.py`. Covers Tenant Admin → 200 exact body; Agent / Read-Only / Platform Admin → 403; anonymous → 401.
   - Suite green: `core/.venv/Scripts/python -m pytest core/tests -q` → 63 passed (58 prior + 5 new), no live Postgres.
 
-## Epic 10 — Seed the demo personas (2 tenants + 9 users)
+## Epic 10 — Seed the demo personas (2 tenants + 9 users) — **COMPLETED**
 - **Goal:** Make the whole role matrix signable-in today — idempotently seed the two demo tenants and the nine demo users (two Agents, one Tenant Admin, one Read-Only per tenant, plus one global Platform Admin) on every boot.
 - **Rough scope:** Extend the existing seed placeholder to insert-if-absent (keyed by slug / username), bcrypt-hashing a seed password read from config (dev default locally, SSM in prod); confirm the boot logs show the counts.
 - **Open questions / decisions for stakeholders:** Final usernames/emails per persona; where the seed password default lives for local/test vs the prod SSM-injected value.
 - **Depends on:** Epics 2, 3.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Username = email** — each persona's `username` and `email` hold the same email-style string; you log in with your email.
+  - **Seed password** comes from new `Settings.seed_user_password` (`SEED_USER_PASSWORD`, dev/test default `"demo-password-change-me"`, prod injects via SSM). Added in `config.py` next to the `session_*` settings.
+  - **Persona spec is pure module-level data** in `seed.py` (`DEMO_TENANTS`, `TENANT_EMAIL_DOMAINS`, `TENANT_USER_TEMPLATES`, `PLATFORM_ADMIN_EMAIL`) exposed via `demo_tenants()` / `demo_users_for(slug)` / `demo_user_specs()`, so the 2-tenant/9-user matrix is unit-testable without a session.
+  - **Tenants:** `sunshine-senior-benefits` / "Sunshine Senior Benefits" (`@sunshine.example`), `florida-family-planning` / "Florida Family Planning" (`@florida.example`). Per tenant: `agent.one@`, `agent.two@` (AGENT), `admin@` (TENANT_ADMIN), `readonly@` (READ_ONLY); plus `platform.admin@policyflow.example` (PLATFORM_ADMIN, `tenant_id=None`).
+  - **`async def seed(db)` is insert-if-absent:** reads existing slugs/usernames into sets, inserts missing tenants with an explicit `id=uuid.uuid4()` (queries back already-present tenant ids to link their users), inserts missing users with one shared `password_hash`, commits once, and logs inserted/already-present counts at INFO. Thin sync `run()` drives it via `session_factory()` + `asyncio.run`, preserving the `python -m app.seed` entrypoint.
+  - **Tests** (`core/tests/test_seed.py`, 8 cases, pure unit, no Docker) reuse the `FakeAsyncSession`/`FakeResult` idiom — extended to replay multiple `execute` results in order and record `add`/`commit`. Cover spec correctness, empty→11 inserts with verifiable password, full→0 inserts, and partial→only-missing. Suite: **63 → 71 passed**.
+  - Docs: `seed.py` docstring rewritten (placeholder framing dropped) and `core/README.md` "Migrations on boot" step 2 updated. No migration, no new dependency, no HTTP route (matches plan's out-of-scope).
 
 ## Epic 11 — Test substrate (ephemeral Postgres)
 - **Goal:** A real-database test foundation — a session-scoped ephemeral Postgres (testcontainers) that runs the migrations and a DB-backed HTTP client fixture — so the auth suite exercises real schemas, roles, and enums; skips gracefully when Docker is absent locally.

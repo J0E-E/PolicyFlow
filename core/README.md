@@ -21,8 +21,9 @@ Alembic migrations run automatically as a boot step, never manually. The
 container entrypoint (`entrypoint.sh`) runs **migrate → seed → serve** in order:
 
 1. `alembic upgrade head` applies migrations.
-2. `python -m app.seed` runs the seed placeholder (`app/seed.py`) — the
-   importable seam P1.8 fills with real data.
+2. `python -m app.seed` runs the seed (`app/seed.py`), which idempotently
+   seeds the demo personas — two demo tenants and nine demo users (the full
+   RBAC role matrix) — inserting only what is absent on each boot.
 3. uvicorn starts and serves the app.
 
 The entrypoint uses `set -e`, so if migrate (or seed) fails the container exits

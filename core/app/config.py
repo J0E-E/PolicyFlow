@@ -33,5 +33,12 @@ class Settings:
             "SESSION_COOKIE_SECURE", "false"
         ).strip().lower() in ("true", "1", "yes")
 
+        # The password every seeded demo persona is created with. The dev/test
+        # default is a throwaway value; prod injects the real password via SSM
+        # (Terraform sets SEED_USER_PASSWORD in the container environment).
+        self.seed_user_password: str = os.environ.get(
+            "SEED_USER_PASSWORD", "demo-password-change-me"
+        )
+
 
 settings = Settings()
