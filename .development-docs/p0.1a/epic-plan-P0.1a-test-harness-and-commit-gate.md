@@ -20,12 +20,16 @@ Source TDD: [./tdd-P0.1a-test-harness-and-commit-gate.md](./tdd-P0.1a-test-harne
   - Verified green on Python 3.12.10 (project target): `cd core && python -m pytest -q` → `1 passed`. Added `.venv/` and `.pytest_cache/` to root `.gitignore` (local verification venv must never be committed).
   - Env note (resolved): the project targets Python 3.12 (per `core/Dockerfile`), but only 3.14 was installed locally, and the pre-existing **runtime** pins `asyncpg==0.30.0` / `psycopg[binary]==3.2.3` have no 3.14 wheels — so `from app.main import app` could not import under 3.14. Resolved by installing Python 3.12.10 and creating `core/.venv` (gitignored); both runtime + dev deps install cleanly there. No production pins were loosened and no imports were stubbed.
 
-## Epic 2 — Health endpoint mocking seam
+## Epic 2 — Health endpoint mocking seam — **COMPLETED**
 - **Goal:** Make the `/api/health` db and broker checks individually mockable so the ok/degraded paths can be tested deterministically — no behavior change to the endpoint.
 - **Rough scope:** Extract the two connection checks in `core/app/health.py` into named functions the route composes its status from; confirm the public response is unchanged.
 - **Open questions / decisions for stakeholders:** Exact function names and the `"ok"`/`"error"` return shape.
 - **Depends on:** Epic 1.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Seam already existed from commit `21c788a` (FastAPI core skeleton + health check); no refactor was needed — **zero production code change**.
+  - Function names = `check_database` / `check_broker`; return shape = `"ok"` / `"error"` (constants `CHECK_OK` / `CHECK_ERROR`) — matches the TDD interface, resolves the epic's open question on names + return shape.
+  - Verified mockable: `get_health` resolves both checks by module-level name at call time, so `monkeypatch.setattr("app.health.check_database", …)` / `check_broker` works for Epic 3.
+  - Public `/api/health` response unchanged (`status` + `version` + `checks` dict); harness verified still green via `core/.venv`: `python -m pytest -q` → `1 passed`.
 
 ## Epic 3 — Health tests (ok + degraded)
 - **Goal:** The first real backend tests — assert the `200/"ok"` path and the `503/"degraded"` path (including a single-check-down case) by mocking the seam from Epic 2.
