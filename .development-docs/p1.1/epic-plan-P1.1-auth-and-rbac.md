@@ -161,12 +161,18 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - Suite: `core/.venv/Scripts/python -m pytest core/tests -q` → **74 passed** (71 prior + 3 new), real container boots, migrations apply.
   - Review verdict **Approve with nits** (no changes required). Non-blocking suggestions captured as deferred, none implemented this epic: migration fix ideally its own commit (acceptable bundled, already noted above); no per-test DB rollback isolation — flagged for Epic 12; duplicated `async_sessionmaker` between `app.db` and the test engine (DRY cleanup); `database_engine` never calls `engine.dispose()` on teardown; `container.port` is an undocumented testcontainers attribute.
 
-## Epic 12 — Session & provider lifecycle tests
+## Epic 12 — Session & provider lifecycle tests — **COMPLETED**
 - **Goal:** Prove the auth internals against a real database — session create → resolve → revoke, an expired session not resolving, and provider authentication succeeding/failing on the right inputs.
 - **Rough scope:** DB-backed tests over the sessions module (Epic 5) and the provider (Epic 4) using the substrate; no HTTP layer yet.
 - **Open questions / decisions for stakeholders:** Which expiry/revocation edge cases to cover beyond the happy path.
 - **Depends on:** Epics 4, 5, 11.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Test-only epic as planned: no production code, migration, dependency, or HTTP layer touched. Three new files under `core/tests/`, all green.
+  - **New `factories.py` → `insert_active_user`**: seeds a committed `User` (real `hash_password` bcrypt hash) plus its `Tenant`, isolated by `uuid`-suffixed username/email/slug (no rollback fixture, per settled decision). `flush()` (not commit) the tenant first to get its id, then commit the user. Skips the tenant for `PLATFORM_ADMIN` to honor the `platform_admin_tenantless` CHECK. Default `password="correct horse battery staple"` returned to the caller via the known plaintext.
+  - **`test_sessions_db.py`** (5 tests): happy-path create→resolve identity match; expired (`lifetime_seconds=-1`) → `None`; revoked → `None`; unknown token → `None`; double-revoke + unknown-token revoke are no-ops.
+  - **`test_provider_db.py`** (5 tests): success identity match; wrong password / unknown username / inactive user / upper-cased (case-sensitive) username all → `None`.
+  - Per the plan + `pytest.ini` `asyncio_mode = auto`, the new async tests carry **no** `@pytest.mark.asyncio` decorator (note: the older `test_substrate.py` still uses the decorator; not touched, out of scope).
+  - Suite: `core/.venv/Scripts/python -m pytest core/tests -q` → **84 passed** (74 prior + 10 new), real container boots, migrations apply. No guesses, no failures, nothing blocked.
 
 ## Epic 13 — Endpoint enforcement tests (per-role, end-to-end)
 - **Goal:** Lock down the HTTP contract — login success/failure, `me` authed/unauthed/revoked, `/api/tenant/config` returning 200 for Tenant Admin and 403/401 for everyone else, and logout revoking the session.
