@@ -67,12 +67,18 @@ Source TDD: [./tdd-P0.1a-test-harness-and-commit-gate.md](./tdd-P0.1a-test-harne
   - No test-framework imports — `vite.config.ts` sets `globals: true`, so `describe`/`it`/`expect` are global (matches `harness.test.ts`). `.toBeInTheDocument()` comes from the jest-dom matchers loaded in `src/test/setup.ts`.
   - Verified green: `cd frontend && npm test` → `2 passed` (this test + `harness.test.ts`), exit 0. `cd frontend && npm run build` (`tsc -b && vite build`) succeeded, exit 0. Test run logs two React Router v7 future-flag advisory warnings (stderr only, not failures).
 
-## Epic 6 — Commit gate (pre-commit)
+## Epic 6 — Commit gate (pre-commit) — **COMPLETED**
 - **Goal:** A blocking `pre-commit` gate that runs both suites on every commit and rejects any red commit.
 - **Rough scope:** Root `.pre-commit-config.yaml` with two `language: system` hooks (`backend-tests`, `frontend-tests`), `always_run: true`, `pass_filenames: false`.
 - **Open questions / decisions for stakeholders:** Exact invocation strings per host shell (Windows/PowerShell vs bash wrappers).
 - **Depends on:** Epics 3, 5.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - One new file at repo root: `.pre-commit-config.yaml`. Purely additive — no production/test/config code touched. pre-commit 4.5.1 on the host.
+  - Resolved open question (invocation strings): both hooks wrap the suite in `bash -c '…'` (Git Bash is available on this Windows host). Backend = `cd core && ./.venv/Scripts/python.exe -m pytest -q` — calls the project's Python 3.12 venv interpreter **explicitly** because the system Python is 3.14 and cannot import the app (the runtime pins have no 3.14 wheels). Frontend = `cd frontend && npm test --silent`.
+  - Both hooks: `language: system`, `always_run: true`, `pass_filenames: false`, `stages: [pre-commit]`. No path filtering — every commit runs both full suites.
+  - Verified via the framework: `pre-commit install` → installed at `.git/hooks/pre-commit`; `pre-commit run --all-files` → `backend-tests…Passed`, `frontend-tests…Passed` (backend 5 passed, frontend 2 passed under the hood).
+  - Out of scope (Epic 9): proving a deliberately broken test blocks a commit, and `TESTING.md`. CI mirrors (buildspec / GitHub Actions) are Epics 7–8.
+  - Caveat for Epic 9 `TESTING.md`: the backend `./.venv/Scripts/python.exe` path is Windows-venv-specific (POSIX venvs use `.venv/bin/python`) — document a one-line adjustment so a non-Windows contributor can run the hook locally. Local-dev tradeoff only; CI parity is owned by Epics 7–8.
 
 ## Epic 7 — CI: CodeBuild test step
 - **Goal:** Gate the image build on both suites — a red tree fails CodeBuild before any `docker build`, so no image is pushed.

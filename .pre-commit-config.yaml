@@ -1,0 +1,23 @@
+# Pre-commit gate — runs BOTH test suites on every commit and rejects any red commit.
+# Both hooks are language: system (we run the suites with the project's own toolchains,
+# not a pre-commit-managed environment) and always_run with no path filtering, so a
+# commit touching any file still runs the full backend + frontend suites.
+repos:
+  - repo: local
+    hooks:
+      - id: backend-tests
+        name: backend-tests
+        # Explicit Python 3.12 venv interpreter: the system Python is 3.14 and cannot
+        # import the app (no 3.14 wheels for the runtime pins), so we call core/.venv directly.
+        entry: bash -c 'cd core && ./.venv/Scripts/python.exe -m pytest -q'
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: frontend-tests
+        name: frontend-tests
+        entry: bash -c 'cd frontend && npm test --silent'
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-commit]
