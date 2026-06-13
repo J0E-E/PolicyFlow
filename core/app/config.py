@@ -4,7 +4,41 @@ All values come from the process environment, which docker-compose composes
 from the existing POSTGRES_* / RABBITMQ_* credential variables.
 """
 
+import base64
 import os
+
+# Self-documenting 32-byte throwaway phrase used as the dev/test master key when
+# no PII_MASTER_KEY is set. It is exactly 32 ASCII bytes and visibly screams
+# "not for prod"; production injects a real key via the PII_MASTER_KEY env var.
+DEV_THROWAWAY_MASTER_KEY_PHRASE = "policyflow-dev-throwaway-key!!!!"
+DEV_THROWAWAY_MASTER_KEY_BASE64 = base64.b64encode(
+    DEV_THROWAWAY_MASTER_KEY_PHRASE.encode("ascii")
+).decode("ascii")
+
+
+def decode_master_key(raw_base64: str) -> bytes:
+    """Base64-decode a master key and confirm it is exactly 32 bytes.
+
+    The PII master key wraps every tenant's data key, so a malformed key must
+    fail loudly at boot rather than silently degrade. Any base64 decode error
+    or a wrong length raises ``ValueError`` with a clear message; on success the
+    32 raw bytes are returned.
+    """
+    try:
+        decoded_key = base64.b64decode(raw_base64, validate=True)
+    except (ValueError, base64.binascii.Error) as error:
+        raise ValueError(
+            "PII master key is not valid base64; "
+            "set PII_MASTER_KEY to a base64-encoded 32-byte key."
+        ) from error
+
+    if len(decoded_key) != 32:
+        raise ValueError(
+            "PII master key must decode to exactly 32 bytes, "
+            f"but decoded to {len(decoded_key)} bytes."
+        )
+
+    return decoded_key
 
 
 class Settings:
@@ -38,6 +72,15 @@ class Settings:
         # (Terraform sets SEED_USER_PASSWORD in the container environment).
         self.seed_user_password: str = os.environ.get(
             "SEED_USER_PASSWORD", "demo-password-change-me"
+        )
+
+        # The master key that wraps each tenant's data key, exposed as the
+        # decoded 32 raw bytes. The dev/test default is a throwaway value; prod
+        # injects a real base64-encoded 32-byte key via SSM (Terraform sets
+        # PII_MASTER_KEY in the container environment). Decoding happens here at
+        # import time, so a malformed key fails boot loudly (fail-fast).
+        self.pii_master_key: bytes = decode_master_key(
+            os.environ.get("PII_MASTER_KEY", DEV_THROWAWAY_MASTER_KEY_BASE64)
         )
 
 

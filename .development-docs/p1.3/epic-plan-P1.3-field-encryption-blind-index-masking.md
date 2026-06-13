@@ -6,12 +6,18 @@ Source TDD: [./tdd-P1.3-field-encryption-blind-index-masking.md](./tdd-P1.3-fiel
 
 > High-level agile roadmap. Each epic's design specifics are confirmed with stakeholders at epic time (`4-plan-epic`) before any code is written.
 
-## Epic 1 — Dependency + master-key config
+## Epic 1 — Dependency + master-key config — **COMPLETED**
 - **Goal:** Land the cryptography runtime dependency and a validated `PII_MASTER_KEY` config value so every later epic has a real master key to wrap/unwrap with — with a throwaway dev/test default and fail-fast on a bad key at boot.
 - **Rough scope:** Add `cryptography` to the core requirements; add a `pii_master_key` setting to `config.py` (base64-decode, length-check to 32 bytes, throwaway dev default, loud failure on an undecodable/short key). Unit coverage for the decode/validation. No DB, no crypto logic yet.
 - **Open questions / decisions for stakeholders:** Exact env var name and the dev-default value; whether a bad key raises at import or at first use; how the length/format check reports failure.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Env var `PII_MASTER_KEY`; dev/test default is base64 of the 32-ASCII-byte phrase `policyflow-dev-throwaway-key!!!!`, exposed via module constants `DEV_THROWAWAY_MASTER_KEY_PHRASE` / `DEV_THROWAWAY_MASTER_KEY_BASE64` in `config.py`. Mirrors the `seed_user_password` env/SSM precedent.
+  - Validation lives in a pure helper `decode_master_key(raw_base64) -> bytes`: base64-decode with `validate=True`, exact-32-byte check, `ValueError` (clear message) on undecodable input or wrong length. Extracting it from `Settings.__init__` makes the failure paths unit-testable without manipulating import-time env.
+  - `settings.pii_master_key` is the decoded 32 raw `bytes`; decode runs at import (`settings = Settings()`), so a malformed key fails boot loudly (fail-fast at import, not first use). Epic 2+ receive ready-to-use key material.
+  - Dependency pinned `cryptography==49.0.0` — latest stable pyca release (released 2026-06-12), verified on PyPI; supersedes the plan's tentative `44.0.0` suggestion per the instruction to pin the current latest. Installs cleanly in the container test run.
+  - New pure unit module `core/tests/test_config.py` (mirrors `test_passwords.py`): valid-32-byte round-trip, undecodable raises, too-short/too-long raise, dev default decodes to 32 bytes, live `settings.pii_master_key` is 32 `bytes`.
+  - Test note: this local Windows Python lacks `asyncpg`, so `tests/conftest.py` (which builds a DB engine at import) aborts pytest collection for the whole suite — a pre-existing environment limitation, not introduced here (`test_passwords.py` fails identically). Ran the new + password unit tests in a `python:3.12-slim` container with full runtime + dev deps: **11 passed**.
 
 ## Epic 2 — Crypto primitives (pure)
 - **Goal:** Provide the small, DB-free crypto toolkit the rest of the phase composes — authenticated encryption, master-key wrap/unwrap, HKDF subkey derivation, the HMAC blind index, and value normalization — each a pure, fully unit-tested function.
