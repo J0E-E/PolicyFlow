@@ -25,6 +25,14 @@ jobs:
       # Both requirement files: pytest imports app.main, which needs the runtime
       # deps (asyncpg, aio-pika, fastapi) on top of the dev-only test deps.
       - run: pip install --requirement core/requirements.txt --requirement core/requirements-dev.txt
+      # The backend suite includes DB-backed tests that boot their own ephemeral
+      # Postgres via the runner's Docker engine (testcontainers). We deliberately
+      # do NOT use a `services: postgres` sidecar: the test substrate always boots
+      # its own throwaway container and ignores any external DATABASE_URL, so a
+      # sidecar would sit unused. ubuntu-latest ships a ready Docker daemon, so we
+      # assert it here — a runner without reachable Docker fails loudly at this step
+      # rather than partway through the DB suite (honoring "fail, never skip").
+      - run: docker info
       - run: python -m pytest -q
         working-directory: core
 

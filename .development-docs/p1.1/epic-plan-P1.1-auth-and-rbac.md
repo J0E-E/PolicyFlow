@@ -185,9 +185,14 @@ Source TDD: [./tdd-P1.1-auth-and-rbac.md](./tdd-P1.1-auth-and-rbac.md)
   - Added a small `tenant_slug_for_role` helper (alongside `email_for_role`) so the Tenant-Admin 200 case asserts the returned slug against the persona's seeded tenant, rather than hardcoding a slug — robust to seed edits.
   - Asserted exact 401/403 detail bodies (`"invalid credentials"`, `"not authenticated"`, `"insufficient permissions"`) and verified the `pf_session` cookie is set on login; matched the `_db.py` siblings' style with no `@pytest.mark.asyncio` decorator.
 
-## Epic 14 — CI: Postgres/Docker for the DB suite
+## Epic 14 — CI: Postgres/Docker for the DB suite — **COMPLETED**
 - **Goal:** Keep the new DB-backed suite inside the commit gate everywhere — ensure GitHub Actions and CodeBuild provide Postgres/Docker so the auth integration tests always run in CI (not just skip locally), and the gate stays green before P1.2 begins.
 - **Rough scope:** Wire a Postgres service or Docker-in-job into the existing GitHub Actions workflow and confirm CodeBuild's `pre_build` can run testcontainers; no app code.
 - **Open questions / decisions for stakeholders:** GHA approach — a `services: postgres` container vs Docker-in-job for testcontainers; confirm CodeBuild's Docker availability covers the test phase.
 - **Depends on:** Epics 11, 13.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - CI config only — no app/test code, no Terraform change. Chose **Docker-in-job, not `services: postgres`** (stakeholder-confirmed): the substrate always boots its own ephemeral Postgres via testcontainers and ignores any external `DATABASE_URL`, so a sidecar would be unused.
+  - Phase 1 (`.github/workflows/tests.yml`, `backend` job): added a `docker info` step before the pytest run so a runner without reachable Docker fails fast (honoring Epic 11's "fail, never skip"); pytest command unchanged. Added comments documenting the Docker-in-job decision and why no `services: postgres`.
+  - Phase 2 (`ops/buildspec.yml`, `pre_build`): added a bounded wait-for-Docker guard `timeout 60 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'` before pytest, removing provisioning-race fragility. `testcontainers` already installed via `core/requirements-dev.txt`; existing `pip install` covers it. Added comments.
+  - Confirmed `privileged_mode = true` already set at `infra/codebuild.tf:138` — no Terraform edit needed.
+  - Did NOT add `TESTCONTAINERS_RYUK_DISABLED` or any env that would diverge CI from local.

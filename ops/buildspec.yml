@@ -23,6 +23,16 @@ phases:
       # red tree. Each cd is wrapped in a subshell so the working directory does
       # not leak into the later "docker build core" / "docker build frontend".
       - pip install --quiet --requirement core/requirements.txt --requirement core/requirements-dev.txt
+      # The backend suite includes DB-backed tests that boot their own ephemeral
+      # Postgres via testcontainers using this build's privileged Docker — the same
+      # daemon used by the later "docker build" steps. CodeBuild starts dockerd
+      # during environment provisioning (privileged_mode = true in
+      # infra/codebuild.tf), so this normally passes immediately; the bounded wait
+      # removes any provisioning-race fragility and fails fast with a clear signal
+      # if the daemon never comes up. testcontainers is already installed above
+      # (it's in core/requirements-dev.txt). No services/sidecar Postgres is used —
+      # the substrate always boots its own throwaway container.
+      - timeout 60 sh -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
       - (cd core && python -m pytest -q)
       - (cd frontend && npm ci && npm test --silent)
       # Short commit SHA: first 7 chars of the source version CodeBuild resolves,
