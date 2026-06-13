@@ -1,21 +1,24 @@
-"""The tenant HTTP surface: a guarded read of the caller's tenant config.
+"""The tenant HTTP surface: guarded reads of the caller's own tenant data.
 
-This is the RBAC demonstrator — the first route that proves the capability matrix
-end-to-end over real HTTP. It adds no new auth logic of its own; it only composes
-the pieces the earlier epics built in isolation: `require_capability` over the RBAC
-matrix (Epics 6–7) guarding a read of the `Tenant` model (Epic 2), exactly as the
-auth router composed its own ingredients.
+This is the RBAC and isolation demonstrator — the routes that prove the earlier
+epics' guarantees end-to-end over real HTTP. They add no new auth logic of their
+own; they only compose the pieces the earlier epics built in isolation.
 
-One endpoint under `/api/tenant`:
+Endpoints under `/api/tenant`:
 
 - `GET /config` returns the signed-in caller's tenant config, but only when the
   caller is a Tenant Admin. The guard raises 401 (no session) / 403 (a role that
   lacks `VIEW_TENANT_CONFIG`) for free, so the handler only ever runs for a Tenant
   Admin.
+- `GET /settings` returns the caller's own `tenant_settings` row and nothing else.
+  It takes **no tenant parameter** — isolation comes entirely from the Epic-5
+  `get_tenant_db` scoping dependency, which points the session's `search_path` at
+  the caller's own schema. That dependency chains through `require_authenticated`,
+  so 401 (unauthenticated) and 400 (tenantless caller) are inherited for free.
 
-The body is the `{"tenant": {...}}` envelope, mirroring the auth router's
-`{"user": {...}}` style. Raw `UUID` values are returned as-is for FastAPI's encoder
-to serialize, the style `router.py`/`health.py` use.
+The bodies use the `{"tenant": {...}}` / `{"settings": {...}}` envelope, mirroring
+the auth router's `{"user": {...}}` style. Raw `UUID` values are returned as-is for
+FastAPI's encoder to serialize, the style `router.py`/`health.py` use.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,6 +30,8 @@ from ..auth.provider import Identity
 from ..auth.rbac import Capability
 from ..db import get_db
 from ..models.tenant import Tenant
+from ..models.tenant_settings import TenantSettings
+from ..tenancy.scoping import get_tenant_db
 
 router = APIRouter(prefix="/api/tenant")
 
@@ -64,5 +69,37 @@ async def get_tenant_config(
             "id": tenant.id,
             "name": tenant.name,
             "slug": tenant.slug,
+        }
+    }
+
+
+@router.get("/settings")
+async def get_tenant_settings(
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Return the caller's own tenant settings row, scoped by `get_tenant_db`.
+
+    There is deliberately **no tenant parameter** — the caller can only ever read
+    their own tenant. Isolation comes entirely from the `get_tenant_db` dependency,
+    which sets the session's `search_path` to the caller's schema, so the schema-less
+    `TenantSettings` query resolves to that one schema. The dependency chains through
+    `require_authenticated`, so an unauthenticated caller gets 401 and a tenantless
+    caller (a Platform Admin) gets `400 {"detail": "no tenant context"}`, both for
+    free.
+
+    The single per-tenant row is read with `scalar_one()` and returned under the
+    `{"settings": {...}}` envelope. The raw `tenant_id` UUID is returned as-is for
+    FastAPI's encoder, matching the `/config` style; `created_at` is omitted.
+    """
+    settings = (
+        await db.execute(select(TenantSettings))
+    ).scalar_one()
+
+    return {
+        "settings": {
+            "tenant_id": settings.tenant_id,
+            "brand_primary_color": settings.brand_primary_color,
+            "brand_logo_url": settings.brand_logo_url,
+            "welcome_message": settings.welcome_message,
         }
     }

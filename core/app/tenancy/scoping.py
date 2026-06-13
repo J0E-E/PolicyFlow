@@ -85,6 +85,14 @@ async def get_tenant_db(
     if identity.tenant_id is None:
         raise HTTPException(status_code=400, detail="no tenant context")
 
+    # `require_authenticated` resolves the caller by reading the session table on
+    # this same session, which auto-begins a read transaction. Close it out first
+    # so the scoped transaction below starts clean — `db.begin()` would otherwise
+    # raise "a transaction is already begun". The identity is already materialized,
+    # so discarding that read transaction loses nothing.
+    if db.in_transaction():
+        await db.rollback()
+
     async with db.begin():
         tenant_row = (
             await db.execute(

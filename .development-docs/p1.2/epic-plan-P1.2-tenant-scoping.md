@@ -81,12 +81,19 @@ Source TDD: [./tdd-P1.2-tenant-scoping.md](./tdd-P1.2-tenant-scoping.md)
   - **Not a UI epic** — backend dependency + tests only; no `[UI]` tag.
   - Full suite green: `cd core && pytest` → **120 passed** (Docker substrate up); +3 over Epic 4's 117 (the new happy-path, 400-guard, and reset proofs).
 
-## Epic 6 — Tenant-scoped demonstrator endpoint
+## Epic 6 — Tenant-scoped demonstrator endpoint — **COMPLETED**
 - **Goal:** Prove isolation end-to-end over HTTP — `GET /api/tenant/settings` returns the caller's own settings row and nothing else, with no tenant parameter that could ask for another tenant's data.
 - **Rough scope:** Add the route to `tenant/router.py` behind `require_authenticated` + `get_tenant_db`; map the settings row to a response. Endpoint tests: a Sunshine user sees only Sunshine's values, a Florida user only Florida's, values never cross, and a tenantless caller gets `400`.
 - **Open questions / decisions for stakeholders:** Response field names/shape for the settings payload.
 - **Depends on:** Epic 5 (`get_tenant_db`), Epic 4 (settings row).
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Phase 1 — endpoint.** New `GET /api/tenant/settings` added to `core/app/tenant/router.py`, depending only on `get_tenant_db` (from `app.tenancy.scoping`). It has **no tenant parameter** — isolation comes entirely from the dependency's `search_path`, so the schema-less `select(TenantSettings)` resolves to the caller's own schema and `scalar_one()` returns that one row. `tenant_router` was already mounted in `main.py`; no `main.py` change.
+  - **Settled response shape (stakeholder-confirmed):** `{"settings": {tenant_id, brand_primary_color, brand_logo_url, welcome_message}}` — snake_case, matching the `/config` envelope style; the raw `tenant_id` UUID is returned as-is for FastAPI's encoder and `created_at` is omitted.
+  - **401/400 inherited for free:** `get_tenant_db` chains through `require_authenticated`, so an unauthenticated caller gets 401 and a tenantless Platform Admin gets `400 {"detail": "no tenant context"}` with no new auth logic in the route.
+  - **Necessary fix to the Epic-5 seam (in-scope, surfaced by this epic):** Epic 6 is the first route to compose `get_tenant_db` behind `require_authenticated` over real HTTP. `require_authenticated` reads the session table on the *same* `get_db` session to resolve the caller, which auto-begins a read transaction; `get_tenant_db`'s `async with db.begin()` then raised `InvalidRequestError: A transaction is already begun on this Session`. Added a guard in `core/app/tenancy/scoping.py` — `if db.in_transaction(): await db.rollback()` — to close that already-materialized identity-read transaction before opening the scoped one. This is harmless for the Epic-5 unit-driven test (fresh, untouched session → `in_transaction()` is `False`, no-op) and is the production path's actual lifecycle. Epic 5's `test_tenant_scoping.py` stays green unchanged.
+  - **Tests.** New `core/tests/test_tenant_settings_endpoint.py`, DB-backed, mirrors `test_endpoints_db.py` (`seeded`/`db_client` fixtures, `login_as`/`tenant_slug_for_role` helpers reused by import; `db_client` comes from `conftest.py` automatically). Phase 1: a logged-in Tenant Admin GETs the endpoint → 200 with the four decided fields and that tenant's seeded values. Phase 2: cross-tenant isolation loops each tenant slug from `demo_user_specs()`, logging in a persona per tenant and asserting it reads only its own welcome message / colour, with all tenant_ids and welcome messages distinct (values never cross); the tenantless Platform Admin → 400 `{"detail": "no tenant context"}`; and an unauthenticated client → 401.
+  - **Not a UI epic** — backend route + tests only; no `[UI]` tag.
+  - Full suite green: `cd core && pytest` → **124 passed** (Docker substrate up); +4 over Epic 5's 120 (happy-path, cross-tenant isolation, tenantless-400, unauthenticated-401).
 
 ## Epic 7 — Platform-Admin carve-out (dependency + endpoint)
 - **Goal:** Provide the sanctioned cross-tenant operational read path — a platform-scoped role and a `require_platform_admin` gate behind `GET /api/platform/tenant-settings` that lists every tenant's settings (operational metadata, no PII), with a clearly named audit-emission seam that emits nothing yet.
