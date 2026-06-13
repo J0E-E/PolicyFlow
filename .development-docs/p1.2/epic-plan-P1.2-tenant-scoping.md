@@ -122,9 +122,18 @@ Source TDD: [./tdd-P1.2-tenant-scoping.md](./tdd-P1.2-tenant-scoping.md)
   - **Phase 2 — named app-layer A-vs-B acceptance + carve-out.** Reuses the `seeded` / `db_client` substrate and helpers (`login_as`, `slugs_with_a_tenant_user`, `expected_settings_for_slug`) imported from `test_endpoints_db.py` and `test_tenant_settings_endpoint.py`. The named acceptance test drives `GET /api/tenant/settings` as a persona per tenant and asserts each caller reads only its own row, with `tenant_id`s and welcome messages distinct across tenants (a cross-leak fails loudly). The carve-out boundary test asserts a tenant persona hitting `GET /api/platform/tenant-settings` gets 403 — the platform path is the only sanctioned cross-tenant read.
   - **Verification:** `cd core && pytest` (Docker substrate up) → **133 passed**; +4 over Epic 7's 129 (Phase 1: cross-schema denial proof + own-schema read; Phase 2: A-vs-B acceptance + carve-out 403), no regressions.
 
-## Epic 9 — Alembic hygiene: schema filter + round-trip
+## Epic 9 — Alembic hygiene: schema filter + round-trip — **COMPLETED**
 - **Goal:** Keep the migration gate clean now that hand-written tenant schemas exist — restrict Alembic's comparison to `platform` (+ declared model schemas) so `public`, `information_schema`, and the migration-owned tenant schemas don't surface as phantom drift, closing the Epic 11 caveat.
 - **Rough scope:** An `include_name`/`include_object` filter in `alembic/env.py`; confirm `alembic upgrade head` → `alembic downgrade` round-trips and `alembic check` reports no drift; confirm CI stays green.
 - **Open questions / decisions for stakeholders:** Exact allow-list of schemas the filter keeps; whether to assert "no drift" as a test or only in CI.
 - **Depends on:** Epic 2, Epic 4.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Phase 1 (production): added `include_name` and `include_object` helpers to `core/alembic/env.py` and wired both into both `context.configure()` calls (offline + online) alongside the existing `include_schemas=True`.
+  - Allow-list is derived from `Base.metadata` per the stakeholder decision (`{table.schema for table in Base.metadata.tables.values()}` → `{None, "platform"}`), so it tracks future models automatically rather than being hardcoded.
+  - `include_object` excludes the schema-less `tenant_settings` demonstrator table — stops Alembic both from wanting to create it in the default schema and (belt-and-suspenders) from flagging the real per-tenant copies, which `include_name` already drops.
+  - Phase 2 (test): added `core/tests/test_migration_hygiene.py` with a no-drift test (`alembic.command.check` does not raise) and a round-trip test (`downgrade base` → `upgrade head`, asserting it ends back at head; head restored in `finally`). Both ride the session-scoped `database_engine` container substrate and reuse the `alembic.command` + `Config` idiom from `conftest.py`.
+  - Round-trip test reads `alembic_version` via a short-lived sync psycopg engine (`MigrationContext.get_current_revision`) to assert the head/base state without hardcoding revision IDs.
+  - `DATABASE_URL` is set/restored via a `database_url_pointed_at` context manager mirroring the conftest no-leak `finally` pattern.
+  - Verification: `pytest -q` with the Docker substrate up → 135 passed (+2 over Epic 8's 133).
+  - **Completion gate (Epic 8-complete):** green gate re-run via the project's real toolchain — backend `core/.venv/Scripts/python.exe -m pytest -q` → **135 passed**, frontend `npm test` → 2 passed; both suites are the project's gate (`.pre-commit-config.yaml`), and the project carries no separate lint/typecheck tooling. No regressions.
+  - **Reviewability flag (non-blocking):** change set is ~177 changed lines across 2 non-generated files (`env.py` +41, new `test_migration_hygiene.py` 136 lines) — slightly over the ~150-line soft budget but two cohesive concerns (production filter + the no-drift/round-trip test proving it) and well under the 8-file count; kept as one focused epic.

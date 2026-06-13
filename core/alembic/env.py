@@ -31,6 +31,43 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def include_name(name, type_, parent_names) -> bool:
+    """Limit autogenerate/check to the schemas the models actually declare.
+
+    With ``include_schemas=True`` Alembic reflects *every* schema in the live
+    database — including the migration-owned tenant schemas (``sunshine`` /
+    ``florida``) and Postgres's built-in ``public`` / ``information_schema`` —
+    none of which any model owns, so Alembic would report them as phantom drift.
+
+    For ``type_ == "schema"`` we keep only the schemas the models declare,
+    derived from the metadata itself so the allow-list tracks any future model
+    automatically: ``{table.schema for table in Base.metadata.tables.values()}``
+    yields ``{None, "platform"}`` (``None`` is Alembic's default schema). For
+    every other object type we return ``True`` and leave the comparison untouched.
+    """
+    if type_ == "schema":
+        declared_schemas = {
+            table.schema for table in Base.metadata.tables.values()
+        }
+        return name in declared_schemas
+    return True
+
+
+def include_object(object_, name, type_, reflected, compare_to) -> bool:
+    """Exclude the deliberately schema-less demonstrator table from comparison.
+
+    ``TenantSettings`` maps to the default schema in the models but physically
+    exists only inside each tenant schema, so without this filter Alembic would
+    want to *create* ``tenant_settings`` in the default schema (the metadata
+    side) and *drop* the real per-tenant copies. Dropping the table from the
+    comparison closes both halves of that phantom drift; the per-tenant copies
+    are also already excluded by ``include_name`` (belt and suspenders).
+    """
+    if type_ == "table" and name == "tenant_settings":
+        return False
+    return True
+
+
 def get_synchronous_database_url() -> str:
     """Return the DATABASE_URL rewritten for SQLAlchemy's sync psycopg driver.
 
@@ -59,6 +96,8 @@ def run_migrations_offline() -> None:
         url=get_synchronous_database_url(),
         target_metadata=target_metadata,
         include_schemas=True,
+        include_name=include_name,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -83,6 +122,8 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             include_schemas=True,
+            include_name=include_name,
+            include_object=include_object,
         )
 
         with context.begin_transaction():
