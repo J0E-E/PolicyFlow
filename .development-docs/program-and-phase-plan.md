@@ -190,7 +190,7 @@ under-specified plan.
 Foundations precede all feature work. Planned in detail (next milestone). Phases are
 ordered so the system stays runnable/deployable after each.
 
-#### P1.1 — Authentication & RBAC
+#### P1.1 — Authentication & RBAC — **COMPLETE**
 
 - **Goal:** Username/password auth behind a pluggable `AuthProvider`; fixed
   server-side RBAC enforced on every API request.
@@ -205,6 +205,18 @@ ordered so the system stays runnable/deployable after each.
   tenant context; RBAC checks run before any data access.
 - **Why now:** every later endpoint needs enforcement from day one.
 - **Size:** M.
+- **Status:** **COMPLETE** (2026-06-12). All 14 epics shipped behind a green gate
+  (core suite **95 passed** on the real ephemeral-Postgres substrate). Acceptance met:
+  the nine seeded personas sign in (`POST /api/auth/login` → `pf_session` cookie); the
+  role→capability matrix is enforced server-side (`require_capability`) and verified
+  cell-by-cell and end-to-end (Tenant-Admin-only `GET /api/tenant/config` returns 200,
+  every other role 403, anonymous 401); unauthorized calls are rejected. Auth lives
+  behind the pluggable `AuthProvider` seam (`LocalPasswordAuthProvider`); sessions are
+  opaque tokens stored only as SHA-256 hashes. The DB-backed suite runs inside the CI
+  gate (GitHub Actions + CodeBuild, Docker-in-job). Epic plan:
+  `./p1.1/epic-plan-P1.1-auth-and-rbac.md`. One out-of-scope migration bug (generic
+  `sa.Enum` vs PG `ENUM` double `CREATE TYPE`) was surfaced and fixed by the Epic 11
+  real-DB substrate — exactly what it exists to catch.
 
 #### P1.2 — Tenant scoping (schema-per-tenant)
 
@@ -354,7 +366,7 @@ Real services replace P1–P2 stubs behind the same events.
 M0  P0.1 ✓ Walking Skeleton & Pipeline        (exit test PASSED 2026-06-12 — gate cleared)
         → P0.1a ✓ Test harness & commit gate   (tests + pre-commit gate live from here on)
         |
-M1  P1.1 Auth/RBAC → P1.2 Tenant schemas → P1.3 Encryption → P1.4 Audit
+M1  P1.1 ✓ Auth/RBAC → P1.2 Tenant schemas → P1.3 Encryption → P1.4 Audit
         → P1.5 Event bus+stubs → P1.6 Demo shell [UI]
         → P1.7 Intake/queue/qualify/dup [UI] → P1.8 Seed+sessions → P1.9 Timeline [UI]
         |
@@ -507,3 +519,13 @@ backend `pytest` suite (5 passed) and frontend Vitest suite (2 passed) behind a 
 mirrored in CodeBuild `pre_build` and GitHub Actions, with the standing rule in
 `../../TESTING.md`. Every later phase now adds cases behind a green gate. **Next move:**
 start **Milestone 1** with **P1.1 (Auth/RBAC)**.
+
+**2026-06-12** — **P1.1 COMPLETE — Milestone 1 underway.** All 14 epics shipped: async
+SQLAlchemy + the `platform` schema (`tenants`/`users`/`auth_sessions`), bcrypt hashing,
+the pluggable `AuthProvider` (`LocalPasswordAuthProvider`), opaque SHA-256-hashed
+sessions, the role→capability matrix + `require_capability` guard, the auth router
+(`login`/`logout`/`me`), a guarded RBAC demonstrator (`GET /api/tenant/config`), the
+2-tenant/9-persona seed, and a real ephemeral-Postgres test substrate. Core suite **95
+passed**; the DB-backed suite runs in the CI gate (GitHub Actions + CodeBuild). The
+substrate surfaced and fixed a live migration bug (generic `sa.Enum` vs PG `ENUM`).
+**Next move:** **P1.2 (Tenant scoping — schema-per-tenant)**, which retires Risk #3.
