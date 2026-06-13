@@ -19,12 +19,21 @@ Source TDD: [./tdd-P1.2-tenant-scoping.md](./tdd-P1.2-tenant-scoping.md)
   - `tenant_by_slug` raises `KeyError` on an unknown slug, preserving the loud-failure behavior the seed's previous `dict[slug]` lookup had.
   - Tests live in `core/tests/test_registry.py` (the plan body's `core/app/tests/...` reference is a typo; the repo convention and the approved key decisions place tests in `core/tests/`).
 
-## Epic 2 — Migration `0003`: schemas, roles, grants, tenant columns
+## Epic 2 — Migration `0003`: schemas, roles, grants, tenant columns — **COMPLETED**
 - **Goal:** Provision the isolation backbone in the database — one schema per tenant owned by a dedicated per-tenant role, a platform read-role, the GRANT/REVOKE model that makes the schema boundary the enforcement layer, and the new `schema_name`/`db_role` columns on `platform.tenants`.
 - **Rough scope:** A hand-written Alembic migration driven by the registry: idempotent `CREATE ROLE`, `CREATE SCHEMA ... AUTHORIZATION`, `USAGE` + default privileges per tenant; the `platform_reader` role; make the connected login role `NOINHERIT` and a member of every tenant role + `platform_reader`; add the two `platform.tenants` columns; ordered downgrade (revoke/drop in dependency order).
 - **Open questions / decisions for stakeholders:** Exact grant set and default-privilege wording; whether the two new columns are added `NULL` then tightened to `NOT NULL` after the Epic 3 backfill, or backfilled inside this migration.
 - **Depends on:** Epic 1.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - New hand-written migration `core/alembic/versions/0003_tenant_schemas.py` (`revision = "0003_tenant_schemas"`, `down_revision = "0002_platform_identity"`), driven entirely by `app.tenancy.registry` (`TENANTS`, `PLATFORM_ROLE`) so identifiers come only from the single source of truth, never user input.
+  - The two `platform.tenants` columns (`schema_name`, `db_role`) are added **NULLABLE with no backfill** — population is Epic 3. This keeps the Epic-1 seed (which runs after `upgrade head` and does not yet set them) green; `test_seed.py` stayed unchanged.
+  - Grant set follows TDD §5 verbatim: per-tenant `CREATE ROLE ... NOLOGIN`, `CREATE SCHEMA ... AUTHORIZATION <db_role>`, `GRANT USAGE`, `ALTER DEFAULT PRIVILEGES ... GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES`; `platform_reader` gets `USAGE` + default `SELECT` on each tenant schema and `USAGE`/`SELECT` on `platform`; the connected login role is made `NOINHERIT` and a member of every tenant role + `platform_reader`.
+  - Idempotent role creation via a `create_role_if_absent` helper using a `DO $$ ... IF NOT EXISTS (pg_roles) ... $$` guard (roles are cluster-global); schemas use `CREATE SCHEMA IF NOT EXISTS ... AUTHORIZATION`.
+  - `downgrade()` reverses in dependency order: drop columns → revoke memberships + restore `INHERIT` → revoke `platform_reader` on `platform` → per-tenant revoke default privileges + `DROP SCHEMA ... CASCADE` → `DROP ROLE IF EXISTS`.
+  - Substrate proof in new `core/tests/test_tenant_schemas.py` (mirrors `test_substrate.py`'s `database_engine` + `text()` style): asserts both schemas exist, all three roles exist with each tenant role having USAGE only on its own schema (`has_schema_privilege`), the two nullable columns exist, and the login role is `NOINHERIT` and a member of every role. All expected values read from the registry.
+  - Full suite green: `cd core && pytest` → **109 passed** (Docker substrate up).
+  - **Caveat for future work (review nit, non-blocking):** the `Tenant` ORM model (`core/app/models/tenant.py`) does **not** yet carry the new `schema_name`/`db_role` columns this migration added. No epic currently owns adding them to the ORM, so Epic 9's `alembic check` drift gate will surface the mismatch. Epic 3 (when it populates the columns) or Epic 9 should add the two `Mapped[...]` fields to the model.
+  - **Note for completeness (review nit, non-blocking):** `downgrade()` unconditionally restores `INHERIT` on the connected login role. This is harmless given Postgres defaults (`INHERIT` is the default for a role) but is an unconditional restore rather than a save-and-restore of the role's prior setting.
 
 ## Epic 3 — Seed: populate tenant schema/role columns
 - **Goal:** Make the `platform.tenants` rows the runtime authority for "which schema/role serves this tenant" by filling `schema_name`/`db_role` from the registry — on insert for fresh seeds and as a backfill for existing rows.
