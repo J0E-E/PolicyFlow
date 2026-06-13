@@ -95,12 +95,17 @@ Source TDD: [./tdd-P1.2-tenant-scoping.md](./tdd-P1.2-tenant-scoping.md)
   - **Not a UI epic** — backend route + tests only; no `[UI]` tag.
   - Full suite green: `cd core && pytest` → **124 passed** (Docker substrate up); +4 over Epic 5's 120 (happy-path, cross-tenant isolation, tenantless-400, unauthenticated-401).
 
-## Epic 7 — Platform-Admin carve-out (dependency + endpoint)
+## Epic 7 — Platform-Admin carve-out (dependency + endpoint) — **COMPLETED**
 - **Goal:** Provide the sanctioned cross-tenant operational read path — a platform-scoped role and a `require_platform_admin` gate behind `GET /api/platform/tenant-settings` that lists every tenant's settings (operational metadata, no PII), with a clearly named audit-emission seam that emits nothing yet.
 - **Rough scope:** `require_platform_admin` next to the existing RBAC guards; `get_platform_db` (`SET LOCAL ROLE platform_reader` + the marked audit seam) in `tenancy/scoping.py`; a new `platform/router.py` reading across schemas; mount it in `main.py`. Tests: a Platform Admin reads both tenants; non-platform roles are rejected; a tenant role cannot reach this path.
 - **Open questions / decisions for stakeholders:** How the cross-schema list is assembled (per-schema reads vs. a union); the exact name/placement of the audit seam so P1.4 can wire it without churn.
 - **Depends on:** Epic 2 (`platform_reader` role), Epic 4 (settings to read across schemas).
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Cross-schema assembly:** per-schema reads, looping the registry (`TENANTS`) and running one schema-qualified `SELECT ... FROM <schema>.tenant_settings` per tenant — matches the seed's existing per-tenant loop. Each schema identifier is interpolated verbatim from `tenant.schema_name` (the registry whitelist), never from the request.
+  - **Audit seam:** a named no-op `async def record_platform_read_for_audit(identity)` defined in `tenancy/scoping.py` and already `await`ed inside `get_platform_db` on the privileged path, so P1.4 fills only its body (zero call-site churn). It emits nothing today.
+  - **Response item shape:** `{tenant_id, brand_primary_color, brand_logo_url, welcome_message, slug}` (the four settings fields plus the registry `slug` as a human-readable label — still no PII), returned as `{"tenants": [...]}`.
+  - **`rbac.py` matrix left untouched:** `require_platform_admin` is a direct role check (`identity.role is Role.PLATFORM_ADMIN`, else `403 {"detail": "insufficient permissions"}`), not a capability cell — per TDD decision 8.
+  - **Tests:** 5 new in `test_platform_settings_endpoint.py` (1 Platform-Admin happy path over both tenants; 3 parametrized non-platform-role 403s; 1 unauthenticated 401). Full suite green at 129 passed.
 
 ## Epic 8 — Isolation acceptance test suite
 - **Goal:** Land the phase's acceptance proof — automated tests that a Tenant A user cannot read or modify any Tenant B record through any endpoint, backed by a DB-layer test that a per-tenant role is physically denied another tenant's schema.

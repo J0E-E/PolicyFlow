@@ -9,9 +9,13 @@ session identity, and issues ``SET LOCAL ROLE`` + ``SET LOCAL search_path`` so
 every query reads only that tenant's schema and resets at transaction end
 (leak-proof by construction).
 
-Scope boundary: this module is `get_tenant_db` only. `require_platform_admin` /
-`get_platform_db` (the Platform-Admin carve-out) belong to Epic 7 — they will
-share this module but are not built here.
+Epic 7 adds the Platform-Admin carve-out alongside it: `get_platform_db`, the
+sanctioned cross-tenant read seam. It mirrors `get_tenant_db`'s lifecycle but
+runs as the read-only `platform_reader` role instead of a per-tenant role, so a
+Platform Admin can read every tenant's schema. It is gated by
+`require_platform_admin`, and it `await`s a named, no-op audit seam
+(`record_platform_read_for_audit`) so P1.4 can later log every cross-tenant read
+by filling that one body — with zero call-site churn.
 
 Settled decisions:
 - A tenantless caller (a Platform Admin, whose `identity.tenant_id` is `None`)
@@ -19,10 +23,11 @@ Settled decisions:
 - The schema/role pair is **re-read each request** from `platform.tenants` (one
   indexed primary-key read; no cache), per the TDD's decision.
 
-Names are reused from their single source of truth — `Identity` and
-`require_authenticated` from `app.auth`, `get_db` from `app.db`, the `Tenant`
-model from `app.models`, and the registry whitelist from `app.tenancy.registry`.
-Nothing is redeclared here.
+Names are reused from their single source of truth — `Identity`,
+`require_authenticated`, and `require_platform_admin` from `app.auth`, `get_db`
+from `app.db`, the `Tenant` model from `app.models`, and the registry whitelist
+(plus the `PLATFORM_ROLE` constant) from `app.tenancy.registry`. Nothing is
+redeclared here.
 """
 
 from typing import AsyncIterator
@@ -31,11 +36,11 @@ from fastapi import Depends, HTTPException
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth.dependencies import require_authenticated
+from ..auth.dependencies import require_authenticated, require_platform_admin
 from ..auth.provider import Identity
 from ..db import get_db
 from ..models.tenant import Tenant
-from .registry import TENANTS
+from .registry import PLATFORM_ROLE, TENANTS
 
 
 def is_known_tenant_pair(schema_name: str, db_role: str) -> bool:
@@ -118,4 +123,58 @@ async def get_tenant_db(
         await db.execute(text(f"SET LOCAL ROLE {db_role}"))
         await db.execute(text(f"SET LOCAL search_path TO {schema_name}"))
 
+        yield db
+
+
+async def record_platform_read_for_audit(identity: Identity) -> None:
+    """The **P1.4 audit seam** for cross-tenant platform reads — a no-op today.
+
+    Every cross-tenant read through `get_platform_db` is a privileged action that
+    P1.4 will audit-log. This function is the single, named place that log will be
+    written: `get_platform_db` already `await`s it on the privileged path, so P1.4
+    only fills this body — no call site changes. It deliberately does nothing yet
+    (emits no audit record), so the carve-out works today without an audit store.
+    """
+    return None
+
+
+async def get_platform_db(
+    identity: Identity = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AsyncIterator[AsyncSession]:
+    """Yield a database session that can read across every tenant's schema.
+
+    The sanctioned cross-tenant read seam — the controlled exception to tenant
+    isolation. It mirrors `get_tenant_db`'s lifecycle, but is gated by
+    `require_platform_admin` (only the Platform Admin reaches here) and runs as the
+    read-only `platform_reader` role rather than a per-tenant role. In order:
+
+    1. Inherit the 401/403 path via `require_platform_admin`, giving the Platform
+       Admin's `Identity`, and reuse the request `AsyncSession` from `get_db`.
+    2. Close out any read transaction `require_platform_admin` left open (it reads
+       the session table first), the same reason `get_tenant_db` does — `db.begin()`
+       would otherwise raise "a transaction is already begun".
+    3. Open one request transaction with `async with db.begin()` and, inside it:
+       - Issue `SET LOCAL ROLE platform_reader` (the role name comes from the
+         `PLATFORM_ROLE` constant in the registry — a fixed string, never user
+         input), granting the cross-tenant `SELECT` Epic 2's migration set up.
+       - `await` the named audit seam `record_platform_read_for_audit` (a no-op
+         today; the place P1.4 logs the read).
+       - Yield the now-platform-scoped session.
+
+    The `async with db.begin()` block commits on normal exit, which discards the
+    `SET LOCAL ROLE` and resets the connection, and rolls back on any exception —
+    so the elevated role never leaks onto a reused pooled connection.
+    """
+    # `require_platform_admin` resolves the caller by reading the session table on
+    # this same session, which auto-begins a read transaction. Close it out first
+    # so the scoped transaction below starts clean.
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        # `PLATFORM_ROLE` is a fixed registry constant, not user input, so this
+        # identifier interpolation is safe.
+        await db.execute(text(f"SET LOCAL ROLE {PLATFORM_ROLE}"))
+        await record_platform_read_for_audit(identity)
         yield db

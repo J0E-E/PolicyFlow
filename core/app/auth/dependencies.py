@@ -27,6 +27,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
+from ..models.user import Role
 from .provider import Identity
 from .rbac import Capability, has_capability
 from .sessions import SESSION_COOKIE_NAME, get_session_identity
@@ -81,3 +82,23 @@ def require_capability(capability: Capability) -> Callable:
         return identity
 
     return check_capability
+
+
+async def require_platform_admin(
+    identity: Identity = Depends(require_authenticated),
+) -> Identity:
+    """Return the current `Identity`, or raise 403 unless it is the Platform Admin.
+
+    The gate for the platform carve-out: the cross-tenant operational read path is
+    reachable **only** by the Platform Admin role. It inherits the 401 path via
+    `require_authenticated` (no session → not authenticated), then checks the role
+    directly — any other signed-in role is rejected with
+    `{"detail": "insufficient permissions"}` (403).
+
+    This is a deliberate **role check, not a capability cell**: the RBAC matrix in
+    `rbac.py` stays untouched, because the carve-out is a single privileged path
+    rather than a per-role capability (per the phase's TDD decision 8).
+    """
+    if identity.role is not Role.PLATFORM_ADMIN:
+        raise HTTPException(status_code=403, detail="insufficient permissions")
+    return identity
