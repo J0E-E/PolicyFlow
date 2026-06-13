@@ -218,7 +218,7 @@ ordered so the system stays runnable/deployable after each.
   `sa.Enum` vs PG `ENUM` double `CREATE TYPE`) was surfaced and fixed by the Epic 11
   real-DB substrate — exactly what it exists to catch.
 
-#### P1.2 — Tenant scoping (schema-per-tenant)
+#### P1.2 — Tenant scoping (schema-per-tenant) — **COMPLETE**
 
 - **Goal:** one PostgreSQL schema per tenant + a shared `platform` schema; tenant
   context injected by middleware (session-set `search_path` + per-tenant DB role);
@@ -233,6 +233,23 @@ ordered so the system stays runnable/deployable after each.
 - **Isolation note:** this phase *is* the isolation backbone.
 - **Why now:** retrofitting tenant scoping after features exist is intractable.
 - **Size:** M.
+- **Status:** **COMPLETE** (2026-06-13). All 9 epics shipped behind a green gate (core
+  suite **135 passed** on the ephemeral-Postgres substrate). Acceptance met: the
+  isolation suite (`test_isolation_acceptance.py`) proves a Tenant A user cannot read
+  or modify any Tenant B record — both at the DB layer (a per-tenant role is *physically*
+  denied another tenant's schema: SELECT/UPDATE/INSERT raise `permission denied`, own
+  schema still reads) and over HTTP (A-vs-B across every endpoint, values never cross);
+  cross-tenant reads go only through the sanctioned platform path
+  (`GET /api/platform/tenant-settings` behind `require_platform_admin` + `get_platform_db`),
+  with a named `record_platform_read_for_audit` seam already `await`ed on that path —
+  **emission deferred to P1.4 (Audit logging)** per sequencing. The isolation backbone:
+  per-tenant schemas + dedicated roles + a shared `platform` schema (migration `0003`),
+  a `tenant_settings` demonstrator created per-schema (`0004`), the registry as single
+  source of truth (`tenancy/registry.py`), the per-request `get_tenant_db` dependency
+  (`SET LOCAL ROLE` + `SET LOCAL search_path`, reset at transaction end with a proven
+  no-leak across pooled connections), and the Alembic schema-filter hygiene that keeps
+  the drift gate clean against migration-owned tenant schemas (closes the P1.1 Epic-2
+  caveat). Epic plan: `./p1.2/epic-plan-P1.2-tenant-scoping.md`.
 
 #### P1.3 — Field-level encryption, blind index & masking
 
@@ -366,7 +383,7 @@ Real services replace P1–P2 stubs behind the same events.
 M0  P0.1 ✓ Walking Skeleton & Pipeline        (exit test PASSED 2026-06-12 — gate cleared)
         → P0.1a ✓ Test harness & commit gate   (tests + pre-commit gate live from here on)
         |
-M1  P1.1 ✓ Auth/RBAC → P1.2 Tenant schemas → P1.3 Encryption → P1.4 Audit
+M1  P1.1 ✓ Auth/RBAC → P1.2 ✓ Tenant schemas → P1.3 Encryption → P1.4 Audit
         → P1.5 Event bus+stubs → P1.6 Demo shell [UI]
         → P1.7 Intake/queue/qualify/dup [UI] → P1.8 Seed+sessions → P1.9 Timeline [UI]
         |
@@ -529,3 +546,18 @@ sessions, the role→capability matrix + `require_capability` guard, the auth ro
 passed**; the DB-backed suite runs in the CI gate (GitHub Actions + CodeBuild). The
 substrate surfaced and fixed a live migration bug (generic `sa.Enum` vs PG `ENUM`).
 **Next move:** **P1.2 (Tenant scoping — schema-per-tenant)**, which retires Risk #3.
+
+**2026-06-13** — **P1.2 COMPLETE — the isolation backbone is in.** All 9 epics shipped
+behind a green gate (core suite **135 passed**): the registry single-source-of-truth,
+migration `0003` (per-tenant schemas + dedicated roles + `platform_reader` + the
+GRANT/REVOKE model), seed-populated `schema_name`/`db_role` columns, the per-schema
+`tenant_settings` demonstrator (`0004`), the `get_tenant_db` per-request scoping
+dependency (`SET LOCAL ROLE`/`search_path`, no-leak proven across pooled connections),
+the tenant-scoped + Platform-Admin carve-out endpoints, the named isolation acceptance
+suite (a per-tenant role is *physically* denied another tenant's schema; A-vs-B holds
+over every endpoint), and Alembic schema-filter hygiene keeping the drift gate clean.
+The cross-tenant read goes only through the sanctioned platform path; its
+`record_platform_read_for_audit` seam is wired but emits nothing — emission lands in
+**P1.4**. **Next move:** **P1.3 (Field-level encryption, blind index & masking)**, which
+retires Risk #3 (schema-per-tenant + app-layer encryption coexisting without breaking
+blind-index search).
