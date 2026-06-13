@@ -18,8 +18,10 @@ from app.seed import (
     PLATFORM_ADMIN_EMAIL,
     demo_tenants,
     demo_user_specs,
+    demo_users_for,
     seed,
 )
+from app.tenancy.registry import TENANTS, tenant_by_slug
 
 
 class FakeResult:
@@ -114,6 +116,18 @@ def test_usernames_equal_emails_and_are_unique():
     emails = [email for email, _role, _tenant_slug in demo_user_specs()]
 
     assert len(emails) == len(set(emails))
+
+
+def test_persona_emails_use_their_tenants_registry_domain():
+    """Each persona's email is built from the tenant's registry email domain.
+
+    Proves the seed's email construction is wired to the registry, not to a
+    leftover hardcoded domain map.
+    """
+    for tenant in TENANTS:
+        expected_domain = tenant_by_slug(tenant.slug).email_domain
+        for email, _role, _tenant_slug in demo_users_for(tenant.slug):
+            assert email.endswith("@" + expected_domain)
 
 
 # --- Phase 3: seeding from empty inserts the full matrix ----------------------

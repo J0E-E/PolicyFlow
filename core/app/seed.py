@@ -28,6 +28,7 @@ from .auth.passwords import hash_password
 from .config import settings
 from .db import session_factory
 from .models import Role, Tenant, User
+from .tenancy.registry import TENANTS, tenant_by_slug
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,18 +39,11 @@ logger = logging.getLogger(__name__)
 # These module-level structures describe the demo data declaratively so the
 # matrix can be unit-tested without touching a database.
 
-# (slug, display name) for each demo tenant.
-DEMO_TENANTS: tuple[tuple[str, str], ...] = (
-    ("sunshine-senior-benefits", "Sunshine Senior Benefits"),
-    ("florida-family-planning", "Florida Family Planning"),
+# (slug, display name) for each demo tenant, derived from the tenant registry so
+# the seed and the registry can never disagree about which tenants exist.
+DEMO_TENANTS: tuple[tuple[str, str], ...] = tuple(
+    (config.slug, config.display_name) for config in TENANTS
 )
-
-# Per-tenant email domain, keyed by tenant slug. Each tenant's users live at
-# this domain (e.g. agent.one@sunshine.example).
-TENANT_EMAIL_DOMAINS: dict[str, str] = {
-    "sunshine-senior-benefits": "sunshine.example",
-    "florida-family-planning": "florida.example",
-}
 
 # The local part (before the @) and role of every per-tenant persona.
 TENANT_USER_TEMPLATES: tuple[tuple[str, Role], ...] = (
@@ -72,9 +66,10 @@ def demo_users_for(tenant_slug: str) -> tuple[tuple[str, Role, str], ...]:
     """Return the (email, role, tenant_slug) tuples for one tenant's personas.
 
     Username equals email, so the first element doubles as both. The email is
-    built from each template's local part and the tenant's email domain.
+    built from each template's local part and the tenant's email domain, read
+    from the tenant registry.
     """
-    domain = TENANT_EMAIL_DOMAINS[tenant_slug]
+    domain = tenant_by_slug(tenant_slug).email_domain
     return tuple(
         (f"{local_part}@{domain}", role, tenant_slug)
         for local_part, role in TENANT_USER_TEMPLATES

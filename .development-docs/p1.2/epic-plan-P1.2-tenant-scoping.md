@@ -7,12 +7,17 @@ Source TDD: [./tdd-P1.2-tenant-scoping.md](./tdd-P1.2-tenant-scoping.md)
 > This is a high-level agile roadmap. Each epic's design specifics are confirmed
 > with stakeholders at epic time (`3-plan-epic`) before any code is written.
 
-## Epic 1 — Tenant registry
+## Epic 1 — Tenant registry — **COMPLETED**
 - **Goal:** Establish the single source of truth that maps each tenant to its schema name and DB role, so the migration and the seed can never disagree about which schema/role serves which tenant.
 - **Rough scope:** A small `tenancy/registry.py` holding a frozen `TenantConfig` per tenant (slug, display name, schema name, DB role) plus the platform read-role constant; fold the existing `seed.py` tenant data to read from it. Pure data, no database involved.
 - **Open questions / decisions for stakeholders:** Final schema/role identifier strings (e.g. `sunshine` / `tenant_sunshine`); how much of `seed.py`'s existing `DEMO_TENANTS`/domains structure folds into the registry vs. stays alongside it.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Identifier strings use the TDD's values: schema `sunshine` / role `tenant_sunshine`, schema `florida` / role `tenant_florida`, platform read-role `platform_reader`.
+  - **Deliberate deviation from the TDD (stakeholder-confirmed):** `TenantConfig` carries a **fifth field, `email_domain`**, beyond the TDD's four (slug, display_name, schema_name, db_role). This makes the registry the *only* per-tenant structure in `seed.py` — the old `TENANT_EMAIL_DOMAINS` map was removed and `demo_users_for` now builds emails from `tenant_by_slug(slug).email_domain`.
+  - Folded `seed.py` with minimal churn: `DEMO_TENANTS` is now derived from `TENANTS` (`tuple((config.slug, config.display_name) for config in TENANTS)`), keeping its shape/type identical so all public function signatures and existing seed tests stay unchanged.
+  - `tenant_by_slug` raises `KeyError` on an unknown slug, preserving the loud-failure behavior the seed's previous `dict[slug]` lookup had.
+  - Tests live in `core/tests/test_registry.py` (the plan body's `core/app/tests/...` reference is a typo; the repo convention and the approved key decisions place tests in `core/tests/`).
 
 ## Epic 2 — Migration `0003`: schemas, roles, grants, tenant columns
 - **Goal:** Provision the isolation backbone in the database — one schema per tenant owned by a dedicated per-tenant role, a platform read-role, the GRANT/REVOKE model that makes the schema boundary the enforcement layer, and the new `schema_name`/`db_role` columns on `platform.tenants`.
