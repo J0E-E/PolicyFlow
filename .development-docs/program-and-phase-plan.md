@@ -2,7 +2,7 @@
 
 > **Living document.** This is the source-of-truth build path that sits *above* the
 > per-unit pipeline. Each **phase** below feeds the normal chain
-> `1-requirements-to-tdd` → `2-tdd-to-epic-plan` → the per-epic loop, with
+> `1-prompt-to-brd` → `2-requirements-to-tdd` → `3-tdd-to-epic-plan` → the per-epic loop, with
 > **one phase = one TDD = one epic plan**. It is opinionated and sequenced — an
 > ordered build path, not a backlog — and edited **in place** as phases complete.
 > The full behavioral spec is [PolicyFlow_Requirements.md](./PolicyFlow_Requirements.md);
@@ -454,7 +454,7 @@ page live over HTTPS on the parity stack — is a shippable, demonstrable increm
 ## How this maps to the build pipeline
 
 Each phase = **one TDD + one epic plan**, fed through
-`1-requirements-to-tdd` → `2-tdd-to-epic-plan` → the per-epic loop. Two work types:
+`1-prompt-to-brd` → `2-requirements-to-tdd` → `3-tdd-to-epic-plan` → the per-epic loop. Two work types:
 **implementation phases** carry the per-epic review budget (~150 lines · ~8 files ·
 one commit each); there are no research spikes in this program (the stack is
 committed). From **P0.1a** on, every epic also updates its FE/BE test cases behind the
@@ -487,7 +487,7 @@ per-tenant DB role + session-set `search_path`, a shared `platform` schema for
 cross-tenant/reference data, **no RLS**. Requirements doc, UI/UX Guide, and this plan
 updated to match. **Next moves:**
 
-1. Run `2-tdd-to-epic-plan` on the P0.1 TDD → `./phase-0/epic-plan-P0.1-walking-skeleton.md`.
+1. Run `3-tdd-to-epic-plan` on the P0.1 TDD → `./phase-0/epic-plan-P0.1-walking-skeleton.md`.
 2. Execute the per-epic loop for P0.1; the **exit test** is the go/no-go gate.
 3. Stand up **P0.1a** (test harness + `pre-commit` gate) — its own TDD/epic plan; lands
    any time after P0.1 Epic 2, green before Milestone 1, and does not gate the exit test.

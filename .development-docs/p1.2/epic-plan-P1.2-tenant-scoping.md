@@ -5,7 +5,7 @@ Source TDD: [./tdd-P1.2-tenant-scoping.md](./tdd-P1.2-tenant-scoping.md)
 > **Review budget:** ~150 changed lines · ~8 non-generated files · one focused commit per epic. Tunable per project.
 
 > This is a high-level agile roadmap. Each epic's design specifics are confirmed
-> with stakeholders at epic time (`3-plan-epic`) before any code is written.
+> with stakeholders at epic time (`4-plan-epic`) before any code is written.
 
 ## Epic 1 — Tenant registry — **COMPLETED**
 - **Goal:** Establish the single source of truth that maps each tenant to its schema name and DB role, so the migration and the seed can never disagree about which schema/role serves which tenant.
