@@ -27,10 +27,11 @@ from app.tenancy.registry import TENANTS, tenant_by_slug
 class FakeResult:
     """A stand-in for a SQLAlchemy `Result` that yields preset rows.
 
-    `seed` reads scalar columns (`select(Tenant.slug)`, `select(User.username)`)
-    via `.scalars().all()`, and the present-tenant lookup reads `(slug, id)`
-    rows via `.all()`. This fake serves both: `scalars().all()` returns the
-    preset rows as-is, and `.all()` returns them unchanged.
+    Every `seed` query reads through `.scalars().all()`: scalar columns
+    (`select(Tenant.slug)`, `select(User.username)`) and the present-tenant
+    lookup, which now loads full `Tenant` ORM objects (`select(Tenant)`). This
+    fake serves all of them — `scalars()` returns self and `.all()` returns the
+    preset rows unchanged.
     """
 
     def __init__(self, rows):
@@ -47,7 +48,7 @@ class FakeAsyncSession:
     """A minimal async session that replays preset `execute` results.
 
     `seed` runs up to three queries in order: existing tenant slugs, the
-    already-present tenant (slug, id) rows, then existing usernames. The fake is
+    already-present `Tenant` ORM rows, then existing usernames. The fake is
     handed a list of result-row lists and returns the next one on each
     `execute`. `add` appends to `added`, and `commit` flips `did_commit`, so a
     test can assert exactly which rows were inserted and that one commit ran.
@@ -179,24 +180,47 @@ async def test_seeded_users_link_to_their_tenant_and_carry_usable_password():
             assert user.tenant_id in slug_to_id.values()
 
 
+async def test_fresh_seed_tenants_carry_registry_schema_and_role():
+    """Inserted tenants carry the registry's schema_name / db_role for their slug."""
+    session = FakeAsyncSession(_empty_database_results())
+
+    await seed(session)
+
+    inserted_tenants = [row for row in session.added if isinstance(row, Tenant)]
+    for tenant in inserted_tenants:
+        config = tenant_by_slug(tenant.slug)
+        assert tenant.schema_name == config.schema_name
+        assert tenant.db_role == config.db_role
+
+
 # --- Phase 3: idempotency — insert only what is absent ------------------------
 
 
 async def test_seed_is_idempotent_when_everything_already_present():
-    """With all slugs and usernames present, nothing new is added."""
+    """With all slugs and usernames present, nothing new is added.
+
+    The present tenants are preset as `Tenant` objects (the lookup now loads full
+    ORM rows). Each should be backfilled with the registry's schema_name / db_role.
+    """
     all_slugs = [slug for slug, _name in demo_tenants()]
-    present_tenant_rows = [(slug, "id-" + slug) for slug in all_slugs]
+    present_tenants = [
+        Tenant(id="id-" + slug, slug=slug, name=slug) for slug in all_slugs
+    ]
     all_usernames = [email for email, _role, _tenant_slug in demo_user_specs()]
-    # Three execute calls: existing slugs, present-tenant (slug, id) rows,
-    # existing usernames.
+    # Three execute calls: existing slugs, present `Tenant` rows, existing
+    # usernames.
     session = FakeAsyncSession(
-        [all_slugs, present_tenant_rows, all_usernames]
+        [all_slugs, present_tenants, all_usernames]
     )
 
     await seed(session)
 
     assert session.added == []
     assert session.did_commit is True
+    for tenant in present_tenants:
+        config = tenant_by_slug(tenant.slug)
+        assert tenant.schema_name == config.schema_name
+        assert tenant.db_role == config.db_role
 
 
 async def test_seed_adds_only_missing_rows_on_partial_state():
@@ -204,14 +228,14 @@ async def test_seed_adds_only_missing_rows_on_partial_state():
     # One tenant already present, the other absent; the present tenant's four
     # users already exist, so only the missing tenant and its four users insert.
     present_slug = "sunshine-senior-benefits"
-    present_tenant_rows = [(present_slug, "id-" + present_slug)]
+    present_tenants = [Tenant(id="id-" + present_slug, slug=present_slug, name=present_slug)]
     present_usernames = [
         email
         for email, _role, tenant_slug in demo_user_specs()
         if tenant_slug == present_slug
     ]
     session = FakeAsyncSession(
-        [[present_slug], present_tenant_rows, present_usernames]
+        [[present_slug], present_tenants, present_usernames]
     )
 
     await seed(session)
@@ -220,6 +244,14 @@ async def test_seed_adds_only_missing_rows_on_partial_state():
     inserted_users = [row for row in session.added if isinstance(row, User)]
     assert len(inserted_tenants) == 1
     assert inserted_tenants[0].slug == "florida-family-planning"
+    # The newly inserted tenant carries the registry's schema_name / db_role.
+    florida_config = tenant_by_slug("florida-family-planning")
+    assert inserted_tenants[0].schema_name == florida_config.schema_name
+    assert inserted_tenants[0].db_role == florida_config.db_role
+    # The already-present tenant is backfilled from the registry.
+    sunshine_config = tenant_by_slug(present_slug)
+    assert present_tenants[0].schema_name == sunshine_config.schema_name
+    assert present_tenants[0].db_role == sunshine_config.db_role
     # The five not-yet-present personas: the absent tenant's four users plus the
     # tenantless platform admin.
     assert len(inserted_users) == 5

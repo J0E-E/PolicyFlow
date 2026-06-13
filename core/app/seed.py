@@ -109,25 +109,40 @@ async def seed(db: AsyncSession) -> None:
         if slug in existing_tenant_slugs:
             continue
         tenant_id = uuid.uuid4()
-        db.add(Tenant(id=tenant_id, slug=slug, name=display_name))
+        config = tenant_by_slug(slug)
+        db.add(
+            Tenant(
+                id=tenant_id,
+                slug=slug,
+                name=display_name,
+                schema_name=config.schema_name,
+                db_role=config.db_role,
+            )
+        )
         slug_to_tenant_id[slug] = tenant_id
         tenants_inserted += 1
 
-    # Query back the ids of tenants that were already present, so users in those
-    # tenants can be linked to the right tenant_id.
+    # Load the tenants that were already present so users in those tenants can be
+    # linked to the right tenant_id, and so their schema_name / db_role can be
+    # backfilled from the registry. Loading full ORM objects (rather than just
+    # slug + id) lets us set the columns in place; the mutations flush on the
+    # single commit below. Always setting to the registry value keeps this
+    # idempotent, and orphan rows never appear here because already_present_slugs
+    # is built from the registry-derived DEMO_TENANTS.
     already_present_slugs = [
         slug for slug, _name in DEMO_TENANTS if slug in existing_tenant_slugs
     ]
     if already_present_slugs:
-        present_rows = (
+        present_tenants = (
             await db.execute(
-                select(Tenant.slug, Tenant.id).where(
-                    Tenant.slug.in_(already_present_slugs)
-                )
+                select(Tenant).where(Tenant.slug.in_(already_present_slugs))
             )
-        ).all()
-        for slug, tenant_id in present_rows:
-            slug_to_tenant_id[slug] = tenant_id
+        ).scalars().all()
+        for tenant in present_tenants:
+            config = tenant_by_slug(tenant.slug)
+            tenant.schema_name = config.schema_name
+            tenant.db_role = config.db_role
+            slug_to_tenant_id[tenant.slug] = tenant.id
 
     # --- Users: read existing usernames, insert the missing personas. ---
     existing_usernames = set(

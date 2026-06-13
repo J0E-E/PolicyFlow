@@ -35,12 +35,20 @@ Source TDD: [./tdd-P1.2-tenant-scoping.md](./tdd-P1.2-tenant-scoping.md)
   - **Caveat for future work (review nit, non-blocking):** the `Tenant` ORM model (`core/app/models/tenant.py`) does **not** yet carry the new `schema_name`/`db_role` columns this migration added. No epic currently owns adding them to the ORM, so Epic 9's `alembic check` drift gate will surface the mismatch. Epic 3 (when it populates the columns) or Epic 9 should add the two `Mapped[...]` fields to the model.
   - **Note for completeness (review nit, non-blocking):** `downgrade()` unconditionally restores `INHERIT` on the connected login role. This is harmless given Postgres defaults (`INHERIT` is the default for a role) but is an unconditional restore rather than a save-and-restore of the role's prior setting.
 
-## Epic 3 — Seed: populate tenant schema/role columns
+## Epic 3 — Seed: populate tenant schema/role columns — **COMPLETED**
 - **Goal:** Make the `platform.tenants` rows the runtime authority for "which schema/role serves this tenant" by filling `schema_name`/`db_role` from the registry — on insert for fresh seeds and as a backfill for existing rows.
 - **Rough scope:** Extend `seed.py` to set the two columns from the registry; idempotent so a re-seed is safe. Unit coverage plus a DB-backed check on the substrate.
 - **Open questions / decisions for stakeholders:** Whether backfill is keyed on slug; behavior if a tenant row exists with no matching registry entry.
 - **Depends on:** Epic 2.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - `Tenant` ORM model (`core/app/models/tenant.py`) gained two `Mapped[Optional[str]]` columns — `schema_name` and `db_role`, both `mapped_column(sa.Text, nullable=True)` — matching migration `0003` exactly (no Alembic drift). This closes the Epic 2 caveat for these two columns.
+  - `seed()` insert path now sets `schema_name`/`db_role` from the registry via `tenant_by_slug(slug)` on each inserted `Tenant`.
+  - `seed()` already-present path changed from `select(Tenant.slug, Tenant.id)` to `select(Tenant)` (full ORM rows via `.scalars().all()`), then backfills each loaded tenant's `schema_name`/`db_role` from the registry and records its id into `slug_to_tenant_id`. Always set to the registry value, so re-running is idempotent; the existing single `await db.commit()` flushes the mutations.
+  - **Backfill keyed on slug** (decision confirmed); the schema/role are values, not keys.
+  - **Orphan rows** (a DB tenant whose slug isn't in the registry) are left untouched with no special handling — the seed only loops the registry's tenants, so an orphan is never visited. The new substrate test deliberately keys its assertions on the registry's slugs (not "every row in the table") so unrelated orphan rows that other tests insert into the shared session-scoped container are ignored.
+  - **NOT NULL tightening deferred** out of Epic 3 (follow-up for Epic 9 / a dedicated migration); columns stay nullable to match migration `0003`, so the Epic-2 substrate test asserting they are nullable stays green.
+  - Tests: `core/tests/test_seed.py` — the two present-tenant tests now preset `Tenant` ORM objects (not `(slug, id)` tuples) and assert the backfilled columns; added a fresh-seed test asserting inserted tenants carry the registry's schema_name/db_role. New `core/tests/test_seed_tenant_columns.py` (mirrors `test_tenant_schemas.py`'s `database_engine` + `text()` style): after `upgrade head` runs `seed()` against the container DB and asserts each registry tenant row's columns equal the registry value, plus a second `seed()` run leaves them unchanged.
+  - Full suite green: `cd core && pytest` → **112 passed** (Docker substrate up).
 
 ## Epic 4 — `tenant_settings` demonstrator (model + migration `0004` + seed row)
 - **Goal:** Ship the first real tenant-scoped entity — a schema-less `TenantSettings` model with its table created in **each** tenant schema and a distinct settings row seeded per tenant — giving the isolation tests and later UI a real, requirement-backed target.

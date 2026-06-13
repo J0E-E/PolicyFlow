@@ -8,6 +8,7 @@ P1.2 later uses to pick a per-tenant `search_path`.
 
 import uuid
 from datetime import datetime
+from typing import Optional
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Mapped, mapped_column
@@ -31,3 +32,9 @@ class Tenant(Base):
         nullable=False,
         server_default=sa.text("now()"),
     )
+    # Which schema and DB role serve this tenant at runtime. Populated by the
+    # seed from the tenant registry (the single source of truth); nullable to
+    # match migration 0003 exactly, which adds them empty and leaves the seed to
+    # fill them. The per-request scoping dependency reads these by tenant_id.
+    schema_name: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
+    db_role: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
