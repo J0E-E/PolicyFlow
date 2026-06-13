@@ -19,12 +19,18 @@ Source TDD: [./tdd-P1.3-field-encryption-blind-index-masking.md](./tdd-P1.3-fiel
   - New pure unit module `core/tests/test_config.py` (mirrors `test_passwords.py`): valid-32-byte round-trip, undecodable raises, too-short/too-long raise, dev default decodes to 32 bytes, live `settings.pii_master_key` is 32 `bytes`.
   - Test note: this local Windows Python lacks `asyncpg`, so `tests/conftest.py` (which builds a DB engine at import) aborts pytest collection for the whole suite — a pre-existing environment limitation, not introduced here (`test_passwords.py` fails identically). Ran the new + password unit tests in a `python:3.12-slim` container with full runtime + dev deps: **11 passed**.
 
-## Epic 2 — Crypto primitives (pure)
+## Epic 2 — Crypto primitives (pure) — **COMPLETED**
 - **Goal:** Provide the small, DB-free crypto toolkit the rest of the phase composes — authenticated encryption, master-key wrap/unwrap, HKDF subkey derivation, the HMAC blind index, and value normalization — each a pure, fully unit-tested function.
 - **Rough scope:** A `pii/crypto.py` module: AES-256-GCM encrypt/decrypt (random nonce, tenant id as associated data), `wrap_key`/`unwrap_key`, `hkdf_subkey`, `hmac_blind_index`, `normalize_email`/`normalize_phone`. Full unit tests: encrypt→decrypt round-trip, wrong-key and wrong-AAD failures, wrap/unwrap round-trip, subkey independence, blind-index determinism, normalization correctness. No tenant logic, no database.
 - **Open questions / decisions for stakeholders:** Final blob layout/version tag (`nonce‖ciphertext‖tag`); the exact HKDF `info` labels for the two subkeys; normalization edge cases (international phone formats, plus-addressing in email).
 - **Depends on:** Epic 1 (the `cryptography` dependency).
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Blob layout carries a leading `BLOB_VERSION` byte** — `version(1) ‖ nonce(12) ‖ ciphertext ‖ tag(16)` (`BLOB_VERSION = 0x01`). This is a deliberate extension of the TDD §5 `nonce‖ciphertext‖tag` layout, confirmed at the gate, for crypto-agility; `aes_gcm_decrypt`/`unwrap_key` reject an unknown or missing version byte with `ValueError`. A private bytes-level core (`_aes_gcm_encrypt_bytes`/`_aes_gcm_decrypt_bytes`) defines the layout once and is shared by the str-facing encrypt/decrypt (UTF-8) and by `wrap_key`/`unwrap_key` (raw bytes, empty associated data), so the two paths cannot drift.
+  - **HKDF `info` labels** exposed as module constants `FIELD_ENCRYPTION_INFO_LABEL = b"policyflow/field-encryption/v1"` and `BLIND_INDEX_INFO_LABEL = b"policyflow/blind-index/v1"`; `SUBKEY_LENGTH_BYTES = 32`, `_NONCE_LENGTH_BYTES = 12`.
+  - **`normalize_email` = trim + lowercase only** — plus-addressing is preserved (`jane+tag@x.com` ≠ `jane@x.com`). **`normalize_phone` keeps ASCII digits only.**
+  - **Caveat for Epic 11 (lookup):** `normalize_phone` drops a leading `+`, so a national number and its E.164 form (`+1415…` vs `1415…`) fingerprint differently and won't match on a blind-index equality lookup. The full international-format question is deferred (see this epic's open questions); callers normalize the inbound value the same way before lookup.
+  - **Deliverables:** new `core/app/pii/__init__.py`, `core/app/pii/crypto.py`, and `core/tests/test_crypto.py` (15 tests). No DB, no tenant logic; no changes to `config.py`/`requirements.txt`/migrations.
+  - **Verification:** ran in a `python:3.12-slim` container with full runtime + dev deps (local Windows Python lacks `asyncpg`, so `conftest.py` aborts collection) — `python -m pytest tests/test_crypto.py -v` → **15 passed**.
 
 ## Epic 3 — Key store table + model (migration `0005`)
 - **Goal:** Stand up the wrapped-key store — a `platform.tenant_data_keys` table holding one master-key-wrapped root key per tenant, readable only by the default login role so no tenant role can ever see key material.
