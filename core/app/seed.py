@@ -21,7 +21,7 @@ import logging
 import uuid
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .auth.passwords import hash_password
@@ -55,6 +55,29 @@ TENANT_USER_TEMPLATES: tuple[tuple[str, Role], ...] = (
 
 # The single tenantless platform administrator (tenant_id stays None).
 PLATFORM_ADMIN_EMAIL = "platform.admin@policyflow.example"
+
+# The demo presentation settings for each tenant, keyed by slug. These are
+# presentation content (brand colour, logo, welcome message), so they live here
+# in the seed rather than in the tenant registry, which is reserved for isolation
+# config the migration imports. The seed writes one row per tenant into that
+# tenant's own `tenant_settings` table. The logo URL is a distinct per-tenant
+# placeholder built from the registry schema name.
+DEMO_TENANT_SETTINGS: dict[str, dict[str, str]] = {
+    "sunshine-senior-benefits": {
+        "brand_primary_color": "#F5A623",
+        "welcome_message": (
+            "Welcome to Sunshine Senior Benefits — Medicare coverage made "
+            "simple."
+        ),
+    },
+    "florida-family-planning": {
+        "brand_primary_color": "#2E86C1",
+        "welcome_message": (
+            "Welcome to Florida Family Planning — coverage for every stage of "
+            "your family's life."
+        ),
+    },
+}
 
 
 def demo_tenants() -> tuple[tuple[str, str], ...]:
@@ -168,17 +191,48 @@ async def seed(db: AsyncSession) -> None:
         )
         users_inserted += 1
 
+    # --- Tenant settings: one distinct row per tenant, in its own schema. ---
+    # slug_to_tenant_id now covers both inserted and already-present tenants, so
+    # each registry tenant has a known id. The schema identifier comes only from
+    # the registry (never user input); the values are bound parameters. The
+    # INSERT ... ON CONFLICT (tenant_id) DO NOTHING makes a re-seed idempotent.
+    settings_inserted = 0
+    for tenant_slug, tenant_id in slug_to_tenant_id.items():
+        config = tenant_by_slug(tenant_slug)
+        demo_settings = DEMO_TENANT_SETTINGS[tenant_slug]
+        brand_logo_url = (
+            f"https://assets.policyflow.example/{config.schema_name}/logo.svg"
+        )
+        result = await db.execute(
+            text(
+                f"INSERT INTO {config.schema_name}.tenant_settings "
+                "(tenant_id, brand_primary_color, brand_logo_url, "
+                "welcome_message) "
+                "VALUES (:tenant_id, :brand_primary_color, :brand_logo_url, "
+                ":welcome_message) "
+                "ON CONFLICT (tenant_id) DO NOTHING"
+            ),
+            {
+                "tenant_id": tenant_id,
+                "brand_primary_color": demo_settings["brand_primary_color"],
+                "brand_logo_url": brand_logo_url,
+                "welcome_message": demo_settings["welcome_message"],
+            },
+        )
+        settings_inserted += result.rowcount or 0
+
     await db.commit()
 
     total_tenants = len(DEMO_TENANTS)
     total_users = len(demo_user_specs())
     logger.info(
         "seed complete: tenants inserted=%d already-present=%d; "
-        "users inserted=%d already-present=%d",
+        "users inserted=%d already-present=%d; settings rows inserted=%d",
         tenants_inserted,
         total_tenants - tenants_inserted,
         users_inserted,
         total_users - users_inserted,
+        settings_inserted,
     )
 
 

@@ -8,6 +8,7 @@ The models are also re-exported here for convenient direct import.
 
 from .auth_session import AuthSession
 from .tenant import Tenant
+from .tenant_settings import TenantSettings
 from .user import Role, User
 
-__all__ = ["AuthSession", "Role", "Tenant", "User"]
+__all__ = ["AuthSession", "Role", "Tenant", "TenantSettings", "User"]

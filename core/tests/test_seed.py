@@ -34,8 +34,9 @@ class FakeResult:
     preset rows unchanged.
     """
 
-    def __init__(self, rows):
+    def __init__(self, rows, rowcount=0):
         self._rows = rows
+        self.rowcount = rowcount
 
     def scalars(self):
         return self
@@ -47,20 +48,30 @@ class FakeResult:
 class FakeAsyncSession:
     """A minimal async session that replays preset `execute` results.
 
-    `seed` runs up to three queries in order: existing tenant slugs, the
+    `seed` runs up to three SELECT queries in order: existing tenant slugs, the
     already-present `Tenant` ORM rows, then existing usernames. The fake is
-    handed a list of result-row lists and returns the next one on each
-    `execute`. `add` appends to `added`, and `commit` flips `did_commit`, so a
-    test can assert exactly which rows were inserted and that one commit ran.
+    handed a list of result-row lists and returns the next one on each of those
+    SELECTs. The later per-tenant settings INSERTs call `execute(statement,
+    params)` with a bound-parameters mapping; the fake recognises those by the
+    second positional argument and returns a `rowcount`-bearing result without
+    consuming a preset SELECT row, recording each one in `settings_inserts`.
+    `add` appends to `added`, and `commit` flips `did_commit`, so a test can
+    assert exactly which rows were inserted and that one commit ran.
     """
 
     def __init__(self, result_rows):
         self._result_rows = list(result_rows)
         self._execute_count = 0
         self.added = []
+        self.settings_inserts = []
         self.did_commit = False
 
-    async def execute(self, statement):
+    async def execute(self, statement, parameters=None):
+        if parameters is not None:
+            # A parametrised settings INSERT — record it and report one row
+            # affected so the seed's insert counter advances.
+            self.settings_inserts.append(parameters)
+            return FakeResult([], rowcount=1)
         rows = self._result_rows[self._execute_count]
         self._execute_count += 1
         return FakeResult(rows)
