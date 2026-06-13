@@ -18,8 +18,9 @@ entrypoint the container relies on.
 
 import asyncio
 import logging
+import os
 import uuid
-from typing import Optional
+from typing import Iterable, Optional
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,11 +28,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .auth.passwords import hash_password
 from .config import settings
 from .db import session_factory
-from .models import Role, Tenant, User
+from .models import Role, Tenant, TenantDataKey, User
+from .pii.crypto import wrap_key
 from .tenancy.registry import TENANTS, tenant_by_slug
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# A tenant's root key is 32 random bytes; HKDF later derives the encryption and
+# blind-index subkeys from it (see app/pii/keys.py).
+ROOT_KEY_LENGTH_BYTES = 32
 
 
 # --- The persona spec (pure data, no DB) -------------------------------------
@@ -113,6 +119,54 @@ def demo_user_specs() -> tuple[tuple[str, Role, Optional[str]], ...]:
 
 
 # --- The idempotent async seed (insert-if-absent) ----------------------------
+
+
+async def seed_tenant_data_keys(
+    db: AsyncSession, tenant_ids: Iterable[uuid.UUID]
+) -> int:
+    """Mint one master-key-wrapped root key per tenant, insert-if-absent.
+
+    For each tenant id that has no key row yet, generate a fresh random 32-byte
+    root key, wrap it under ``settings.pii_master_key``, and add a
+    ``TenantDataKey`` row. Returns the number of keys newly created.
+
+    Insert-if-absent (never re-wrap): a tenant that already has a wrapped key is
+    skipped, because the container re-seeds on every boot and overwriting the key
+    would orphan all of that tenant's already-encrypted PII. The plaintext root
+    key lives only in the local variable during wrapping; only the wrapped blob
+    persists. Rows are added to the session here and flushed by the caller's
+    single ``commit``.
+    """
+    tenant_ids = list(tenant_ids)
+    if not tenant_ids:
+        return 0
+
+    existing_tenant_ids = set(
+        (
+            await db.execute(
+                select(TenantDataKey.tenant_id).where(
+                    TenantDataKey.tenant_id.in_(tenant_ids)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    keys_created = 0
+    for tenant_id in tenant_ids:
+        if tenant_id in existing_tenant_ids:
+            continue
+        root_key = os.urandom(ROOT_KEY_LENGTH_BYTES)
+        wrapped_root_key = wrap_key(settings.pii_master_key, root_key)
+        db.add(
+            TenantDataKey(
+                tenant_id=tenant_id,
+                wrapped_root_key=wrapped_root_key,
+            )
+        )
+        keys_created += 1
+    return keys_created
 
 
 async def seed(db: AsyncSession) -> None:
@@ -221,18 +275,25 @@ async def seed(db: AsyncSession) -> None:
         )
         settings_inserted += result.rowcount or 0
 
+    # --- Data keys: one master-key-wrapped root key per tenant, insert-if-
+    # absent. slug_to_tenant_id covers both inserted and already-present tenants,
+    # so this is the full set of registry tenant ids.
+    keys_inserted = await seed_tenant_data_keys(db, slug_to_tenant_id.values())
+
     await db.commit()
 
     total_tenants = len(DEMO_TENANTS)
     total_users = len(demo_user_specs())
     logger.info(
         "seed complete: tenants inserted=%d already-present=%d; "
-        "users inserted=%d already-present=%d; settings rows inserted=%d",
+        "users inserted=%d already-present=%d; settings rows inserted=%d; "
+        "data keys inserted=%d",
         tenants_inserted,
         total_tenants - tenants_inserted,
         users_inserted,
         total_users - users_inserted,
         settings_inserted,
+        keys_inserted,
     )
 
 

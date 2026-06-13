@@ -48,8 +48,9 @@ class FakeResult:
 class FakeAsyncSession:
     """A minimal async session that replays preset `execute` results.
 
-    `seed` runs up to three SELECT queries in order: existing tenant slugs, the
-    already-present `Tenant` ORM rows, then existing usernames. The fake is
+    `seed` runs up to four SELECT queries in order: existing tenant slugs, the
+    already-present `Tenant` ORM rows, existing usernames, then the existing
+    data-key tenant ids (for the per-tenant root-key seeding step). The fake is
     handed a list of result-row lists and returns the next one on each of those
     SELECTs. The later per-tenant settings INSERTs call `execute(statement,
     params)` with a bound-parameters mapping; the fake recognises those by the
@@ -148,10 +149,11 @@ def test_persona_emails_use_their_tenants_registry_domain():
 def _empty_database_results():
     """Result rows for an empty database: no tenants present, no usernames.
 
-    Two `execute` calls run when no tenants pre-exist (tenant slugs, then
-    usernames — the present-tenant lookup is skipped because nothing is present).
+    Three `execute` calls run when no tenants pre-exist (tenant slugs, then
+    usernames — the present-tenant lookup is skipped because nothing is present
+    — then the existing data-key tenant ids for the key-seeding step).
     """
-    return [[], []]
+    return [[], [], []]
 
 
 async def test_seed_from_empty_inserts_two_tenants_and_nine_users():
@@ -218,10 +220,12 @@ async def test_seed_is_idempotent_when_everything_already_present():
         Tenant(id="id-" + slug, slug=slug, name=slug) for slug in all_slugs
     ]
     all_usernames = [email for email, _role, _tenant_slug in demo_user_specs()]
-    # Three execute calls: existing slugs, present `Tenant` rows, existing
-    # usernames.
+    # Four execute calls: existing slugs, present `Tenant` rows, existing
+    # usernames, and the existing data-key tenant ids. All tenant ids already
+    # have keys here, so no new key is added on this idempotent re-seed.
+    present_tenant_ids = [tenant.id for tenant in present_tenants]
     session = FakeAsyncSession(
-        [all_slugs, present_tenants, all_usernames]
+        [all_slugs, present_tenants, all_usernames, present_tenant_ids]
     )
 
     await seed(session)
@@ -245,8 +249,10 @@ async def test_seed_adds_only_missing_rows_on_partial_state():
         for email, _role, tenant_slug in demo_user_specs()
         if tenant_slug == present_slug
     ]
+    # The fourth execute is the existing data-key tenant ids; none exist yet,
+    # so a wrapped key is minted for both registry tenants on this seed.
     session = FakeAsyncSession(
-        [[present_slug], present_tenants, present_usernames]
+        [[present_slug], present_tenants, present_usernames, []]
     )
 
     await seed(session)
