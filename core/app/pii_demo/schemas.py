@@ -63,3 +63,19 @@ class LookupRequest(BaseModel):
         if supplied_field_count != 1:
             raise ValueError("supply exactly one of 'email' or 'phone'")
         return self
+
+
+class RevealRequest(BaseModel):
+    """The reveal request body: which one field to unmask for this record.
+
+    A flat Pydantic model carrying a single `field` name (the request says which
+    field to reveal; the record is identified by the `{record_id}` path segment).
+    `field` is deliberately a plain `str`, **not** a `Literal`/enum: the handler
+    must distinguish the Medicare-specific 422 ("field is never revealable") from
+    the generic 422 ("field is not revealable"), and a schema-level enum would
+    collapse both refusals into one indistinguishable validation 422. (Same
+    reasoning recorded for `LookupRequest` — the validation that needs a
+    field-specific message stays in the handler, not the schema.)
+    """
+
+    field: str

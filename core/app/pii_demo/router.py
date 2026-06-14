@@ -50,11 +50,30 @@ from ..pii.masking import (
     mask_medicare_id,
     mask_phone,
 )
+from ..pii.reveal_seam import on_pii_revealed
 from ..pii.service import compute_blind_index, decrypt_field, encrypt_field
 from ..tenancy.scoping import get_tenant_db
-from .schemas import CreateRecordRequest, LookupRequest
+from .schemas import CreateRecordRequest, LookupRequest, RevealRequest
 
 router = APIRouter(prefix="/api/pii-demo")
+
+# The reveal endpoint's two field allow-lists, the single source of truth for
+# what `POST /{record_id}/reveal` will unmask.
+#
+# `REVEALABLE_FIELDS` maps each accepted request field name to the encrypted
+# column attribute on `PiiDemoRecord` whose blob the handler decrypts. Only these
+# three fields can ever be revealed; any other name (a typo, `display_name`,
+# `age_band`) falls through to a generic 422.
+#
+# `NEVER_REVEALABLE_FIELDS` is the explicit deny-list: the mock Medicare id is
+# refused server-side with a distinct message so no UI can ever bypass it, and the
+# refusal happens before any database read or decryption.
+REVEALABLE_FIELDS: dict[str, str] = {
+    "email": "email_encrypted",
+    "phone": "phone_encrypted",
+    "date_of_birth": "date_of_birth_encrypted",
+}
+NEVER_REVEALABLE_FIELDS: frozenset[str] = frozenset({"mock_medicare_id"})
 
 
 async def _masked_record(tenant_id: uuid.UUID, record: PiiDemoRecord) -> dict:
@@ -274,3 +293,69 @@ async def get_record(
         raise HTTPException(status_code=404, detail="record not found")
 
     return {"record": await _masked_record(identity.tenant_id, record)}
+
+
+@router.post("/{record_id}/reveal")
+async def reveal_field(
+    record_id: uuid.UUID,
+    reveal: RevealRequest,
+    identity: Identity = Depends(require_capability(Capability.REVEAL_PII)),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Decrypt and return **one** unmasked field of one of the caller's records.
+
+    This is the only place plaintext PII crosses the API boundary, so it is the
+    most guarded route here. It composes only existing pieces — no new crypto,
+    masking, or scoping. The flow is:
+
+    1. **Refuse the mock Medicare id outright** (`NEVER_REVEALABLE_FIELDS`) with a
+       distinct `422 "field is never revealable"`, enforced server-side so no UI
+       can bypass it.
+    2. **Refuse any other unknown field** with a generic `422 "field is not
+       revealable"`. Both field checks run **before** the database read, because
+       the refusal is about the field, not the record — a never-revealable or
+       unknown field is a 422 even for an id that does not exist.
+    3. **Fetch the record by id** within the caller's tenant schema; an id absent
+       in this tenant (missing or another tenant's) is a `404 "record not found"`,
+       reusing get's string.
+    4. **Decrypt** the requested field's stored blob with `decrypt_field`. An
+       absent optional field (e.g. a record with no phone) is returned as
+       `value: null` with a 200 — the same uniform call site, matching the masked
+       read's `null` rendering of absent optionals.
+    5. **Await the reveal seam** (`on_pii_revealed`) *before* returning, so the
+       later audit (P1.4) and event (P1.5) record the reveal before the value
+       leaves — with zero call-site churn here.
+    6. Return `{"field": …, "value": …}`.
+
+    The guard hands the route an `Identity` only when the caller holds
+    `REVEAL_PII` (Read-Only and Platform Admin lack it → 403, the anonymous caller
+    → 401); `get_tenant_db` points the session's `search_path` at the caller's own
+    schema, so a caller can only ever reveal their own tenant's record — all
+    inherited, no tenant parameter. `decrypt_field` additionally binds `tenant_id`
+    as AES-GCM associated data, so even a cross-tenant blob would fail to decrypt.
+    """
+    if reveal.field in NEVER_REVEALABLE_FIELDS:
+        raise HTTPException(status_code=422, detail="field is never revealable")
+
+    if reveal.field not in REVEALABLE_FIELDS:
+        raise HTTPException(status_code=422, detail="field is not revealable")
+
+    record = (
+        await db.execute(
+            select(PiiDemoRecord).where(PiiDemoRecord.id == record_id)
+        )
+    ).scalar_one_or_none()
+
+    if record is None:
+        raise HTTPException(status_code=404, detail="record not found")
+
+    encrypted_blob = getattr(record, REVEALABLE_FIELDS[reveal.field])
+    value = (
+        await decrypt_field(identity.tenant_id, encrypted_blob)
+        if encrypted_blob is not None
+        else None
+    )
+
+    await on_pii_revealed(identity, "pii_demo", record_id, reveal.field)
+
+    return {"field": reveal.field, "value": value}
