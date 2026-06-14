@@ -40,6 +40,7 @@ from testcontainers.postgres import PostgresContainer
 
 from app.db import get_db
 from app.main import app
+from app.pii import keys as pii_keys_module
 
 # The container image is pinned to match production (docker-compose.yml).
 POSTGRES_IMAGE = "postgres:16-alpine"
@@ -125,13 +126,34 @@ def database_engine(postgres_container):
     yield engine
 
 
+@pytest.fixture
+def container_keys_session_factory(database_engine, monkeypatch):
+    """Point `app.pii.keys.session_factory` at the migrated container database.
+
+    Per-tenant key resolution (`get_tenant_keys`) reads the wrapped root key
+    through the module-global `app.pii.keys.session_factory` — a session
+    **separate** from the request's `get_db`. Since Epic 10 the seed itself
+    encrypts demo PII rows (and so resolves keys) on this path, and any
+    encrypt/decrypt-bearing endpoint does too, so the DB substrate must point that
+    global at the container database — otherwise the key load would hit the
+    unreachable eager default engine. `monkeypatch` restores the real factory
+    after each test. Mirrors the per-file `container_session_factory` fixture the
+    Epic 4/5/6 key tests use.
+    """
+    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    monkeypatch.setattr(pii_keys_module, "session_factory", session_factory)
+    return session_factory
+
+
 @pytest_asyncio.fixture
-async def db_session(database_engine):
+async def db_session(database_engine, container_keys_session_factory):
     """Yield a real `AsyncSession` bound to the migrated container database.
 
     Function-scoped so each test gets a fresh session. This is the seam Epic 12
     builds its session/provider lifecycle tests on. Mirrors `app.db`'s
-    `async_sessionmaker(..., expire_on_commit=False)` configuration.
+    `async_sessionmaker(..., expire_on_commit=False)` configuration. It also
+    depends on `container_keys_session_factory` so any seed/encrypt path run on
+    this session resolves per-tenant keys against the container key store.
     """
     session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
     async with session_factory() as session:
@@ -139,14 +161,16 @@ async def db_session(database_engine):
 
 
 @pytest_asyncio.fixture
-async def db_client(database_engine):
+async def db_client(database_engine, container_keys_session_factory):
     """Yield an async HTTP client whose `get_db` points at the container database.
 
     Overrides `app.dependency_overrides[get_db]` with a session bound to the
     migrated container engine — the same override idiom `test_tenant_router.py`
     uses with a fake session, but here the session is real. The override is
-    cleaned up afterward so it never leaks into other tests. This is the seam
-    Epic 13 builds its endpoint enforcement tests on.
+    cleaned up afterward so it never leaks into other tests. It also depends on
+    `container_keys_session_factory` so the encrypt/decrypt endpoints' key
+    resolution reads the container key store, not the unreachable eager engine.
+    This is the seam Epic 13 builds its endpoint enforcement tests on.
     """
     session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
 

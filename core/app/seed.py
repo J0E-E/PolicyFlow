@@ -20,6 +20,7 @@ import asyncio
 import logging
 import os
 import uuid
+from datetime import date
 from typing import Iterable, Optional
 
 from sqlalchemy import select, text
@@ -29,7 +30,9 @@ from .auth.passwords import hash_password
 from .config import settings
 from .db import session_factory
 from .models import Role, Tenant, TenantDataKey, User
-from .pii.crypto import wrap_key
+from .pii.crypto import normalize_email, normalize_phone, wrap_key
+from .pii.masking import age_band_for
+from .pii.service import compute_blind_index, encrypt_field
 from .tenancy.registry import TENANTS, tenant_by_slug
 
 logging.basicConfig(level=logging.INFO)
@@ -83,6 +86,55 @@ DEMO_TENANT_SETTINGS: dict[str, dict[str, str]] = {
             "your family's life."
         ),
     },
+}
+
+
+# The synthetic demo PII records seeded into each tenant's own `pii_demo` table,
+# keyed by tenant slug. All values are fabricated (not real people). The personas
+# are chosen to exercise both ends of the masked write/read demonstrator:
+#
+# - Sunshine Senior Benefits gets a 65+ persona **with** a mock Medicare id (and a
+#   phone), so a row carries every field treatment, including the never-revealable
+#   Medicare id, and lands in the `65+` age band.
+# - Florida Family Planning gets younger personas **without** a Medicare id, one
+#   with a phone and one without, so an absent optional field is exercised too.
+#
+# `age_band` is not stored here — it is always derived from `date_of_birth` at
+# seed time, exactly as the create endpoint derives it. The birth dates are far
+# enough from any plausible run date that the bands stay stable over time.
+DEMO_PII_RECORDS: dict[str, list[dict]] = {
+    "sunshine-senior-benefits": [
+        {
+            "display_name": "Margaret Sunshine",
+            "email": "margaret.sunshine@example.com",
+            "date_of_birth": date(1950, 4, 12),
+            "phone": "+1 (305) 555-0142",
+            "mock_medicare_id": "555-12-7788",
+        },
+        {
+            "display_name": "Harold Brightwater",
+            "email": "harold.brightwater@example.com",
+            "date_of_birth": date(1948, 11, 3),
+            "phone": "+1 (561) 555-0199",
+            "mock_medicare_id": "555-34-9911",
+        },
+    ],
+    "florida-family-planning": [
+        {
+            "display_name": "Ana Marisol",
+            "email": "ana.marisol@example.com",
+            "date_of_birth": date(1994, 7, 22),
+            "phone": "+1 (786) 555-0123",
+            "mock_medicare_id": None,
+        },
+        {
+            "display_name": "Diego Familia",
+            "email": "diego.familia@example.com",
+            "date_of_birth": date(1989, 2, 9),
+            "phone": None,
+            "mock_medicare_id": None,
+        },
+    ],
 }
 
 
@@ -167,6 +219,90 @@ async def seed_tenant_data_keys(
         )
         keys_created += 1
     return keys_created
+
+
+async def seed_pii_demo_records(
+    db: AsyncSession, slug_to_tenant_id: dict[str, uuid.UUID]
+) -> int:
+    """Insert the synthetic demo PII records into each tenant's `pii_demo` table.
+
+    For each tenant, skips entirely if that tenant's `pii_demo` already holds any
+    rows (count-based idempotency — the container re-seeds on every boot, and the
+    records have no natural unique key to conflict on). Otherwise it encrypts each
+    PII field via `encrypt_field`, computes the email (and phone) blind index over
+    the normalized value via `compute_blind_index`, derives the plaintext
+    `age_band` from the birth date, and `INSERT`s the row with raw SQL. Returns the
+    total number of records newly inserted.
+
+    The schema identifier is interpolated **only** from the registry (never user
+    input), exactly like the `tenant_settings` seed; every value is a bound
+    parameter. The per-tenant keys this resolves are read by `get_tenant_keys`
+    through its **own** session, so the caller must have already committed the
+    seeded `tenant_data_keys` before calling this — otherwise the key load (a
+    separate session) cannot see them.
+    """
+    records_inserted = 0
+    for tenant_slug, tenant_id in slug_to_tenant_id.items():
+        config = tenant_by_slug(tenant_slug)
+        existing_count = (
+            await db.execute(
+                text(f"SELECT COUNT(*) FROM {config.schema_name}.pii_demo")
+            )
+        ).scalar_one()
+        if existing_count > 0:
+            continue
+
+        for demo_record in DEMO_PII_RECORDS.get(tenant_slug, []):
+            email_encrypted = await encrypt_field(tenant_id, demo_record["email"])
+            email_blind_index = await compute_blind_index(
+                tenant_id, normalize_email(demo_record["email"])
+            )
+            date_of_birth_encrypted = await encrypt_field(
+                tenant_id, demo_record["date_of_birth"].isoformat()
+            )
+            age_band = age_band_for(demo_record["date_of_birth"])
+
+            phone_encrypted = None
+            phone_blind_index = None
+            if demo_record["phone"] is not None:
+                phone_encrypted = await encrypt_field(
+                    tenant_id, demo_record["phone"]
+                )
+                phone_blind_index = await compute_blind_index(
+                    tenant_id, normalize_phone(demo_record["phone"])
+                )
+
+            mock_medicare_id_encrypted = None
+            if demo_record["mock_medicare_id"] is not None:
+                mock_medicare_id_encrypted = await encrypt_field(
+                    tenant_id, demo_record["mock_medicare_id"]
+                )
+
+            await db.execute(
+                text(
+                    f"INSERT INTO {config.schema_name}.pii_demo "
+                    "(id, display_name, email_encrypted, email_blind_index, "
+                    "phone_encrypted, phone_blind_index, date_of_birth_encrypted, "
+                    "age_band, mock_medicare_id_encrypted) "
+                    "VALUES (:id, :display_name, :email_encrypted, "
+                    ":email_blind_index, :phone_encrypted, :phone_blind_index, "
+                    ":date_of_birth_encrypted, :age_band, "
+                    ":mock_medicare_id_encrypted)"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "display_name": demo_record["display_name"],
+                    "email_encrypted": email_encrypted,
+                    "email_blind_index": email_blind_index,
+                    "phone_encrypted": phone_encrypted,
+                    "phone_blind_index": phone_blind_index,
+                    "date_of_birth_encrypted": date_of_birth_encrypted,
+                    "age_band": age_band,
+                    "mock_medicare_id_encrypted": mock_medicare_id_encrypted,
+                },
+            )
+            records_inserted += 1
+    return records_inserted
 
 
 async def seed(db: AsyncSession) -> None:
@@ -280,6 +416,16 @@ async def seed(db: AsyncSession) -> None:
     # so this is the full set of registry tenant ids.
     keys_inserted = await seed_tenant_data_keys(db, slug_to_tenant_id.values())
 
+    # Commit the tenants, users, settings, and data keys before seeding the demo
+    # PII records. `seed_pii_demo_records` encrypts each field, and the per-tenant
+    # key it needs is read by `get_tenant_keys` through its **own** session — which
+    # cannot see the just-added `tenant_data_keys` rows until this commit lands.
+    await db.commit()
+
+    # --- Demo PII records: a couple of synthetic rows per tenant, encrypted on
+    # write, in each tenant's own `pii_demo` table. Committed separately after the
+    # data keys above are durable so the key load can resolve them.
+    pii_demo_rows_inserted = await seed_pii_demo_records(db, slug_to_tenant_id)
     await db.commit()
 
     total_tenants = len(DEMO_TENANTS)
@@ -287,13 +433,14 @@ async def seed(db: AsyncSession) -> None:
     logger.info(
         "seed complete: tenants inserted=%d already-present=%d; "
         "users inserted=%d already-present=%d; settings rows inserted=%d; "
-        "data keys inserted=%d",
+        "data keys inserted=%d; pii_demo rows inserted=%d",
         tenants_inserted,
         total_tenants - tenants_inserted,
         users_inserted,
         total_users - users_inserted,
         settings_inserted,
         keys_inserted,
+        pii_demo_rows_inserted,
     )
 
 

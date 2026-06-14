@@ -27,11 +27,12 @@ from app.tenancy.registry import TENANTS, tenant_by_slug
 class FakeResult:
     """A stand-in for a SQLAlchemy `Result` that yields preset rows.
 
-    Every `seed` query reads through `.scalars().all()`: scalar columns
+    Most `seed` queries read through `.scalars().all()`: scalar columns
     (`select(Tenant.slug)`, `select(User.username)`) and the present-tenant
-    lookup, which now loads full `Tenant` ORM objects (`select(Tenant)`). This
-    fake serves all of them — `scalars()` returns self and `.all()` returns the
-    preset rows unchanged.
+    lookup, which loads full `Tenant` ORM objects (`select(Tenant)`). The
+    per-tenant `pii_demo` count reads through `.scalar_one()`. This fake serves
+    all of them — `scalars()` returns self, `.all()` returns the preset rows
+    unchanged, and `.scalar_one()` returns the single preset row.
     """
 
     def __init__(self, rows, rowcount=0):
@@ -44,20 +45,28 @@ class FakeResult:
     def all(self):
         return self._rows
 
+    def scalar_one(self):
+        return self._rows[0]
+
 
 class FakeAsyncSession:
     """A minimal async session that replays preset `execute` results.
 
-    `seed` runs up to four SELECT queries in order: existing tenant slugs, the
-    already-present `Tenant` ORM rows, existing usernames, then the existing
-    data-key tenant ids (for the per-tenant root-key seeding step). The fake is
-    handed a list of result-row lists and returns the next one on each of those
-    SELECTs. The later per-tenant settings INSERTs call `execute(statement,
-    params)` with a bound-parameters mapping; the fake recognises those by the
-    second positional argument and returns a `rowcount`-bearing result without
-    consuming a preset SELECT row, recording each one in `settings_inserts`.
-    `add` appends to `added`, and `commit` flips `did_commit`, so a test can
-    assert exactly which rows were inserted and that one commit ran.
+    `seed` runs these no-parameter SELECTs in order: existing tenant slugs, the
+    already-present `Tenant` ORM rows, existing usernames, the existing data-key
+    tenant ids (for the per-tenant root-key seeding step), then one
+    ``SELECT COUNT(*) FROM <schema>.pii_demo`` per tenant (for the count-based
+    `pii_demo` idempotency skip). The fake is handed a list of result-row lists
+    and returns the next one on each of those SELECTs; the per-tenant count rows
+    are presets too (a non-zero count makes `seed_pii_demo_records` skip the
+    encryption path entirely, keeping this a pure no-DB unit test).
+
+    The per-tenant settings INSERTs call `execute(statement, params)` with a
+    bound-parameters mapping; the fake recognises those by the second positional
+    argument and returns a `rowcount`-bearing result without consuming a preset
+    SELECT row, recording each one in `settings_inserts`. `add` appends to
+    `added`, and `commit` increments `commit_count` (and sets `did_commit`), so a
+    test can assert exactly which rows were inserted and that the seed committed.
     """
 
     def __init__(self, result_rows):
@@ -66,6 +75,7 @@ class FakeAsyncSession:
         self.added = []
         self.settings_inserts = []
         self.did_commit = False
+        self.commit_count = 0
 
     async def execute(self, statement, parameters=None):
         if parameters is not None:
@@ -82,6 +92,7 @@ class FakeAsyncSession:
 
     async def commit(self):
         self.did_commit = True
+        self.commit_count += 1
 
 
 # --- Phase 2: the persona spec is correct (pure data, no session) ------------
@@ -149,11 +160,14 @@ def test_persona_emails_use_their_tenants_registry_domain():
 def _empty_database_results():
     """Result rows for an empty database: no tenants present, no usernames.
 
-    Three `execute` calls run when no tenants pre-exist (tenant slugs, then
-    usernames — the present-tenant lookup is skipped because nothing is present
-    — then the existing data-key tenant ids for the key-seeding step).
+    The no-parameter SELECTs that run when no tenants pre-exist, in order: tenant
+    slugs, then usernames (the present-tenant lookup is skipped because nothing is
+    present), then the existing data-key tenant ids for the key-seeding step, then
+    one ``SELECT COUNT(*) FROM <schema>.pii_demo`` per tenant. The two count rows
+    are preset non-zero (`[2]`) so the `pii_demo` seeding skips its encryption
+    path on every tenant, keeping this a pure no-DB unit test.
     """
-    return [[], [], []]
+    return [[], [], [], [2], [2]]
 
 
 async def test_seed_from_empty_inserts_two_tenants_and_nine_users():
@@ -220,12 +234,13 @@ async def test_seed_is_idempotent_when_everything_already_present():
         Tenant(id="id-" + slug, slug=slug, name=slug) for slug in all_slugs
     ]
     all_usernames = [email for email, _role, _tenant_slug in demo_user_specs()]
-    # Four execute calls: existing slugs, present `Tenant` rows, existing
-    # usernames, and the existing data-key tenant ids. All tenant ids already
-    # have keys here, so no new key is added on this idempotent re-seed.
+    # Six no-parameter SELECTs: existing slugs, present `Tenant` rows, existing
+    # usernames, the existing data-key tenant ids, then one `pii_demo` count per
+    # tenant. All tenant ids already have keys here, so no new key is added; both
+    # counts are non-zero (`[2]`), so no demo PII record is added either.
     present_tenant_ids = [tenant.id for tenant in present_tenants]
     session = FakeAsyncSession(
-        [all_slugs, present_tenants, all_usernames, present_tenant_ids]
+        [all_slugs, present_tenants, all_usernames, present_tenant_ids, [2], [2]]
     )
 
     await seed(session)
@@ -250,9 +265,11 @@ async def test_seed_adds_only_missing_rows_on_partial_state():
         if tenant_slug == present_slug
     ]
     # The fourth execute is the existing data-key tenant ids; none exist yet,
-    # so a wrapped key is minted for both registry tenants on this seed.
+    # so a wrapped key is minted for both registry tenants on this seed. The last
+    # two are the per-tenant `pii_demo` counts, preset non-zero (`[2]`) so the
+    # demo PII seeding skips its encryption path on both tenants.
     session = FakeAsyncSession(
-        [[present_slug], present_tenants, present_usernames, []]
+        [[present_slug], present_tenants, present_usernames, [], [2], [2]]
     )
 
     await seed(session)
