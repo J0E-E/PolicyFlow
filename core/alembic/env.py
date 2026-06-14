@@ -54,17 +54,33 @@ def include_name(name, type_, parent_names) -> bool:
 
 
 def include_object(object_, name, type_, reflected, compare_to) -> bool:
-    """Exclude the deliberately schema-less demonstrator tables from comparison.
+    """Exclude the deliberately schema-less tenant tables from comparison.
 
-    ``TenantSettings`` and ``PiiDemoRecord`` both map to the default schema in
-    the models but physically exist only inside each tenant schema, so without
-    this filter Alembic would want to *create* ``tenant_settings`` / ``pii_demo``
-    in the default schema (the metadata side) and *drop* the real per-tenant
-    copies. Dropping these tables from the comparison closes both halves of that
-    phantom drift; the per-tenant copies are also already excluded by
-    ``include_name`` (belt and suspenders).
+    ``TenantSettings``, ``PiiDemoRecord``, and the schema-less ``AuditRecord`` all
+    map to the default schema in the models but physically exist only inside each
+    tenant schema, so without this filter Alembic would want to *create*
+    ``tenant_settings`` / ``pii_demo`` / ``audit_records`` in the default schema
+    (the metadata side) and *drop* the real per-tenant copies. Dropping these
+    tables from the comparison closes both halves of that phantom drift; the
+    per-tenant copies are also already excluded by ``include_name`` (belt and
+    suspenders).
+
+    ``audit_records`` is special: it is the **one** table name shared by a
+    schema-less model (``AuditRecord``) and a platform-bound model
+    (``PlatformAuditRecord`` → ``platform.audit_records``). Name-only matching
+    would wrongly drop the platform twin too, so its exclusion is **schema-
+    guarded** on ``object_.schema is None`` — only the default-schema copy is
+    dropped, while ``platform.audit_records`` stays in the comparison and is
+    drift-checked against the migration. ``tenant_settings`` / ``pii_demo`` have
+    no platform twin, so name-only matching is safe for them.
     """
     if type_ == "table" and name in {"tenant_settings", "pii_demo"}:
+        return False
+    if (
+        type_ == "table"
+        and name == "audit_records"
+        and object_.schema is None
+    ):
         return False
     return True
 
