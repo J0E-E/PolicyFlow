@@ -54,16 +54,17 @@ def include_name(name, type_, parent_names) -> bool:
 
 
 def include_object(object_, name, type_, reflected, compare_to) -> bool:
-    """Exclude the deliberately schema-less demonstrator table from comparison.
+    """Exclude the deliberately schema-less demonstrator tables from comparison.
 
-    ``TenantSettings`` maps to the default schema in the models but physically
-    exists only inside each tenant schema, so without this filter Alembic would
-    want to *create* ``tenant_settings`` in the default schema (the metadata
-    side) and *drop* the real per-tenant copies. Dropping the table from the
-    comparison closes both halves of that phantom drift; the per-tenant copies
-    are also already excluded by ``include_name`` (belt and suspenders).
+    ``TenantSettings`` and ``PiiDemoRecord`` both map to the default schema in
+    the models but physically exist only inside each tenant schema, so without
+    this filter Alembic would want to *create* ``tenant_settings`` / ``pii_demo``
+    in the default schema (the metadata side) and *drop* the real per-tenant
+    copies. Dropping these tables from the comparison closes both halves of that
+    phantom drift; the per-tenant copies are also already excluded by
+    ``include_name`` (belt and suspenders).
     """
-    if type_ == "table" and name == "tenant_settings":
+    if type_ == "table" and name in {"tenant_settings", "pii_demo"}:
         return False
     return True
 

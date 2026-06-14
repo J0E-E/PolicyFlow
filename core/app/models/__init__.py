@@ -7,6 +7,7 @@ The models are also re-exported here for convenient direct import.
 """
 
 from .auth_session import AuthSession
+from .pii_demo import PiiDemoRecord
 from .tenant import Tenant
 from .tenant_data_key import TenantDataKey
 from .tenant_settings import TenantSettings
@@ -14,6 +15,7 @@ from .user import Role, User
 
 __all__ = [
     "AuthSession",
+    "PiiDemoRecord",
     "Role",
     "Tenant",
     "TenantDataKey",
