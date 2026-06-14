@@ -65,6 +65,26 @@ PLATFORM_ROLE = "platform_reader"
 AUDIT_WRITER_ROLE = "audit_writer"
 
 
+def is_known_schema(schema_name: str) -> bool:
+    """Return whether ``schema_name`` matches a registered tenant's schema.
+
+    The registry is the single source of truth for which schemas serve tenants.
+    Confirming a looked-up schema name against it before that name is interpolated
+    into a schema-qualified ``INSERT`` is the whitelist guard that makes the
+    interpolation safe — a schema name cannot be passed as a bound parameter, so an
+    unrecognized name must never reach the statement text.
+
+    This is the schema-only sibling of `app.tenancy.scoping.is_known_tenant_pair`,
+    kept here in the dependency-free registry leaf so the Epic 4 audit-emit service
+    can import the guard **without** importing `scoping.py`. That deliberately
+    avoids a circular import in Epic 6, where `scoping.py` starts calling the audit
+    service (a `scoping → service → scoping` cycle would break). The service writes
+    as `audit_writer`, not the tenant's `db_role`, so validating the schema alone is
+    the right shape — there is no need for the pair check `is_known_tenant_pair`.
+    """
+    return any(tenant.schema_name == schema_name for tenant in TENANTS)
+
+
 def tenant_by_slug(slug: str) -> TenantConfig:
     """Return the tenant configuration for ``slug``.
 

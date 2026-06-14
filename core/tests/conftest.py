@@ -38,6 +38,7 @@ from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
+from app.audit import service as audit_service_module
 from app.db import get_db
 from app.main import app
 from app.pii import keys as pii_keys_module
@@ -142,6 +143,27 @@ def container_keys_session_factory(database_engine, monkeypatch):
     """
     session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
     monkeypatch.setattr(pii_keys_module, "session_factory", session_factory)
+    return session_factory
+
+
+@pytest.fixture
+def container_audit_session_factory(database_engine, monkeypatch):
+    """Point `app.audit.service.session_factory` at the migrated container database.
+
+    The audit-emit service (`record_audit_event`) opens its **own** session through
+    the module-global `app.audit.service.session_factory` — separate from the
+    request's `get_db`, the same own-session shape as `app.pii.keys`. The DB
+    substrate must point that global at the container database, otherwise the audit
+    write would hit the unreachable eager default engine. `monkeypatch` restores
+    the real factory after each test. A verbatim mirror of
+    `container_keys_session_factory` above.
+
+    *(Not wired into `db_session`/`db_client` yet — no endpoint emits audit until
+    the later wiring epics; that wiring lands with the first emitting endpoint,
+    exactly as the keys fixture was.)*
+    """
+    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    monkeypatch.setattr(audit_service_module, "session_factory", session_factory)
     return session_factory
 
 
