@@ -38,6 +38,35 @@ def reload_db_module_with_url(monkeypatch, database_url: str):
     return reloaded_db
 
 
+@pytest.fixture(autouse=True)
+def restore_reloaded_modules_after_test():
+    """Contain the `app.config` / `app.db` reloads so they cannot leak.
+
+    `reload_db_module_with_url` calls `importlib.reload(app.db)`, which
+    re-executes the module in place and rebinds `app.db.Base` to a fresh, **empty**
+    `MetaData`. The ORM models stay registered on the *original* `Base`, so leaving
+    the reloaded module in place silently empties `Base.metadata` for the rest of
+    the session. Anything that reads `app.db.Base` at runtime then sees no tables —
+    notably `alembic/env.py`, which would make `test_alembic_check_reports_no_drift`
+    inspect an empty schema set and pass vacuously (a dead drift guard).
+
+    Snapshot both module namespaces before the test and restore them afterwards so
+    each reload is fully contained and the shared `Base` (with its models) survives.
+    """
+    import app.config
+    import app.db
+
+    saved_config = app.config.__dict__.copy()
+    saved_db = app.db.__dict__.copy()
+    try:
+        yield
+    finally:
+        app.config.__dict__.clear()
+        app.config.__dict__.update(saved_config)
+        app.db.__dict__.clear()
+        app.db.__dict__.update(saved_db)
+
+
 def test_engine_uses_async_postgres_dialect(monkeypatch):
     """The engine is built with the asyncpg dialect from a bare postgres:// URL."""
     db = reload_db_module_with_url(
