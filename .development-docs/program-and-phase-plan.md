@@ -251,7 +251,7 @@ ordered so the system stays runnable/deployable after each.
   the drift gate clean against migration-owned tenant schemas (closes the P1.1 Epic-2
   caveat). Epic plan: `./p1.2/epic-plan-P1.2-tenant-scoping.md`.
 
-#### P1.3 — Field-level encryption, blind index & masking
+#### P1.3 — Field-level encryption, blind index & masking  — **COMPLETE**
 
 - **Goal:** Application-layer field encryption, HMAC blind index for email/phone,
   envelope encryption, masking-by-default render layer.
@@ -265,6 +265,24 @@ ordered so the system stays runnable/deployable after each.
 - **Isolation note:** per-tenant data keys reinforce isolation; no raw PII in logs.
 - **Why now:** the PII shape constrains the schema; must precede domain entities.
 - **Size:** M.
+- **Status:** **COMPLETE** (2026-06-14). All 13 epics shipped behind a green gate
+  (full backend suite **230 passed**; the P1.3 surface re-verified here at **96 passed**
+  plus one known DinD asyncpg connection-timeout flake that passes on isolated re-run).
+  Acceptance met and **Risk #3 retired**: the named acceptance suite
+  (`test_pii_acceptance.py`) proves PII is ciphertext at rest (raw `*_encrypted` bytea
+  never contains the seeded plaintext), exact-match duplicate lookup runs via the HMAC
+  blind index **without decryption** under the real per-tenant role (`SET LOCAL ROLE`
+  equality query), one tenant's ciphertext cannot be decrypted with another tenant's key
+  (per-tenant subkey + tenant-id AAD), masking is the default on every read, and
+  `age_band` is plaintext. Envelope encryption is in place — per-tenant root keys wrapped
+  under the env `PII_MASTER_KEY` in `platform.tenant_data_keys` (migration `0005`,
+  login-role-only read), HKDF-derived encryption + blind-index subkeys cached per process;
+  the `pii_demo` demonstrator (migration `0006`) carries every field treatment behind
+  masked write/read (`POST`/`GET /api/pii-demo`), blind-index lookup
+  (`POST /api/pii-demo/lookup`), and a capability-gated reveal
+  (`POST /api/pii-demo/{id}/reveal`, `REVEAL_PII`) whose `on_pii_revealed` seam is a
+  no-op until P1.4. **Deferred per plan:** audited click-to-reveal UI wiring (needs P1.4
+  audit + P1.6 shell). Epic plan: `./p1.3/epic-plan-P1.3-field-encryption-blind-index-masking.md`.
 
 #### P1.4 — Audit logging
 
@@ -383,7 +401,7 @@ Real services replace P1–P2 stubs behind the same events.
 M0  P0.1 ✓ Walking Skeleton & Pipeline        (exit test PASSED 2026-06-12 — gate cleared)
         → P0.1a ✓ Test harness & commit gate   (tests + pre-commit gate live from here on)
         |
-M1  P1.1 ✓ Auth/RBAC → P1.2 ✓ Tenant schemas → P1.3 Encryption → P1.4 Audit
+M1  P1.1 ✓ Auth/RBAC → P1.2 ✓ Tenant schemas → P1.3 ✓ Encryption → P1.4 Audit
         → P1.5 Event bus+stubs → P1.6 Demo shell [UI]
         → P1.7 Intake/queue/qualify/dup [UI] → P1.8 Seed+sessions → P1.9 Timeline [UI]
         |
@@ -433,7 +451,7 @@ Terraform/CI surprise during P0.1 as a finding to record, not a re-architecture.
 |---|---|---|---|
 | 1 | Hands-off push→prod on parity infra | P0.1 exit test ✓ **retired 2026-06-12** | If a push to `main` does not reach `policyflow.joeyshub.com` with zero manual steps, halt feature work until fixed. |
 | 2 | TLS at nginx on a single EC2 without an ALB | P0.1 ✓ **retired 2026-06-12** (certbot issued; no ALB needed) | If certbot cannot issue/renew for the host, fall back to ACM+ALB and accept the added cost/infra. |
-| 3 | Schema-per-tenant + app-layer encryption coexisting without breaking blind-index search | P1.3 | If blind-index exact-match can't run within a tenant schema, revisit per-tenant key derivation before building intake. |
+| 3 | Schema-per-tenant + app-layer encryption coexisting without breaking blind-index search | P1.3 ✓ **retired 2026-06-14** | If blind-index exact-match can't run within a tenant schema, revisit per-tenant key derivation before building intake. |
 | 4 | Stub→real sidecar swap staying invisible | P1.5 / M3 | If M3 cannot replace a stub without changing callers, the envelope contract was wrong — fix the contract, not the callers. |
 | 5 | Demo-session purge cascading across core + sidecar stores | P1.8 / M3 | If session purge leaves orphaned sidecar records, tighten the `demo_session_id` propagation before M4. |
 
@@ -561,3 +579,19 @@ The cross-tenant read goes only through the sanctioned platform path; its
 **P1.4**. **Next move:** **P1.3 (Field-level encryption, blind index & masking)**, which
 retires Risk #3 (schema-per-tenant + app-layer encryption coexisting without breaking
 blind-index search).
+
+**2026-06-14** — **P1.3 COMPLETE — Risk #3 retired; the PII spine is in.** All 13 epics
+shipped behind a green gate (full backend suite **230 passed**): the pure crypto toolkit
+(AES-256-GCM + master-key wrap/unwrap + HKDF subkeys + HMAC blind index), the per-tenant
+wrapped-key store (`platform.tenant_data_keys`, migration `0005`) read only by the login
+role with a process-lifetime key cache, the encrypt/decrypt/blind-index service seam
+(per-tenant subkey + tenant-id AAD), masking + `age_band` utilities, the `pii_demo`
+demonstrator (migration `0006`) behind masked write/read + blind-index lookup + a
+capability-gated reveal, real per-tenant seeded root keys, and the named acceptance suite
+(`test_pii_acceptance.py`) proving ciphertext-at-rest, blind-index exact-match without
+decryption under the real tenant role, per-tenant key isolation, and masking-by-default
+with reveal as the sole RBAC-gated egress. **Risk #3 retired** — schema-per-tenant +
+app-layer encryption coexist and the blind-index equality lookup runs inside the tenant
+schema. The reveal seam (`on_pii_revealed`) is wired but emits nothing — audit lands in
+**P1.4**. **Next move:** **P1.4 (Audit logging)**, which fills both the
+`record_platform_read_for_audit` (P1.2) and `on_pii_revealed` (P1.3) seams.
