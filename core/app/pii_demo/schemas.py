@@ -14,7 +14,7 @@ never accepted from the client — it is always derived from the required
 
 from datetime import date
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class CreateRecordRequest(BaseModel):
@@ -32,3 +32,34 @@ class CreateRecordRequest(BaseModel):
     date_of_birth: date
     phone: str | None = None
     mock_medicare_id: str | None = None
+
+
+class LookupRequest(BaseModel):
+    """The blind-index lookup request body: exactly one of `email` or `phone`.
+
+    The lookup endpoint matches records by the blind-index fingerprint of a
+    single field, so the request carries exactly one search term. Both fields are
+    optional on their own, but the `model_validator` below requires that exactly
+    one is supplied — neither (an empty body) and both (an ambiguous request) are
+    each rejected by Pydantic as a 422 before the handler runs, the same
+    automatic-validation style the create request relies on.
+    """
+
+    email: str | None = None
+    phone: str | None = None
+
+    @model_validator(mode="after")
+    def require_exactly_one_field(self) -> "LookupRequest":
+        """Reject the request unless exactly one of `email` / `phone` is given.
+
+        Counts how many of the two search terms are present. Zero (nothing to look
+        up) and two (an ambiguous request) both raise a `ValueError`, which
+        FastAPI surfaces as a 422 — so a caller must always supply one and only
+        one field.
+        """
+        supplied_field_count = sum(
+            field_value is not None for field_value in (self.email, self.phone)
+        )
+        if supplied_field_count != 1:
+            raise ValueError("supply exactly one of 'email' or 'phone'")
+        return self

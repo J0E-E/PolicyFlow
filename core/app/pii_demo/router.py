@@ -11,11 +11,16 @@ earlier P1.3 epics' pieces:
   `require_capability(CREATE_EDIT_RECORDS)`.
 - **Get** (`GET /api/pii-demo/{record_id}`) reads one record by id and returns it
   masked. It only requires an authenticated, tenant-scoped caller.
+- **Lookup** (`POST /api/pii-demo/lookup`) finds records by the blind-index
+  fingerprint of a normalized email or phone — exact-match duplicate detection
+  with **no decryption** on this path — and returns every match masked. It only
+  requires an authenticated, tenant-scoped caller.
 
-Both ride `get_tenant_db`, so isolation is automatic — there is **no tenant
+All ride `get_tenant_db`, so isolation is automatic — there is **no tenant
 parameter** anywhere — and the inherited 401 (no session) / 400 (tenantless
 Platform Admin) / per-tenant 404 come for free. Responses use the named-envelope
-style the other routers use: `{"record": …}`.
+style the other routers use: `{"record": …}` / `{"records": […]}` /
+`{"matches": […]}`.
 
 **Masked by default (the phase's whole point).** Every record leaves through
 `_masked_record`, which decrypts each stored field in-process and returns only the
@@ -47,7 +52,7 @@ from ..pii.masking import (
 )
 from ..pii.service import compute_blind_index, decrypt_field, encrypt_field
 from ..tenancy.scoping import get_tenant_db
-from .schemas import CreateRecordRequest
+from .schemas import CreateRecordRequest, LookupRequest
 
 router = APIRouter(prefix="/api/pii-demo")
 
@@ -185,6 +190,57 @@ async def list_records(
     tenant_id = identity.tenant_id
     return {
         "records": [
+            await _masked_record(tenant_id, record) for record in records
+        ]
+    }
+
+
+@router.post("/lookup")
+async def lookup_records(
+    lookup: LookupRequest,
+    identity: Identity = Depends(require_authenticated),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Find this tenant's records by the blind index of an email or phone, masked.
+
+    This proves exact-match duplicate detection **without decryption**: the
+    supplied field is normalized (`normalize_email` / `normalize_phone`), its
+    per-tenant blind-index fingerprint is computed with `compute_blind_index`, and
+    the matching `*_blind_index` column is queried for equality. Every match is
+    returned through the shared `_masked_record` builder under the
+    `{"matches": […]}` envelope; a miss returns `{"matches": []}` with a 200 (an
+    empty result is a normal answer, not a 404).
+
+    `LookupRequest` requires exactly one of `email` / `phone` (neither / both →
+    422), so exactly one branch runs here. There is **no tenant parameter** —
+    `get_tenant_db` scopes the equality query to the caller's own schema, so a
+    value matching in another tenant is physically out of reach and yields an
+    empty result; the dependency chain inherits 401 (no session) and 400
+    (tenantless caller).
+    """
+    tenant_id = identity.tenant_id
+
+    if lookup.email is not None:
+        blind_index = await compute_blind_index(
+            tenant_id, normalize_email(lookup.email)
+        )
+        match_condition = PiiDemoRecord.email_blind_index == blind_index
+    else:
+        blind_index = await compute_blind_index(
+            tenant_id, normalize_phone(lookup.phone)
+        )
+        match_condition = PiiDemoRecord.phone_blind_index == blind_index
+
+    records = (
+        await db.execute(
+            select(PiiDemoRecord)
+            .where(match_condition)
+            .order_by(PiiDemoRecord.created_at)
+        )
+    ).scalars().all()
+
+    return {
+        "matches": [
             await _masked_record(tenant_id, record) for record in records
         ]
     }
