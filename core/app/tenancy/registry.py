@@ -59,6 +59,11 @@ TENANTS: tuple[TenantConfig, ...] = (SUNSHINE, FLORIDA)
 # tenant role.
 PLATFORM_ROLE = "platform_reader"
 
+# The dedicated audit-writer role. Phase P1.4 Epic 2's `0007` migration creates
+# it and grants it INSERT+SELECT on the audit stores; the audit-emit service
+# (Epic 4) sets this role before writing append-only records.
+AUDIT_WRITER_ROLE = "audit_writer"
+
 
 def tenant_by_slug(slug: str) -> TenantConfig:
     """Return the tenant configuration for ``slug``.

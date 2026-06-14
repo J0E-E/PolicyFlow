@@ -6,12 +6,19 @@ Source TDD: [./tdd-P1.4-audit-logging.md](./tdd-P1.4-audit-logging.md)
 
 > High-level agile roadmap. Each epic's design specifics are confirmed with stakeholders at epic time (`4-plan-epic`) before any code is written.
 
-## Epic 1 — Audit constants + registry role name
+## Epic 1 — Audit constants + registry role name — **COMPLETED**
 - **Goal:** Land the pure, DB-free vocabulary the whole phase shares — the event-type and outcome enums (and any field-name helper) — and register the `audit_writer` role name as a single-source-of-truth constant so the migration and the service can never disagree on it.
 - **Rough scope:** A small `audit/records.py` with `EventType` + `Outcome` string enums (plus a field-name helper if one is warranted), fully unit-tested; add `AUDIT_WRITER_ROLE = "audit_writer"` to the tenancy registry alongside `PLATFORM_ROLE`. No DB.
 - **Open questions / decisions for stakeholders:** The exact event-type string values (`auth.login`, `pii.revealed`, `record.created`, `platform.cross_tenant_read`, `audit.viewed`) and the outcome set (`success` / `failure`, with `denied` reserved); whether a field-name helper is needed at all.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Added new package `core/app/audit/` (`__init__.py` + `records.py`) with two `StrEnum`s mirroring the `Capability` enum style in `auth/rbac.py` (explicit string values, single-source docstring, `__all__`).
+  - `EventType` values follow TDD §5 *Interfaces* verbatim (six members); `Outcome` has only `SUCCESS`/`FAILURE`. `denied` stays a **reserved comment**, not a defined member (TDD Decision 6 — no speculative members).
+  - **No field-name helper** — deferred to a real consumer per this session's stakeholder decision; no dependent epic needs one.
+  - `AUDIT_WRITER_ROLE = "audit_writer"` added to `tenancy/registry.py` beside `PLATFORM_ROLE`, with a comment naming Epic 2's `0007` migration and the Epic 4 service as consumers.
+  - Tests: new `tests/test_audit_records.py` (independent hand-transcription of both enums; asserts each value, exact member sets, and that `denied` is not an `Outcome`); extended `tests/test_registry.py` with one test mirroring `test_platform_role_is_the_expected_constant` (constant value + `BARE_SQL_IDENTIFIER` match).
+  - **Test run:** `pytest tests/test_audit_records.py tests/test_registry.py -q` → **14 passed** (run with `--noconftest`; the repo `conftest.py` fails to import under this environment's Python 3.14 / SQLAlchemy 2.0.36 ORM-union incompatibility, which also breaks pre-existing tests like `test_rbac.py` and is unrelated to this pure-data epic). Import smoke check passed. `asyncpg` was installed to get past the first conftest import error before the SQLAlchemy one surfaced.
+  - **Caveat (environment) — full-suite collection block under system Python 3.14:** the repo's full suite cannot be *collected* with the system interpreter (Python 3.14.3 + SQLAlchemy 2.0.36): `make_union_type` raises `TypeError: descriptor '__getitem__' requires a 'typing.Union' object but received a 'tuple'` while mapping any ORM model with a `Mapped[... | ...]` union annotation, which fires at `conftest.py` import time and blocks every ORM-importing test (reproduces identically on pre-existing `test_rbac.py`; not caused by this epic, which adds no ORM models). **Resolution / how to run green:** use the project's pinned Python 3.12 venv at `core/.venv` (the interpreter the committed `.pre-commit-config.yaml` and `commit-epic` already invoke). Under it the suite collects and passes clean — verified this epic: `core/.venv/Scripts/python.exe -m pytest -q` → **236 passed** (full backend suite, incl. testcontainers DB tests), and this epic's two files → **14 passed** with the real conftest loaded. Noted so Epic 8's acceptance/migration work and the commit gate run against `core/.venv` (Python 3.12), not the system 3.14.
 
 ## Epic 2 — Migration `0007`: audit tables + writer role + grants
 - **Goal:** Stand up the two audit stores and make append-only **physical** — create the `audit_writer` role, the `platform.audit_records` table, and a per-tenant `audit_records` table in every tenant schema, with grants tightened so the writer can only INSERT/SELECT and tenant roles can only SELECT.

@@ -14,6 +14,7 @@ import pytest
 from dataclasses import FrozenInstanceError
 
 from app.tenancy.registry import (
+    AUDIT_WRITER_ROLE,
     FLORIDA,
     PLATFORM_ROLE,
     SUNSHINE,
@@ -53,6 +54,13 @@ def test_schema_names_and_roles_are_distinct_across_tenants():
 def test_platform_role_is_the_expected_constant():
     """The platform read-role constant matches the confirmed identifier."""
     assert PLATFORM_ROLE == "platform_reader"
+
+
+def test_audit_writer_role_is_the_expected_constant():
+    """The audit-writer role constant matches the confirmed identifier and is a
+    valid bare SQL identifier (Epic 2's `0007` migration interpolates it)."""
+    assert AUDIT_WRITER_ROLE == "audit_writer"
+    assert BARE_SQL_IDENTIFIER.match(AUDIT_WRITER_ROLE)
 
 
 def test_every_tenant_has_a_non_empty_email_domain():
