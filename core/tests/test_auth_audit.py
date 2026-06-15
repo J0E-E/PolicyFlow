@@ -85,6 +85,31 @@ async def _read_all_platform_failure_rows(session_factory):
         return [dict(row) for row in rows.mappings().all()]
 
 
+async def _count_login_success_rows(session_factory, qualified_table):
+    """Count `auth.login`/`success` rows in one audit store (for before/after deltas).
+
+    The shared seeded personas log in across many tests against the session-scoped
+    container DB, which is never reset, so a global `== 1` count of a persona's rows
+    is order-dependent. A login-success delta on the store proves *this* login wrote
+    exactly one row — the same before/after-delta idiom
+    `test_wrong_password_login_audits_pii_free_to_platform` uses for the failure
+    store. Counting under serial test execution is exact: only this test's login can
+    add an `auth.login`/`success` row between the two snapshots.
+    """
+    async with session_factory() as session:
+        total = await session.execute(
+            text(
+                f"SELECT count(*) FROM {qualified_table} "
+                "WHERE event_type = :event_type AND outcome = :outcome"
+            ),
+            {
+                "event_type": str(EventType.AUTH_LOGIN),
+                "outcome": str(Outcome.SUCCESS),
+            },
+        )
+        return total.scalar_one()
+
+
 # --- Login success: store routing -------------------------------------------
 
 
@@ -95,19 +120,36 @@ async def test_tenant_admin_login_audits_to_their_tenant_store(
 
     The row lands in the Sunshine tenant's own schema attributed to that actor, and
     nothing for that actor reaches the platform store — a tenant login is
-    tenant-scoped (the project's cross-cutting axis).
+    tenant-scoped (the project's cross-cutting axis). A before/after delta proves
+    *this* login wrote exactly one row: the shared seeded Tenant Admin persona logs
+    in across many tests against the never-reset container DB, so a global `== 1`
+    count of the actor's rows would be order-dependent.
     """
+    tenant_table = f"{SUNSHINE.schema_name}.audit_records"
+    logins_before = await _count_login_success_rows(
+        container_audit_session_factory, tenant_table
+    )
+
     login_response = await login_as(db_client, Role.TENANT_ADMIN)
     assert login_response.status_code == 200
     actor_user_id = uuid.UUID(login_response.json()["user"]["id"])
 
-    tenant_rows = await _read_audit_rows_for_actor(
-        container_audit_session_factory,
-        f"{SUNSHINE.schema_name}.audit_records",
-        actor_user_id,
+    logins_after = await _count_login_success_rows(
+        container_audit_session_factory, tenant_table
     )
-    assert len(tenant_rows) == 1
-    written = tenant_rows[0]
+    assert logins_after == logins_before + 1
+
+    # The just-written login is attributed to this actor. Every `auth.login` row
+    # this persona writes is identical in the asserted fields, so inspecting the
+    # newest of the actor's login rows is order-independent.
+    tenant_rows = await _read_audit_rows_for_actor(
+        container_audit_session_factory, tenant_table, actor_user_id
+    )
+    login_rows = [
+        row for row in tenant_rows if row.event_type == EventType.AUTH_LOGIN
+    ]
+    assert login_rows
+    written = login_rows[0]
     assert written.actor_user_id == actor_user_id
     assert written.actor_role == Role.TENANT_ADMIN
     assert written.event_type == EventType.AUTH_LOGIN
@@ -129,17 +171,31 @@ async def test_platform_admin_login_audits_to_the_platform_store(
 
     The seeded Platform Admin is tenantless (`tenant_id=None`), so the service's one
     routing rule lands its login record in the shared platform store with a NULL
-    `tenant_id`.
+    `tenant_id`. A before/after delta proves *this* login wrote exactly one row: the
+    shared persona logs in across many tests against the never-reset container DB, so
+    a global `== 1` count of the actor's rows would be order-dependent.
     """
+    logins_before = await _count_login_success_rows(
+        container_audit_session_factory, "platform.audit_records"
+    )
+
     login_response = await login_as(db_client, Role.PLATFORM_ADMIN)
     assert login_response.status_code == 200
     actor_user_id = uuid.UUID(login_response.json()["user"]["id"])
 
+    logins_after = await _count_login_success_rows(
+        container_audit_session_factory, "platform.audit_records"
+    )
+    assert logins_after == logins_before + 1
+
     platform_rows = await _read_audit_rows_for_actor(
         container_audit_session_factory, "platform.audit_records", actor_user_id
     )
-    assert len(platform_rows) == 1
-    written = platform_rows[0]
+    login_rows = [
+        row for row in platform_rows if row.event_type == EventType.AUTH_LOGIN
+    ]
+    assert login_rows
+    written = login_rows[0]
     assert written.tenant_id is None
     assert written.actor_user_id == actor_user_id
     assert written.actor_role == Role.PLATFORM_ADMIN
