@@ -8,4 +8,9 @@ none of them can ever disagree on a spelling.
 action calls. It routes by `tenant_id` to the right store, opens its own session
 as the `audit_writer` role, and writes one append-only record of names, never
 values.
+
+`router.py` holds the read side: `GET /api/audit`, gated by `VIEW_AUDIT_LOGS` and
+tenant-scoped via `get_tenant_db`, returning the caller's own audit records (names
+and metadata only) newest-first and recording its own `audit.viewed` record before
+it returns — so viewing audit is itself an audited operation.
 """
