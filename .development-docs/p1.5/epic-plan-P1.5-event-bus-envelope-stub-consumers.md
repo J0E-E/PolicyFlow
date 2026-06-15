@@ -46,12 +46,16 @@ running when merged — the bus simply sits idle until the triggers (Epics 8–9
     - **Targeted tests**: `cd core && ./.venv/Scripts/python.exe -m pytest tests/test_event_bus_migration.py tests/test_migration_hygiene.py -q` → **12 passed** (10 new + the 2 hygiene tests confirming `0008` joins drift-clean and round-trips down/up).
     - **No deviations** from the plan or Rough scope. No ambiguity required resolving — the plan-time decisions, TDD §5.2, and the `0007` precedent fully determined the shape.
 
-## Epic 3 — Transactional enqueue
+## Epic 3 — Transactional enqueue — **COMPLETED**
 - **Goal:** Provide the transactional outbox write — an `enqueue_event` that inserts the envelope into the caller's tenant `outbox` on the request session, inside the request transaction, so an event is never lost relative to the committed state that produced it.
 - **Rough scope:** A small enqueue helper in the events package, with a DB test proving the row is present on commit and gone on rollback, plus per-tenant isolation (tenant A's role cannot read B's outbox).
 - **Open questions / decisions for stakeholders:** none expected.
 - **Depends on:** Epic 2.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Added `core/app/events/outbox.py` — `async def enqueue_event(db, envelope)`: maps the envelope 1:1 onto `OutboxEvent` and inserts with a single `db.add(...)` + `await db.flush()` (the `create_record` idiom). Runs on the caller's request session; does **not** commit (the request transaction owns commit/rollback); `published_at` left NULL for the Epic 5 relay. Schema-less `OutboxEvent` resolves into the caller's tenant schema via the active `search_path`, so no schema interpolation.
+  - Added `core/tests/test_outbox_enqueue.py` — 4 DB substrate tests (`database_engine`, `@pytest.mark.asyncio`): Phase 1 present-after-commit / absent-after-rollback; Phase 2 lands-only-in-caller-schema / tenant-role-denied-other-outbox. Enqueue runs under the real INSERT-only tenant role (`SET LOCAL ROLE` + `SET LOCAL search_path`); read-back uses the SELECT-capable superuser engine connection, schema-qualified (the tenant role is INSERT-only on its own outbox).
+  - **Deviation from the plan's helper snippet (necessary, and the plan's own decision 1 anticipated it):** the helper also sets `occurred_at=envelope.occurred_at` client-side. With it left unset, SQLAlchemy emitted `INSERT ... RETURNING outbox.occurred_at` to fetch the model's `server_default=now()` — which the INSERT-only tenant role cannot SELECT, so the first run raised `permission denied for table outbox`. Setting `occurred_at` from the envelope removes the server-default round-trip (plain INSERT, no `RETURNING`) and is the faithful mapping (the committed event carries the envelope's stamped time). The present-after-commit test asserts `occurred_at` round-trips.
+  - Targeted run (per `0-conventions.md` → Targeted test runs), from `core/`: `./.venv/Scripts/python.exe -m pytest tests/test_outbox_enqueue.py -q` → **4 passed**. Backend-only epic → no frontend tests.
 
 ## Epic 4 — Broker topology + publish
 - **Goal:** Declare the RabbitMQ topology (one durable topic exchange, per-consumer durable queues, per-queue DLX→DLQ with the documented bindings) and publish an envelope to it with the AMQP properties the contract specifies (persistent, `message_id`/`correlation_id`/`tenant_id`).
