@@ -317,7 +317,7 @@ ordered so the system stays runnable/deployable after each.
   `./p1.4/epic-plan-P1.4-audit-logging.md`. **Faked / deferred per plan:** audit viewer
   UI (→ M4). **Next move:** **P1.5 (Event bus + envelope + stub consumers)**.
 
-#### P1.5 — Event bus + envelope + stub consumers
+#### P1.5 — Event bus + envelope + stub consumers — **COMPLETE**
 
 - **Goal:** Broker wiring, event envelope, transactional outbox, and inline **stub**
   consumers (enrichment stub with canned results, sync-logger stub) behind the same
@@ -331,6 +331,36 @@ ordered so the system stays runnable/deployable after each.
 - **Isolation note:** every event + queue message carries `tenant_id`; consumers
   scope by it.
 - **Size:** M.
+- **Status:** **COMPLETE** (2026-06-15). All 11 epics shipped behind a green gate
+  (full backend suite **347 passed**). Acceptance met: the named acceptance suite
+  (`test_event_bus_acceptance.py`) proves the whole contract end-to-end on the real
+  Postgres + RabbitMQ substrate — a `pii_demo` create enqueues a `record.created`
+  outbox row, the polling relay publishes it, **both** stub consumers
+  (`enrichment.stub`, `sync.logger`) receive it (fan-out) and each writes exactly
+  **one** `processed_events` row, `correlation_id` + `tenant_id` flow through
+  unchanged, a relay re-publish (crash between publish and mark) is still consumed
+  **once** (idempotent on `(consumer_name, event_id)`), a poison message dead-letters
+  into `enrichment.stub.dlq`, and `outbox`/`processed_events` stay per-tenant isolated.
+  The seam M3's real sidecars bind to is in place: a durable topic exchange +
+  per-consumer durable queues + per-queue DLX/DLQ derived from
+  `catalog.CONSUMER_BINDINGS` (`broker.py`); the per-tenant transactional `outbox` +
+  `processed_events` tables (migration `0008`, with dedicated `outbox_relay` /
+  `event_consumer` roles); the transactional `enqueue_event`; the own-session polling
+  relay (publish-before-mark, at-least-once via `published_at IS NULL`); the two
+  idempotent terminal stubs (nack-without-requeue to the DLQ); the `event_bus_lifespan`
+  runtime wiring (bounded-retry connect, relay task + one consumer task per stub); the
+  two real triggers (`record.created` on create, `pii.revealed` on reveal — both riding
+  the request transaction, never carrying a PII value); and queue depth browsable via
+  the dev-only RabbitMQ management UI (Epic 10). **Validation fix:** marking the phase
+  complete surfaced that the full backend suite was red *as a whole* — three Epic-5
+  `test_relay.py` tests keyed on global published counts / "the next message on the
+  queue", which broke once Epic 8 made every create enqueue an outbox row that later
+  relay sweeps drain on the shared, never-reset container; remade event-pinned (assert
+  `>= 1`, find the message by `message_id`), the idiom the Epic 11 acceptance suite
+  already uses, so the full suite is green. **Faked / deferred per plan:** real sidecars
+  + notification surfaces (→ M3). Epic plan:
+  `./p1.5/epic-plan-P1.5-event-bus-envelope-stub-consumers.md`. **Next move:** **P1.6
+  (Demo shell)**.
 
 #### P1.6 — Demo shell `[UI]`
 
@@ -422,7 +452,7 @@ M0  P0.1 ✓ Walking Skeleton & Pipeline        (exit test PASSED 2026-06-12 —
         → P0.1a ✓ Test harness & commit gate   (tests + pre-commit gate live from here on)
         |
 M1  P1.1 ✓ Auth/RBAC → P1.2 ✓ Tenant schemas → P1.3 ✓ Encryption → P1.4 ✓ Audit
-        → P1.5 Event bus+stubs → P1.6 Demo shell [UI]
+        → P1.5 ✓ Event bus+stubs → P1.6 Demo shell [UI]
         → P1.7 Intake/queue/qualify/dup [UI] → P1.8 Seed+sessions → P1.9 Timeline [UI]
         |
 M2  P2.1 Conversion → P2.2 Pipeline [UI] → P2.3 Quote→App→Policy
@@ -631,3 +661,23 @@ plus `alembic check`/`0007` round-trip health. Sensitive ops write field *names*
 values; viewing audit is itself audited; append-only is enforced *physically* by grant, not
 just by convention. The audit viewer UI stays deferred to **M4**. **Next move:** **P1.5
 (Event bus + envelope + stub consumers)** — the seam M3's real sidecars plug into unchanged.
+
+**2026-06-15** — **P1.5 COMPLETE — the event-bus seam M3 plugs into is in.** All 11 epics
+shipped behind a green gate (full backend suite **347 passed**): the frozen event
+vocabulary + flat envelope (`app/events/`), the per-tenant transactional `outbox` +
+`processed_events` (migration `0008`, `outbox_relay`/`event_consumer` roles), the
+transactional `enqueue_event`, the RabbitMQ topology + `publish_envelope` (durable topic
+exchange, per-consumer queues, per-queue DLX/DLQ derived from `catalog.CONSUMER_BINDINGS`),
+the own-session polling relay (publish-before-mark, at-least-once), the two idempotent
+terminal stub consumers (dedupe on `(consumer_name, event_id)`, nack-without-requeue to the
+DLQ), the `event_bus_lifespan` runtime wiring, the two real triggers (`record.created`,
+`pii.revealed` — both on the request transaction, no PII in the payload), dev-only
+management-UI queue-depth visibility + config knobs, and the named acceptance suite
+(`test_event_bus_acceptance.py`) proving fan-out + correlation + idempotency + poison→DLQ +
+per-tenant isolation end-to-end. Marking complete also caught and fixed a full-suite-red
+test-isolation bug: three Epic-5 relay tests keyed on global counts / next-message-on-queue,
+broken by Epic 8's create-enqueues-an-outbox-row trigger on the shared, never-reset
+container — remade event-pinned (the Epic 11 idiom). Risk #4's contract artifact (the seam
+M3's real sidecars bind to) is in place; full retirement lands when M3 swaps a stub behind
+the identical events. **Next move:** **P1.6 (Demo shell `[UI]`)** — real landing +
+tenant-selection, role switcher, stepper/explainer shells.

@@ -5,10 +5,10 @@ Two phases, mirroring the relay module:
 - **Phase 1 (DB + broker substrate).** On the real Postgres + RabbitMQ
   testcontainers (`database_engine` + `rabbitmq_container`): that an enqueued
   `record.created` event is published by one sweep and its row marked
-  `published_at`; that a second sweep right after publishes nothing (only
-  unpublished rows are selected); and that a row whose `published_at` is forced
-  back to NULL re-publishes on the next sweep (at-least-once — the relay keys
-  purely on `published_at IS NULL`).
+  `published_at`; that a second sweep does not re-publish that already-marked row
+  (the relay selects only `published_at IS NULL` rows); and that a row whose
+  `published_at` is forced back to NULL re-publishes on the next sweep
+  (at-least-once — the relay keys purely on `published_at IS NULL`).
 - **Phase 2 (pure unit, no DB/broker).** That `run_relay_loop` sweeps at least
   once, swallows a sweep that raises (surviving to the next iteration), and stops
   cleanly on cancellation.
@@ -20,6 +20,15 @@ mirroring `container_audit_session_factory` in `conftest.py`. Enqueue uses the r
 INSERT-only tenant role; the relay reads/marks under the SELECT+UPDATE
 `outbox_relay` role; every assertion read-back uses the SELECT-capable superuser
 engine connection, schema-qualified.
+
+The container Postgres **and** RabbitMQ are session-scoped and never reset between
+tests, and a sweep drains **every** tenant's pending outbox rows, so each Phase 1
+assertion keys on *this* test's own `event_id`: the published count is asserted
+`>= 1` (not `== 1`), and the broker message is found by its AMQP `message_id`
+(`drain_message_for_event`) rather than "the next message on the queue". The same
+event-pinned idiom as `test_event_bus_acceptance.py` — without it, a leftover
+`record.created` outbox row from any earlier create test (every create enqueues one
+since Epic 8) gets swept up here and breaks a global count / next-message assertion.
 
 Requires the Docker daemon for Phase 1 (no skip logic — the substrate's deliberate
 "fail always when Docker is absent" choice). `pytest.ini` sets `asyncio_mode =
@@ -162,15 +171,27 @@ async def reset_published_at_to_null(
         )
 
 
-async def drain_queue_message(broker_channel, queue_name: str):
-    """Get one message from `queue_name` without ack, or `None` if the queue is empty.
+async def drain_message_for_event(
+    broker_channel, queue_name: str, event_id: uuid.UUID
+):
+    """Drain `queue_name` until the message whose `message_id` is `event_id` appears.
 
-    A thin read-back helper: fetches and removes a single message so a later sweep's
-    assertions start from an empty queue. `fail=False` returns `None` rather than
-    raising when nothing is waiting.
+    The container RabbitMQ is session-scoped and never reset, and a relay sweep
+    drains **every** tenant's pending outbox rows, so a queue can hold unrelated
+    messages from other tests. This walks the queue (`no_ack=True`, discarding the
+    non-matching messages) and returns the first whose AMQP `message_id` equals this
+    test's `event_id`, or `None` once the queue empties without a match — so every
+    assertion keys on *this* test's event, never on "the next message on the queue".
+    The event-pinned reader idiom shared with `test_event_bus_acceptance.py`
+    (`publish_envelope` stamps `message_id = str(event_id)`).
     """
     queue = await broker_channel.get_queue(queue_name)
-    return await queue.get(no_ack=True, fail=False)
+    while True:
+        message = await queue.get(no_ack=True, fail=False)
+        if message is None:
+            return None
+        if message.message_id == str(event_id):
+            return message
 
 
 # --- Phase 1: the single sweep -----------------------------------------------
@@ -183,10 +204,12 @@ async def test_sweep_publishes_pending_event_and_marks_the_row(
     """One sweep publishes the pending event to both bound queues and marks the row.
 
     Enqueue a `record.created` envelope into the tenant outbox, declare the topology
-    on the broker channel, then run `publish_pending_once`. It must report one
-    published event, the message must arrive in **both** bound queues
-    (`enrichment.stub` + `sync.logger`, the fan-out) and round-trip back to the same
-    envelope, and the outbox row's `published_at` must now be set.
+    on the broker channel, then run `publish_pending_once`. It must report at least
+    this event published (the sweep drains every tenant's pending rows on the shared
+    container, so `>= 1`, not exactly one), this event's message must arrive in
+    **both** bound queues (`enrichment.stub` + `sync.logger`, the fan-out) keyed by
+    `message_id` and round-trip back to the same envelope, and the outbox row's
+    `published_at` must now be set.
     """
     await declare_topology(broker_channel)
     envelope = build_relay_envelope()
@@ -194,10 +217,14 @@ async def test_sweep_publishes_pending_event_and_marks_the_row(
 
     published_count = await publish_pending_once(broker_channel)
 
-    assert published_count == 1
+    assert published_count >= 1
 
-    enrichment_message = await drain_queue_message(broker_channel, "enrichment.stub")
-    sync_logger_message = await drain_queue_message(broker_channel, "sync.logger")
+    enrichment_message = await drain_message_for_event(
+        broker_channel, "enrichment.stub", envelope.event_id
+    )
+    sync_logger_message = await drain_message_for_event(
+        broker_channel, "sync.logger", envelope.event_id
+    )
     for message in (enrichment_message, sync_logger_message):
         assert message is not None
         assert from_message_body(message.body) == envelope
@@ -212,26 +239,48 @@ async def test_sweep_publishes_pending_event_and_marks_the_row(
 async def test_second_sweep_skips_already_published_rows(
     database_engine, container_relay_session_factory, broker_channel
 ):
-    """A second sweep right after the first publishes nothing — published rows skip.
+    """A second sweep does not re-publish an already-marked row — published rows skip.
 
-    After one sweep marks the row, a second `publish_pending_once` must report zero
-    published events and put no new message on either queue — the relay selects only
-    rows whose `published_at IS NULL`.
+    After one sweep marks the row, a second `publish_pending_once` must not put this
+    event on either queue again — the relay selects only rows whose
+    `published_at IS NULL`. Asserted per-event (this event does not reappear) rather
+    than on a global count, because the shared, never-reset container queues also
+    carry other tenants' rows.
     """
     await declare_topology(broker_channel)
     envelope = build_relay_envelope()
     await enqueue_under_tenant_role(database_engine, TENANT, envelope)
 
     await publish_pending_once(broker_channel)
-    # Drain the first sweep's fan-out so the queues start empty for the assertion.
-    await drain_queue_message(broker_channel, "enrichment.stub")
-    await drain_queue_message(broker_channel, "sync.logger")
+    # Drain this event's first-sweep fan-out off both queues.
+    assert (
+        await drain_message_for_event(
+            broker_channel, "enrichment.stub", envelope.event_id
+        )
+        is not None
+    )
+    assert (
+        await drain_message_for_event(
+            broker_channel, "sync.logger", envelope.event_id
+        )
+        is not None
+    )
 
-    second_published_count = await publish_pending_once(broker_channel)
+    await publish_pending_once(broker_channel)
 
-    assert second_published_count == 0
-    assert await drain_queue_message(broker_channel, "enrichment.stub") is None
-    assert await drain_queue_message(broker_channel, "sync.logger") is None
+    # The already-marked row is not swept again: this event does not reappear.
+    assert (
+        await drain_message_for_event(
+            broker_channel, "enrichment.stub", envelope.event_id
+        )
+        is None
+    )
+    assert (
+        await drain_message_for_event(
+            broker_channel, "sync.logger", envelope.event_id
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -241,24 +290,30 @@ async def test_unmarked_row_republishes_for_at_least_once(
     """A row forced back to `published_at = NULL` re-publishes on the next sweep.
 
     Simulates a crash between publish and mark: after a clean sweep, reset the row's
-    `published_at` to NULL and sweep again. The relay must re-publish the event
-    (report one, land it on the queues again) — proving it keys purely on
-    `published_at IS NULL`, the at-least-once guarantee.
+    `published_at` to NULL and sweep again. The relay must re-publish the event (the
+    sweep drains every tenant's pending rows, so report `>= 1`, and land this event
+    on both queues again) — proving it keys purely on `published_at IS NULL`, the
+    at-least-once guarantee.
     """
     await declare_topology(broker_channel)
     envelope = build_relay_envelope()
     await enqueue_under_tenant_role(database_engine, TENANT, envelope)
 
     await publish_pending_once(broker_channel)
-    await drain_queue_message(broker_channel, "enrichment.stub")
-    await drain_queue_message(broker_channel, "sync.logger")
+    # Drain this event's first publication off both queues.
+    await drain_message_for_event(broker_channel, "enrichment.stub", envelope.event_id)
+    await drain_message_for_event(broker_channel, "sync.logger", envelope.event_id)
 
     await reset_published_at_to_null(database_engine, TENANT.schema_name, envelope.event_id)
     republished_count = await publish_pending_once(broker_channel)
 
-    assert republished_count == 1
-    enrichment_message = await drain_queue_message(broker_channel, "enrichment.stub")
-    sync_logger_message = await drain_queue_message(broker_channel, "sync.logger")
+    assert republished_count >= 1
+    enrichment_message = await drain_message_for_event(
+        broker_channel, "enrichment.stub", envelope.event_id
+    )
+    sync_logger_message = await drain_message_for_event(
+        broker_channel, "sync.logger", envelope.event_id
+    )
     for message in (enrichment_message, sync_logger_message):
         assert message is not None
         assert from_message_body(message.body) == envelope
