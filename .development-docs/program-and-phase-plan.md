@@ -284,7 +284,7 @@ ordered so the system stays runnable/deployable after each.
   no-op until P1.4. **Deferred per plan:** audited click-to-reveal UI wiring (needs P1.4
   audit + P1.6 shell). Epic plan: `./p1.3/epic-plan-P1.3-field-encryption-blind-index-masking.md`.
 
-#### P1.4 — Audit logging
+#### P1.4 — Audit logging — **COMPLETE**
 
 - **Goal:** Append-only audit emission from day one for sensitive operations.
 - **Shippable outcome / acceptance:** user actions, record changes, auth events, PII
@@ -296,6 +296,26 @@ ordered so the system stays runnable/deployable after each.
 - **Isolation note:** audit records are tenant-scoped; platform cross-tenant reads
   logged separately.
 - **Size:** S–M.
+- **Status:** **COMPLETE** (2026-06-15). All 11 epics shipped behind a green gate
+  (full backend suite **280 passed**). Acceptance met: a sensitive op of each wired
+  kind writes an append-only audit record carrying field *names*, never values —
+  `auth.login` (success/failure, failure PII-free in the platform store), `auth.logout`,
+  `record.created` (`pii_demo` create), `pii.revealed` (field name only),
+  `platform.cross_tenant_read`, and `audit.viewed`; viewing audit is itself audited.
+  Two physical stores — `platform.audit_records` + a per-tenant `audit_records` in every
+  tenant schema (migration `0007`) — are made **append-only by grant**: the dedicated
+  `audit_writer` role holds INSERT+SELECT only (UPDATE/DELETE physically denied), tenant
+  roles are SELECT-only on their own audit and denied another tenant's, and
+  `platform_reader` cannot read any tenant audit — all proven by live `permission denied`
+  execution (`test_audit_append_only_acceptance.py`). The audit-emit service
+  (`audit/service.py`) opens its own short-lived `audit_writer` session and routes by
+  `tenant_id` (present → that schema; `None` → platform). Both P1.2/P1.3 seams are now
+  filled: `record_platform_read_for_audit` (Epic 6) and `on_pii_revealed` (Epic 7). The
+  guarded `GET /api/audit` (Epic 10) is `VIEW_AUDIT_LOGS`-gated, tenant-scoped, PII-free,
+  and self-audits before responding. Named acceptance suite `test_audit_acceptance.py`;
+  `alembic check` drift-clean + `0007` down/up round-trip green. Epic plan:
+  `./p1.4/epic-plan-P1.4-audit-logging.md`. **Faked / deferred per plan:** audit viewer
+  UI (→ M4). **Next move:** **P1.5 (Event bus + envelope + stub consumers)**.
 
 #### P1.5 — Event bus + envelope + stub consumers
 
@@ -401,7 +421,7 @@ Real services replace P1–P2 stubs behind the same events.
 M0  P0.1 ✓ Walking Skeleton & Pipeline        (exit test PASSED 2026-06-12 — gate cleared)
         → P0.1a ✓ Test harness & commit gate   (tests + pre-commit gate live from here on)
         |
-M1  P1.1 ✓ Auth/RBAC → P1.2 ✓ Tenant schemas → P1.3 ✓ Encryption → P1.4 Audit
+M1  P1.1 ✓ Auth/RBAC → P1.2 ✓ Tenant schemas → P1.3 ✓ Encryption → P1.4 ✓ Audit
         → P1.5 Event bus+stubs → P1.6 Demo shell [UI]
         → P1.7 Intake/queue/qualify/dup [UI] → P1.8 Seed+sessions → P1.9 Timeline [UI]
         |
@@ -595,3 +615,19 @@ app-layer encryption coexist and the blind-index equality lookup runs inside the
 schema. The reveal seam (`on_pii_revealed`) is wired but emits nothing — audit lands in
 **P1.4**. **Next move:** **P1.4 (Audit logging)**, which fills both the
 `record_platform_read_for_audit` (P1.2) and `on_pii_revealed` (P1.3) seams.
+
+**2026-06-15** — **P1.4 COMPLETE — the audit spine is in; both deferred seams now emit.**
+All 11 epics shipped behind a green gate (full backend suite **280 passed**): the pure
+event-type/outcome vocabulary (`audit/records.py`) + the `audit_writer` registry constant,
+migration `0007` (two append-only stores — `platform.audit_records` and a per-tenant
+`audit_records` in every schema — with `audit_writer` granted INSERT+SELECT only and
+tenant/`platform_reader` grants tightened by REVOKE), the two ORM models (drift-clean),
+the own-session two-store `record_audit_event` service, a live `permission denied`
+append-only/isolation acceptance proof, the two filled seams (`record_platform_read_for_audit`
++ `on_pii_revealed`), auth/record-change wiring (`auth.login`/`logout`, `record.created`),
+the guarded self-auditing `GET /api/audit` (`VIEW_AUDIT_LOGS`, tenant-scoped, PII-free,
+writes its own `audit.viewed`), and the named acceptance suite (`test_audit_acceptance.py`)
+plus `alembic check`/`0007` round-trip health. Sensitive ops write field *names*, never
+values; viewing audit is itself audited; append-only is enforced *physically* by grant, not
+just by convention. The audit viewer UI stays deferred to **M4**. **Next move:** **P1.5
+(Event bus + envelope + stub consumers)** — the seam M3's real sidecars plug into unchanged.
