@@ -158,9 +158,10 @@ def container_audit_session_factory(database_engine, monkeypatch):
     the real factory after each test. A verbatim mirror of
     `container_keys_session_factory` above.
 
-    *(Not wired into `db_session`/`db_client` yet — no endpoint emits audit until
-    the later wiring epics; that wiring lands with the first emitting endpoint,
-    exactly as the keys fixture was.)*
+    Wired into `db_client` (Epic 6): the platform cross-tenant-read endpoint is the
+    first emitting endpoint, so this wiring landed here exactly as the keys fixture
+    was. `record_audit_event` opens its own session through this monkeypatched
+    global, so any endpoint test driving an emitting route writes to the container.
     """
     session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
     monkeypatch.setattr(audit_service_module, "session_factory", session_factory)
@@ -183,7 +184,9 @@ async def db_session(database_engine, container_keys_session_factory):
 
 
 @pytest_asyncio.fixture
-async def db_client(database_engine, container_keys_session_factory):
+async def db_client(
+    database_engine, container_keys_session_factory, container_audit_session_factory
+):
     """Yield an async HTTP client whose `get_db` points at the container database.
 
     Overrides `app.dependency_overrides[get_db]` with a session bound to the
@@ -191,8 +194,10 @@ async def db_client(database_engine, container_keys_session_factory):
     uses with a fake session, but here the session is real. The override is
     cleaned up afterward so it never leaks into other tests. It also depends on
     `container_keys_session_factory` so the encrypt/decrypt endpoints' key
-    resolution reads the container key store, not the unreachable eager engine.
-    This is the seam Epic 13 builds its endpoint enforcement tests on.
+    resolution reads the container key store, not the unreachable eager engine,
+    and on `container_audit_session_factory` (Epic 6) so any audit-emitting
+    endpoint's own-session write lands in the container store, not the unreachable
+    eager engine. This is the seam Epic 13 builds its endpoint enforcement tests on.
     """
     session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
 

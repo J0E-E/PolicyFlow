@@ -13,9 +13,9 @@ Epic 7 adds the Platform-Admin carve-out alongside it: `get_platform_db`, the
 sanctioned cross-tenant read seam. It mirrors `get_tenant_db`'s lifecycle but
 runs as the read-only `platform_reader` role instead of a per-tenant role, so a
 Platform Admin can read every tenant's schema. It is gated by
-`require_platform_admin`, and it `await`s a named, no-op audit seam
-(`record_platform_read_for_audit`) so P1.4 can later log every cross-tenant read
-by filling that one body — with zero call-site churn.
+`require_platform_admin`, and it `await`s a named audit seam
+(`record_platform_read_for_audit`) — filled in P1.4 — so every cross-tenant read
+is logged, with zero call-site churn.
 
 Settled decisions:
 - A tenantless caller (a Platform Admin, whose `identity.tenant_id` is `None`)
@@ -36,6 +36,8 @@ from fastapi import Depends, HTTPException
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..audit.records import EventType, Outcome
+from ..audit.service import record_audit_event
 from ..auth.dependencies import require_authenticated, require_platform_admin
 from ..auth.provider import Identity
 from ..db import get_db
@@ -127,15 +129,30 @@ async def get_tenant_db(
 
 
 async def record_platform_read_for_audit(identity: Identity) -> None:
-    """The **P1.4 audit seam** for cross-tenant platform reads — a no-op today.
+    """The **P1.4 audit seam** for cross-tenant platform reads — now filled.
 
-    Every cross-tenant read through `get_platform_db` is a privileged action that
-    P1.4 will audit-log. This function is the single, named place that log will be
-    written: `get_platform_db` already `await`s it on the privileged path, so P1.4
-    only fills this body — no call site changes. It deliberately does nothing yet
-    (emits no audit record), so the carve-out works today without an audit store.
+    Every cross-tenant read through `get_platform_db` is a privileged action P1.4
+    audits. This is the single, named place that log is written: `get_platform_db`
+    already `await`s it on the privileged path, so filling this body wires the audit
+    with **zero call-site churn** — no call site moves and the signature is unchanged.
+
+    It writes exactly one record to the **platform store**: `tenant_id=None` routes
+    the row to ``platform.audit_records`` (the tenantless Platform Admin path Epic 4
+    proved), with `event_type` `platform.cross_tenant_read`, `entity_type`
+    ``"tenant_settings"``, and `outcome` `success`. `identity.role` is a `Role` (a
+    `StrEnum`/`str`), so the audit service binds it as-is — the enum-instance
+    `actor_role` path Epic 4's notes deferred to this wiring epic. The write
+    propagates on failure (strict), so a cross-tenant read can never proceed
+    unaudited.
     """
-    return None
+    await record_audit_event(
+        tenant_id=None,  # tenantless Platform Admin → platform store
+        actor_user_id=identity.user_id,
+        actor_role=identity.role,
+        event_type=EventType.PLATFORM_CROSS_TENANT_READ,
+        outcome=Outcome.SUCCESS,
+        entity_type="tenant_settings",
+    )
 
 
 async def get_platform_db(
@@ -158,8 +175,8 @@ async def get_platform_db(
        - Issue `SET LOCAL ROLE platform_reader` (the role name comes from the
          `PLATFORM_ROLE` constant in the registry — a fixed string, never user
          input), granting the cross-tenant `SELECT` Epic 2's migration set up.
-       - `await` the named audit seam `record_platform_read_for_audit` (a no-op
-         today; the place P1.4 logs the read).
+       - `await` the named audit seam `record_platform_read_for_audit`, which
+         writes one `platform.cross_tenant_read` record (filled in P1.4 Epic 6).
        - Yield the now-platform-scoped session.
 
     The `async with db.begin()` block commits on normal exit, which discards the

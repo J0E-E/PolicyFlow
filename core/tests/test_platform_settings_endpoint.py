@@ -8,8 +8,10 @@ HTTP:
 - **Happy path (Phase 1):** a logged-in **Platform Admin** lists every tenant's
   settings → 200, body carrying **both** seeded tenants, each item with the four
   settings fields plus its registry `slug`, matching that tenant's seeded values.
-  This success path also exercises the no-op audit seam
-  `record_platform_read_for_audit` (it writes nothing).
+  This success path also drives the now-filled audit seam
+  `record_platform_read_for_audit`, which writes exactly one
+  `platform.cross_tenant_read` record to the platform store — proven by
+  `test_platform_read_is_audited`.
 - **Rejection (Phase 2):** every non-platform role (Tenant Admin, Agent,
   Read-Only) → `403 {"detail": "insufficient permissions"}` — also the "a tenant
   role cannot reach this path" proof — and an unauthenticated caller →
@@ -22,8 +24,12 @@ HTTP:
 `expected_settings_for_slug` from the Epic-6 `test_tenant_settings_endpoint.py`.
 """
 
-import pytest
+import uuid
 
+import pytest
+from sqlalchemy import text
+
+from app.audit.records import EventType, Outcome
 from app.models.user import Role
 from app.tenancy.registry import TENANTS
 
@@ -34,11 +40,37 @@ from .test_endpoints_db import (  # noqa: F401 — `seeded` fixture is used by n
 from .test_tenant_settings_endpoint import expected_settings_for_slug
 
 
+async def _read_platform_audit_rows_for_actor(session_factory, actor_user_id):
+    """Return `platform.audit_records` rows written by one actor, newest-first.
+
+    Mirrors `test_audit_service.py::_read_rows_for_actor`: a plain
+    ``SELECT … WHERE actor_user_id = :id ORDER BY occurred_at DESC``. The
+    session-scoped container DB is never reset between tests, so filtering by a
+    single actor keeps each assertion attributable to its own test.
+    """
+    async with session_factory() as session:
+        rows = await session.execute(
+            text(
+                "SELECT tenant_id, actor_user_id, actor_role, event_type, "
+                "entity_type, entity_id, field_names, outcome "
+                "FROM platform.audit_records WHERE actor_user_id = :actor_user_id "
+                "ORDER BY occurred_at DESC"
+            ),
+            {"actor_user_id": actor_user_id},
+        )
+        return rows.all()
+
+
 # --- Phase 1: happy path -----------------------------------------------------
 
 
 async def test_platform_admin_lists_every_tenants_settings(seeded, db_client):
-    """A Platform Admin reads every tenant's settings → 200 with all tenants' values."""
+    """A Platform Admin reads every tenant's settings → 200 with all tenants' values.
+
+    The seam this success path drives now writes one `platform.cross_tenant_read`
+    record to the platform store (no longer a no-op); that audit write is proven
+    separately by `test_platform_read_is_audited`.
+    """
     assert (await login_as(db_client, Role.PLATFORM_ADMIN)).status_code == 200
 
     response = await db_client.get("/api/platform/tenant-settings")
@@ -65,6 +97,45 @@ async def test_platform_admin_lists_every_tenants_settings(seeded, db_client):
         assert item["brand_logo_url"] == expected["brand_logo_url"]
         assert item["welcome_message"] == expected["welcome_message"]
         assert item["tenant_id"]
+
+
+async def test_platform_read_is_audited(
+    seeded, db_client, container_audit_session_factory
+):
+    """A successful cross-tenant read writes exactly one platform audit record.
+
+    Logs in as the Platform Admin, captures that actor's `user_id` from the login
+    body, snapshots `platform.audit_records` for that actor before and after the
+    read, and asserts the count rose by exactly one (a before/after delta, not a
+    global `== 1` — the session-scoped container DB is never reset between tests).
+    Then inspects the newest row to lock down what the filled seam writes.
+    """
+    login_response = await login_as(db_client, Role.PLATFORM_ADMIN)
+    assert login_response.status_code == 200
+    actor_user_id = uuid.UUID(login_response.json()["user"]["id"])
+
+    rows_before = await _read_platform_audit_rows_for_actor(
+        container_audit_session_factory, actor_user_id
+    )
+
+    response = await db_client.get("/api/platform/tenant-settings")
+    assert response.status_code == 200
+
+    rows_after = await _read_platform_audit_rows_for_actor(
+        container_audit_session_factory, actor_user_id
+    )
+
+    # Exactly one new record was written by this read.
+    assert len(rows_after) == len(rows_before) + 1
+
+    # The newest row is the one this read wrote — inspect its fields.
+    written = rows_after[0]
+    assert written.tenant_id is None
+    assert written.event_type == EventType.PLATFORM_CROSS_TENANT_READ
+    assert written.actor_role == Role.PLATFORM_ADMIN
+    assert written.entity_type == "tenant_settings"
+    assert written.outcome == Outcome.SUCCESS
+    assert not written.field_names
 
 
 # --- Phase 2: rejection & boundary proofs ------------------------------------
