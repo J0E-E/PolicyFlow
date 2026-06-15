@@ -8,7 +8,9 @@ earlier P1.3 epics' pieces:
   `encrypt_field`, computes the email (and phone) blind index with
   `compute_blind_index` over the normalized value, derives the plaintext
   `age_band` from the required date of birth, and stores the row. It is gated by
-  `require_capability(CREATE_EDIT_RECORDS)`.
+  `require_capability(CREATE_EDIT_RECORDS)`. Since P1.4 it also writes one
+  tenant-store `record.created` audit record naming the written fields (never
+  their values) before it returns — the only audited surface in this router.
 - **Get** (`GET /api/pii-demo/{record_id}`) reads one record by id and returns it
   masked. It only requires an authenticated, tenant-scoped caller.
 - **Lookup** (`POST /api/pii-demo/lookup`) finds records by the blind-index
@@ -38,6 +40,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..audit.records import EventType, Outcome
+from ..audit.service import record_audit_event
 from ..auth.dependencies import require_authenticated, require_capability
 from ..auth.provider import Identity
 from ..auth.rbac import Capability
@@ -143,6 +147,14 @@ async def create_record(
     `CREATE_EDIT_RECORDS` (every other role gets a 403, the anonymous caller a
     401); `get_tenant_db` scopes the write to the caller's own schema and rejects
     a tenantless Platform Admin with a 400 — all inherited, no tenant parameter.
+
+    Since P1.4 it also writes one tenant-store `record.created` audit record via
+    `record_audit_event`, carrying the **names** of the fields the caller supplied
+    (never their values), before it returns — so the create is audited with zero
+    call-site churn. The audit write runs on its own `audit_writer` session routed
+    to this tenant's schema, and is awaited **before** the `return`, so a failing
+    audit write aborts the create: the exception propagates and `get_tenant_db`
+    rolls the insert back (strict, never an unaudited record).
     """
     tenant_id = identity.tenant_id
 
@@ -182,6 +194,32 @@ async def create_record(
     db.add(record)
     await db.flush()
     await db.refresh(record)
+
+    # The names of the fields the caller actually supplied — the three required
+    # ones always, plus each optional only when present. These are the logical
+    # request field names (mirroring `CreateRecordRequest`), never the encrypted
+    # column names and never the values, so the audit trail itself never leaks PII.
+    written_field_names = [
+        name
+        for name in (
+            "display_name",
+            "email",
+            "date_of_birth",
+            "phone",
+            "mock_medicare_id",
+        )
+        if getattr(new_record, name) is not None
+    ]
+    await record_audit_event(
+        tenant_id=tenant_id,
+        actor_user_id=identity.user_id,
+        actor_role=identity.role,
+        event_type=EventType.RECORD_CREATED,
+        outcome=Outcome.SUCCESS,
+        entity_type="pii_demo",
+        entity_id=record.id,
+        field_names=written_field_names,
+    )
 
     return {"record": await _masked_record(tenant_id, record)}
 
