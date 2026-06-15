@@ -200,7 +200,7 @@ async def test_event_bus_lifespan_startup_failure_tears_down_relay_and_connectio
     relay_was_started = False
     relay_was_cancelled = False
 
-    async def fake_run_relay_loop(_channel):
+    async def fake_run_relay_loop(_channel, _poll_interval_seconds=None):
         nonlocal relay_was_started, relay_was_cancelled
         relay_was_started = True
         try:

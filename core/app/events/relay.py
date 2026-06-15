@@ -52,9 +52,9 @@ logger = logging.getLogger(__name__)
 
 # The default poll interval, in seconds (the TDD's ~1s suggestion as a named
 # constant). Sub-second demo latency is fine, and draining fully each sweep keeps
-# the design simple while volumes are tiny. Epic 10 later sources the real value
-# from config (`OUTBOX_POLL_INTERVAL_SECONDS`) and passes it in; this constant is
-# the default until then.
+# the design simple while volumes are tiny. The runtime now sources the real value
+# from config (`OUTBOX_POLL_INTERVAL_SECONDS`) and passes it in; this constant stays
+# the signature default for direct callers and tests.
 DEFAULT_POLL_INTERVAL_SECONDS = 1.0
 
 

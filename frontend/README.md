@@ -22,9 +22,10 @@ fallback (`try_files … /index.html`) so client routes resolve to the app, and 
 
 The default `docker compose up --build` runs the exact prod-parity path (nginx
 serving the build) at `http://localhost/`. **The Vite dev server is deferred**
-for now — there is no `docker-compose.override.yml` this epic. To see frontend
-changes, rebuild the image (`docker compose up -d --build frontend`). Hot reload
-will be added when real frontend churn arrives (Epic 5 / P1.6).
+for now — the `docker-compose.override.yml` that `docker compose up` auto-loads
+only publishes the RabbitMQ management UI port and provides no frontend hot-reload.
+To see frontend changes, rebuild the image (`docker compose up -d --build frontend`).
+Hot reload will be added when real frontend churn arrives (Epic 5 / P1.6).
 
 For a quick local-only build outside Docker: `npm install` then `npm run build`
 produces `dist/`.

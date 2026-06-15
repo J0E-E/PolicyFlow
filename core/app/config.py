@@ -55,6 +55,17 @@ class Settings:
         # aio-pika (AMQP) connection URL for the RabbitMQ reachability probe.
         self.rabbitmq_url: str = os.environ.get("RABBITMQ_URL", "")
 
+        # The durable topic exchange every event envelope is published to. This is
+        # the single source of truth for the name; broker.py reads it. Defaults to
+        # the TDD §5.4 literal; override via EVENT_EXCHANGE.
+        self.event_exchange: str = os.environ.get("EVENT_EXCHANGE", "policyflow.events")
+
+        # How long the outbox relay sleeps between sweeps, in seconds. Defaults to
+        # 1.0 (the TDD's ~1s suggestion); override via OUTBOX_POLL_INTERVAL_SECONDS.
+        self.outbox_poll_interval_seconds: float = float(
+            os.environ.get("OUTBOX_POLL_INTERVAL_SECONDS", "1.0")
+        )
+
         # How long a login session stays valid, in seconds. Defaults to 8 hours
         # (28800s); override via SESSION_LIFETIME_SECONDS.
         self.session_lifetime_seconds: int = int(

@@ -14,6 +14,7 @@ import pytest
 
 from app.config import (
     DEV_THROWAWAY_MASTER_KEY_BASE64,
+    Settings,
     decode_master_key,
     settings,
 )
@@ -67,3 +68,31 @@ def test_settings_pii_master_key_is_32_bytes():
     """The live setting is the decoded 32 raw bytes, ready for crypto use."""
     assert isinstance(settings.pii_master_key, bytes)
     assert len(settings.pii_master_key) == 32
+
+
+def test_event_exchange_default_is_the_tdd_literal():
+    """The live setting defaults to the TDD §5.4 events-exchange name."""
+    assert settings.event_exchange == "policyflow.events"
+
+
+def test_outbox_poll_interval_default_is_one_second():
+    """The live setting defaults to the ~1s poll interval as a float."""
+    assert settings.outbox_poll_interval_seconds == 1.0
+
+
+def test_event_exchange_honors_environment_override(monkeypatch):
+    """A fresh `Settings()` reads a custom exchange name from the environment."""
+    monkeypatch.setenv("EVENT_EXCHANGE", "custom.events")
+
+    fresh_settings = Settings()
+
+    assert fresh_settings.event_exchange == "custom.events"
+
+
+def test_outbox_poll_interval_honors_environment_override(monkeypatch):
+    """A fresh `Settings()` reads a non-default poll interval as a float."""
+    monkeypatch.setenv("OUTBOX_POLL_INTERVAL_SECONDS", "2.5")
+
+    fresh_settings = Settings()
+
+    assert fresh_settings.outbox_poll_interval_seconds == 2.5

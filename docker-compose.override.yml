@@ -1,0 +1,8 @@
+# Dev-only overrides, auto-loaded by `docker compose up`. NOT used in prod (which
+# invokes the base + prod overlay explicitly with -f), so 15672 stays unpublished
+# there. Publishes the RabbitMQ management UI so queue depth is browsable at
+# http://localhost:15672 locally.
+services:
+  rabbitmq:
+    ports:
+      - "15672:15672"

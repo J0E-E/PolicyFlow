@@ -137,7 +137,8 @@ async def event_bus_lifespan(app):
     2. On the relay's channel, `declare_topology` — so the durable exchange, queues,
        and dead-letter plumbing exist before anything publishes or consumes.
     3. Start the relay as a real `asyncio.Task` (it is a polling loop), keeping the
-       task reference so shutdown can cancel it.
+       task reference so shutdown can cancel it. The poll interval comes from config
+       (`settings.outbox_poll_interval_seconds`), defaulting to today's ~1s value.
     4. For each ``(queue_name, handler)`` in `CONSUMER_HANDLERS`, open the consumer's
        **own** channel, get its queue **passively** (`get_queue` — the durable queue
        was already declared by `declare_topology` with its dead-letter arguments, so
@@ -169,7 +170,9 @@ async def event_bus_lifespan(app):
     try:
         relay_channel = await connection.channel()
         await declare_topology(relay_channel)
-        relay_task = asyncio.create_task(run_relay_loop(relay_channel))
+        relay_task = asyncio.create_task(
+            run_relay_loop(relay_channel, settings.outbox_poll_interval_seconds)
+        )
 
         # Hold each consumer's channel for the app's lifetime so its `queue.consume`
         # registration stays active; closing the connection on shutdown stops them all.

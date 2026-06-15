@@ -11,7 +11,9 @@ the contract specifies.
 The topology is **derived from `app.events.catalog.CONSUMER_BINDINGS`** rather than
 re-listed here, so the queue names and routing keys can never drift from the
 catalog — the same single-source-of-truth move the catalog itself makes against the
-TDD. The exchange names are transcribed verbatim from TDD §5.4.
+TDD. `EVENT_EXCHANGE` now reads from config (`settings.event_exchange`), the single
+source of truth for its name; its default still carries the TDD §5.4 literal.
+`DEAD_LETTER_EXCHANGE` stays a literal transcribed verbatim from TDD §5.4.
 
 **Connection/channel lifecycle (settled this epic):** one shared connection, one
 channel per task (each of the relay and each consumer gets its own channel; Epics
@@ -29,6 +31,7 @@ from dataclasses import dataclass
 
 import aio_pika
 
+from app.config import settings
 from app.events.catalog import CONSUMER_BINDINGS
 from app.events.envelope import EventEnvelope, to_message_body
 
@@ -42,11 +45,13 @@ __all__ = [
 ]
 
 
-# Exchange names, transcribed verbatim from TDD §5.4. The events exchange is the
-# durable topic exchange every envelope is published to; the dead-letter exchange
-# is the durable topic exchange a rejected message is routed to so it lands in the
-# matching DLQ.
-EVENT_EXCHANGE = "policyflow.events"
+# The events exchange is the durable topic exchange every envelope is published to;
+# its name reads from config (`settings.event_exchange`, the single source of truth)
+# so it is an env-tunable knob, with the TDD §5.4 literal as the default. The
+# dead-letter exchange is the durable topic exchange a rejected message is routed to
+# so it lands in the matching DLQ; its name stays a literal transcribed verbatim from
+# TDD §5.4 (not a named tunable).
+EVENT_EXCHANGE = settings.event_exchange
 DEAD_LETTER_EXCHANGE = "policyflow.events.dlx"
 
 
