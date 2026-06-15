@@ -403,8 +403,10 @@ async def reveal_field(
        `value: null` with a 200 — the same uniform call site, matching the masked
        read's `null` rendering of absent optionals.
     5. **Await the reveal seam** (`on_pii_revealed`) *before* returning, so the
-       later audit (P1.4) and event (P1.5) record the reveal before the value
-       leaves — with zero call-site churn here.
+       audit (P1.4) and the `pii.revealed` event (P1.5) record the reveal before
+       the value leaves. The request session `db` is threaded in so the event
+       enqueue rides this request transaction (the audit write stays on its own
+       immediately-committing session) — with zero call-site churn beyond that.
     6. Return `{"field": …, "value": …}`.
 
     The guard hands the route an `Identity` only when the caller holds
@@ -436,6 +438,6 @@ async def reveal_field(
         else None
     )
 
-    await on_pii_revealed(identity, "pii_demo", record_id, reveal.field)
+    await on_pii_revealed(db, identity, "pii_demo", record_id, reveal.field)
 
     return {"field": reveal.field, "value": value}

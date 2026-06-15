@@ -13,8 +13,8 @@ only place plaintext PII crosses the API boundary:
   the generic not-revealable message; a Read-Only caller → 403; the Platform Admin
   → 403; an unauthenticated caller → 401; and the reveal seam is awaited — a
   monkeypatched `AsyncMock` over the router-bound `on_pii_revealed` is asserted
-  awaited once with `entity_type="pii_demo"`, `entity_id=<created id>`,
-  `field_name="email"`.
+  awaited once with the request session, the caller `Identity`,
+  `entity_type="pii_demo"`, `entity_id=<created id>`, and `field_name="email"`.
 
 Like the Epic 10/11 endpoint tests, the reveal path resolves per-tenant keys (to
 decrypt the field) through `app.pii.keys.session_factory` — the module-global the
@@ -260,9 +260,10 @@ async def test_reveal_awaits_the_seam_with_the_expected_arguments(
     assert response.status_code == 200
     seam_mock.assert_awaited_once()
     call_arguments = seam_mock.await_args
-    # Identity is the first positional argument; the rest are entity_type,
-    # entity_id, field_name (positional in the handler's call).
-    _identity, entity_type, entity_id, field_name = call_arguments.args
+    # The request session is the first positional argument (P1.5 threads it in for
+    # the transactional outbox enqueue); Identity is second; the rest are
+    # entity_type, entity_id, field_name (all positional in the handler's call).
+    _db, _identity, entity_type, entity_id, field_name = call_arguments.args
     assert entity_type == "pii_demo"
     assert entity_id == uuid.UUID(created["id"])
     assert field_name == "email"
