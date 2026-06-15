@@ -37,14 +37,16 @@ from alembic.config import Config
 from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
+from testcontainers.rabbitmq import RabbitMqContainer
 
 from app.audit import service as audit_service_module
 from app.db import get_db
 from app.main import app
 from app.pii import keys as pii_keys_module
 
-# The container image is pinned to match production (docker-compose.yml).
+# The container images are pinned to match production (docker-compose.yml).
 POSTGRES_IMAGE = "postgres:16-alpine"
+RABBITMQ_IMAGE = "rabbitmq:3.13-management-alpine"
 
 # `alembic.ini` and the `alembic/` script directory live in the core package root
 # (one level above this tests/ directory).
@@ -92,6 +94,33 @@ def build_postgresql_url(container: PostgresContainer) -> str:
         f"postgresql://{container.username}:{container.password}"
         f"@{host}:{port}/{container.dbname}"
     )
+
+
+@pytest.fixture(scope="session")
+def rabbitmq_container():
+    """Boot one throwaway RabbitMQ in Docker for the whole test session.
+
+    Started lazily — only when a broker test first requests it — and torn down at
+    the end. Mirrors `postgres_container`: there is no exception handling and no
+    skip logic, so an unreachable Docker daemon fails the container start and every
+    broker test errors. The same deliberate "fail always when Docker is absent"
+    choice this substrate makes for the database fixtures. Epics 5/6/11 reuse this
+    fixture rather than booting a second broker.
+    """
+    with RabbitMqContainer(RABBITMQ_IMAGE) as container:
+        yield container
+
+
+def build_amqp_url(container: RabbitMqContainer) -> str:
+    """Build an ``amqp://user:pass@host:port/`` URL for the RabbitMQ container.
+
+    Reads the container's published credentials and the host-mapped AMQP port,
+    the broker-side mirror of `build_postgresql_url`. aio-pika's
+    `connect_robust` takes this URL directly.
+    """
+    host = container.get_container_host_ip()
+    port = container.get_exposed_port(container.port)
+    return f"amqp://{container.username}:{container.password}@{host}:{port}/"
 
 
 @pytest.fixture(scope="session")

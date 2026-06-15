@@ -6,3 +6,7 @@ pytest-asyncio==0.25.2
 # Boots a throwaway Postgres in Docker for the real-database test substrate
 # (Epic 11). The [postgres] extra pulls the docker SDK + the PostgresContainer.
 testcontainers[postgres]==4.14.2
+# Boots a throwaway RabbitMQ in Docker for the broker test substrate (Epic 4).
+# The [rabbitmq] extra pulls the RabbitMqContainer + the sync `pika` client its
+# readiness probe uses; the broker code itself talks aio-pika. Test-only.
+testcontainers[rabbitmq]==4.14.2
