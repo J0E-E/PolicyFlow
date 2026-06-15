@@ -59,6 +59,7 @@ from app.models.processed_event import ProcessedEvent
 from app.tenancy.registry import EVENT_CONSUMER_ROLE, is_known_schema
 
 __all__ = [
+    "CONSUMER_HANDLERS",
     "UnknownEventTenant",
     "handle_enrichment",
     "handle_sync_logger",
@@ -105,6 +106,18 @@ async def handle_sync_logger(message) -> None:
     consumer's name and its sync-logger canned effect.
     """
     await _consume(message, SYNC_LOGGER, _run_sync_logger_effect)
+
+
+# The consumer registry — each queue name paired with the handler that reads it.
+# Epic 7's lifespan loops this to register one consumer per stub, so the set of
+# consumers lives in **one** place next to the handlers rather than being
+# hard-coded in the lifespan. This mirrors how `broker.TOPOLOGY` derives from
+# `catalog.CONSUMER_BINDINGS`: a single source of truth means the lifespan's
+# consumer list can never drift from the handlers defined here.
+CONSUMER_HANDLERS = (
+    (ENRICHMENT_STUB, handle_enrichment),
+    (SYNC_LOGGER, handle_sync_logger),
+)
 
 
 async def _consume(message, consumer_name: str, run_effect) -> None:
