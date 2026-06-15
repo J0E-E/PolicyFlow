@@ -11,6 +11,9 @@ earlier P1.3 epics' pieces:
   `require_capability(CREATE_EDIT_RECORDS)`. Since P1.4 it also writes one
   tenant-store `record.created` audit record naming the written fields (never
   their values) before it returns — the only audited surface in this router.
+  Since P1.5 it additionally enqueues one `record.created` event into this
+  tenant's `outbox` on the same request transaction as the row insert (the
+  transactional outbox), carrying the entity reference plus non-PII fields only.
 - **Get** (`GET /api/pii-demo/{record_id}`) reads one record by id and returns it
   masked. It only requires an authenticated, tenant-scoped caller.
 - **Lookup** (`POST /api/pii-demo/lookup`) finds records by the blind-index
@@ -45,6 +48,9 @@ from ..audit.service import record_audit_event
 from ..auth.dependencies import require_authenticated, require_capability
 from ..auth.provider import Identity
 from ..auth.rbac import Capability
+from ..events.catalog import EventType as EventBusEventType
+from ..events.envelope import build_envelope
+from ..events.outbox import enqueue_event
 from ..models.pii_demo import PiiDemoRecord
 from ..pii.crypto import normalize_email, normalize_phone
 from ..pii.masking import (
@@ -155,6 +161,14 @@ async def create_record(
     to this tenant's schema, and is awaited **before** the `return`, so a failing
     audit write aborts the create: the exception propagates and `get_tenant_db`
     rolls the insert back (strict, never an unaudited record).
+
+    Since P1.5 it also enqueues one `record.created` event into this tenant's
+    `outbox` via `enqueue_event` on the **same** request session and transaction as
+    the row insert (the transactional outbox — the record and its event both land
+    or both roll back). The enqueue sits **before** the audit write, so a failing
+    audit write rolls back both the record and the outbox row. The event's payload
+    carries the entity reference plus the coarse `age_band` and the names-only
+    written-field list — never a PII value.
     """
     tenant_id = identity.tenant_id
 
@@ -210,6 +224,34 @@ async def create_record(
         )
         if getattr(new_record, name) is not None
     ]
+
+    # Enqueue a `record.created` event into this tenant's outbox on the **same**
+    # request session and transaction as the row insert above (the transactional
+    # outbox: the record and its event both land or both roll back, never one
+    # without the other). Placed **before** the audit write so a failing audit
+    # write rolls back both the record and the outbox row (atomic, no orphan
+    # outbox row), and an enqueue failure happens before the audit write commits
+    # (no orphan audit row); it also keeps the outbox write adjacent to the insert
+    # it mirrors. The payload carries the entity reference plus the coarse,
+    # already-unmasked `age_band` and the names-only `written_field_names` —
+    # **never a PII value** (the no-PII-snapshot contract). `enqueue_event` only
+    # flushes; `get_tenant_db`'s `async with db.begin()` still owns the commit.
+    await enqueue_event(
+        db,
+        build_envelope(
+            event_type=EventBusEventType.RECORD_CREATED,
+            tenant_id=tenant_id,
+            actor_user_id=identity.user_id,
+            actor_role=identity.role,
+            payload={
+                "entity_type": "pii_demo",
+                "entity_id": str(record.id),
+                "age_band": age_band,
+                "fields": written_field_names,
+            },
+        ),
+    )
+
     await record_audit_event(
         tenant_id=tenant_id,
         actor_user_id=identity.user_id,
