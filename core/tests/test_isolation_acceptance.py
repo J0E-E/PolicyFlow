@@ -95,7 +95,9 @@ def _denied_statements_against(other_schema: str) -> dict[str, str]:
 
 
 @pytest.mark.asyncio
-async def test_switched_tenant_role_is_denied_other_schema(database_engine):
+async def test_switched_tenant_role_is_denied_other_schema(
+    database_engine, container_keys_session_factory
+):
     """Under `SET LOCAL ROLE tenant_<A>`, every write/read on <B> is denied.
 
     For each ordered tenant pair, switch to the acting tenant's role and attempt a
@@ -105,6 +107,10 @@ async def test_switched_tenant_role_is_denied_other_schema(database_engine):
     as "permission denied"). This is the physical proof that the connection drops
     privileges under a switched role — not merely a privilege-catalog boolean.
     """
+    # `container_keys_session_factory` (requested as a fixture above) repoints the
+    # `app.pii.keys` own-session global at the container, so `seed()`'s PII
+    # encryption resolves per-tenant keys there rather than the unreachable eager
+    # engine — without it this test fails when the file runs in isolation.
     session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
     async with session_factory() as session:
         await seed(session)
@@ -130,13 +136,19 @@ async def test_switched_tenant_role_is_denied_other_schema(database_engine):
 
 
 @pytest.mark.asyncio
-async def test_switched_tenant_role_still_reads_own_schema(database_engine):
+async def test_switched_tenant_role_still_reads_own_schema(
+    database_engine, container_keys_session_factory
+):
     """The same switched role reads its *own* schema — denial is isolation.
 
     Proves the per-tenant role is denied the other schema because of isolation, not
     because the role is broken: under `SET LOCAL ROLE tenant_<A>`, a SELECT on
     `<A>.tenant_settings` succeeds and returns that tenant's seeded row.
     """
+    # `container_keys_session_factory` (requested as a fixture above) repoints the
+    # `app.pii.keys` own-session global at the container, so `seed()`'s PII
+    # encryption resolves per-tenant keys there rather than the unreachable eager
+    # engine — without it this test fails when the file runs in isolation.
     session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
     async with session_factory() as session:
         await seed(session)
