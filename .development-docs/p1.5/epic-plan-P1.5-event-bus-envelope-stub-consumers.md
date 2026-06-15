@@ -13,12 +13,16 @@ the bus, then the consumers, then runtime wiring, then the two real triggers, th
 observability, and finally the named acceptance proof. Each epic leaves the mainline
 running when merged — the bus simply sits idle until the triggers (Epics 8–9) feed it.
 
-## Epic 1 — Event vocabulary + envelope (pure data)
+## Epic 1 — Event vocabulary + envelope (pure data) — **COMPLETED**
 - **Goal:** Freeze the contract every later phase honors — the P1.5 subset of the event catalog (`record.created`, `pii.revealed`, schema version, the consumer→binding registry) and the event envelope with a builder and JSON round-trip — as pure data with no I/O.
 - **Rough scope:** A new events vocabulary module and an envelope module under `core/app/events/`, plus unit tests that assert the vocabulary against a hand-written expectation (the `audit/records.py` precedent) and round-trip the envelope through serialize/parse.
 - **Open questions / decisions for stakeholders:** Confirm the JSON wire format for the body (how UUIDs and timestamps serialize) so it stays stable for M3 — minor; otherwise none expected.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **JSON wire format confirmed FLAT, mirroring `EventEnvelope` 1:1.** UUIDs serialize as canonical hyphenated strings (`str(...)`), `occurred_at` as ISO-8601 with the UTC offset (`.isoformat()`), absent optionals as JSON `null`, and the actor stays two flat sibling fields (`actor_user_id` / `actor_role`; both `null` ⇒ system actor) — no nested `actor` object. Keeps wire == dataclass == future outbox columns; matches the existing codebase serialization convention.
+  - Created `core/app/events/` (new package): `__init__.py`, `catalog.py` (`EventType` `StrEnum`, `SCHEMA_VERSION = 1`, the frozen `ConsumerBinding` dataclass + `CONSUMER_BINDINGS` registry, `ENRICHMENT_STUB` / `SYNC_LOGGER` name constants), and `envelope.py` (`EventEnvelope` frozen dataclass, `build_envelope`, `to_message_body` / `from_message_body`). Mirrors the `audit/records.py` pure-data precedent.
+  - Tests `tests/test_event_catalog.py` and `tests/test_event_envelope.py` use the independent-hand-written-expectation style (`test_audit_records.py`): exact member/binding sets cross-checked vs the TDD §5.3 spec, plus envelope builder/round-trip/wire-shape asserts. 22 tests pass under the project venv; pure sync, no DB/Docker.
+  - No diagram (pure-data, non-visual — diagram offer skipped per `0-conventions`).
 
 ## Epic 2 — Migration `0008` + ORM models
 - **Goal:** Add the per-tenant `outbox` and `processed_events` tables to every tenant schema, plus the dedicated `outbox_relay` and `event_consumer` roles with tight grants/REVOKEs (the `0007` precedent), and the matching schema-less ORM models.
