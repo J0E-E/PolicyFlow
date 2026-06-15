@@ -113,12 +113,19 @@ Source TDD: [./tdd-P1.4-audit-logging.md](./tdd-P1.4-audit-logging.md)
   - **Test run (Python 3.12 venv, from `core/`):** `./.venv/Scripts/python.exe -m pytest tests/test_reveal_seam.py tests/test_pii_demo_reveal.py -q` → **14 passed** (~14s; 2 reveal-seam + 12 reveal-endpoint). Import smoke `python -c "import app.pii.reveal_seam"` clean with the conftest default `DATABASE_URL` (the same eager-engine requirement Epic 4 recorded for `app.audit.service`).
   - **No deviation from the approved plan; nothing guessed.** Backend-only — no `[UI]` tag, no frontend tests.
 
-## Epic 8 — Auth event wiring (login success/failure + logout)
+## Epic 8 — Auth event wiring (login success/failure + logout) — **COMPLETED**
 - **Goal:** Audit the authentication surface — record `auth.login` on success and on failure (failure carries no identifying PII, routed to the platform store) and `auth.logout` after resolving the identity from the session.
 - **Rough scope:** Emit from `auth/router.py` on the three paths; resolve the logout identity via the existing session lookup before revoking the token. Tests for each path (success in the tenant store, failure PII-free in the platform store, logout attributed).
 - **Open questions / decisions for stakeholders:** Store routing for a successful login (tenant store via `identity.tenant_id`; platform store for the Platform Admin); confirming a no-session logout records nothing.
 - **Depends on:** Epic 4 (the service).
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Three `record_audit_event(...)` calls added to `auth/router.py`, reusing the existing service exactly as Epics 6/7 filled their seams (no new infrastructure). Imports added: `EventType`/`Outcome` from `..audit.records`, `record_audit_event` from `..audit.service`, and `get_session_identity` into the existing `.sessions` block. Verified no import cycle — `audit.service` imports only `db`/`tenancy.registry`/`records`, never `auth` (it types `actor_role` as `Optional[str]` to keep it that way).
+  - **Login success** emits `auth.login`/`success` after the cookie is set, routed by `identity.tenant_id` (Platform Admin's `tenant_id=None` → platform store automatically), carrying `actor_user_id`/`actor_role` from the identity.
+  - **Login failure** emits `auth.login`/`failure` on the provider-returned-`None` branch *before* raising the 401, with `tenant_id`/`actor_user_id`/`actor_role` all `None` — deliberately no PII (no username).
+  - **Logout** resolves the identity via `get_session_identity(db, raw_token)` *before* `revoke_session` (a revoked row stops resolving), then emits `auth.logout`/`success` routed by `identity.tenant_id` only if it resolved. No cookie or unresolved session emits nothing (TDD §7).
+  - `test_router.py` kept pure (no DB): added a `capture_audit_events` helper that monkeypatches `router_module.record_audit_event` to capture kwargs (same idiom the file uses for `create_session`/`revoke_session`); the logout cases also monkeypatch `get_session_identity`. Extended the three existing cases to assert the emitted args; the no-cookie logout asserts nothing is resolved/revoked/emitted.
+  - New `test_auth_audit.py` (DB-backed, mirrors `test_reveal_seam.py` / `test_platform_read_is_audited`, reuses `login_as`/`seeded`/`email_for_role` by name): Tenant Admin login → one tenant-store `auth.login`/`success`, none in platform; Platform Admin login → one in platform; wrong-password login → before/after-delta of exactly one platform `auth.login`/`failure` with `actor_user_id`/`actor_role`/`tenant_id` NULL and a freshly-generated attempted username found in no column; login→logout → one tenant-store `auth.logout`/`success` attributed to the actor; no-session logout → both stores' logout counts unchanged.
+  - No deviations from the approved plan. Tests (Python 3.12 venv, from `core/`): `tests/test_router.py` 6 passed; `tests/test_auth_audit.py` + `tests/test_endpoints_db.py` 16 passed; import smoke `python -c "import app.auth.router"` clean.
 
 ## Epic 9 — Record-change wiring (`pii_demo` create)
 - **Goal:** Prove the record-change audit path on the one write surface that exists today — emit `record.created` on `pii_demo` create with the written field **names** and no values.

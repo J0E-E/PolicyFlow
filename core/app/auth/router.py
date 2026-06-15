@@ -24,6 +24,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..audit.records import EventType, Outcome
+from ..audit.service import record_audit_event
 from ..db import get_db
 from .dependencies import require_authenticated
 from .provider import AuthProvider, Identity, LocalPasswordAuthProvider
@@ -32,6 +34,7 @@ from .sessions import (
     SESSION_COOKIE_NAME,
     clear_session_cookie,
     create_session,
+    get_session_identity,
     revoke_session,
     set_session_cookie,
 )
@@ -88,19 +91,37 @@ async def login(
     """Authenticate the credentials, start a session, and return the identity.
 
     On success: mints a server-side session for the authenticated user, sets the
-    `pf_session` cookie, and returns the identity body (user fields plus
-    capabilities). On any failure the provider returns `None`, and a single
-    generic `401 {"detail": "invalid credentials"}` is raised so the response
-    never leaks which check failed.
+    `pf_session` cookie, records an `auth.login` / `success` audit event routed by
+    the identity's `tenant_id` (a tenant user lands in their tenant store; the
+    tenantless Platform Admin lands in the platform store), and returns the
+    identity body (user fields plus capabilities). On any failure the provider
+    returns `None`; an `auth.login` / `failure` audit event is recorded to the
+    platform store carrying **no identifying PII** (no user id, role, or username),
+    and a single generic `401 {"detail": "invalid credentials"}` is raised so the
+    response never leaks which check failed.
     """
     identity = await provider.authenticate(
         db, credentials.username, credentials.password
     )
     if identity is None:
+        await record_audit_event(
+            tenant_id=None,
+            actor_user_id=None,
+            actor_role=None,
+            event_type=EventType.AUTH_LOGIN,
+            outcome=Outcome.FAILURE,
+        )
         raise HTTPException(status_code=401, detail="invalid credentials")
 
     raw_token = await create_session(db, identity.user_id)
     set_session_cookie(response, raw_token)
+    await record_audit_event(
+        tenant_id=identity.tenant_id,
+        actor_user_id=identity.user_id,
+        actor_role=identity.role,
+        event_type=EventType.AUTH_LOGIN,
+        outcome=Outcome.SUCCESS,
+    )
     return _identity_response(identity)
 
 
@@ -112,14 +133,28 @@ async def logout(
 ) -> dict:
     """Revoke the presented session (if any) and clear the cookie.
 
-    Reads the `pf_session` cookie; when present, revokes that session (idempotent
-    — revoking an unknown or already-revoked token is a harmless no-op). The
-    cookie is always cleared. Logout is intentionally not guarded: clearing a
-    non-session is harmless, so it always returns `200 {"detail": "logged out"}`.
+    Reads the `pf_session` cookie; when present, resolves the identity from the
+    session **before** revoking it (a revoked row stops resolving), revokes that
+    session (idempotent — revoking an unknown or already-revoked token is a
+    harmless no-op), and, if the identity resolved, records an `auth.logout` /
+    `success` audit event attributed to that identity and routed by its
+    `tenant_id`. A logout with no cookie, or whose session no longer resolves,
+    records nothing — a no-session logout is not an audit event. The cookie is
+    always cleared. Logout is intentionally not guarded: clearing a non-session is
+    harmless, so it always returns `200 {"detail": "logged out"}`.
     """
     raw_token = request.cookies.get(SESSION_COOKIE_NAME)
     if raw_token is not None:
+        identity = await get_session_identity(db, raw_token)
         await revoke_session(db, raw_token)
+        if identity is not None:
+            await record_audit_event(
+                tenant_id=identity.tenant_id,
+                actor_user_id=identity.user_id,
+                actor_role=identity.role,
+                event_type=EventType.AUTH_LOGOUT,
+                outcome=Outcome.SUCCESS,
+            )
     clear_session_cookie(response)
     return {"detail": "logged out"}
 
