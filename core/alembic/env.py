@@ -56,10 +56,11 @@ def include_name(name, type_, parent_names) -> bool:
 def include_object(object_, name, type_, reflected, compare_to) -> bool:
     """Exclude the deliberately schema-less tenant tables from comparison.
 
-    ``TenantSettings``, ``PiiDemoRecord``, and the schema-less ``AuditRecord`` all
-    map to the default schema in the models but physically exist only inside each
-    tenant schema, so without this filter Alembic would want to *create*
-    ``tenant_settings`` / ``pii_demo`` / ``audit_records`` in the default schema
+    ``TenantSettings``, ``PiiDemoRecord``, the schema-less ``AuditRecord``, and the
+    P1.5 ``OutboxEvent`` / ``ProcessedEvent`` all map to the default schema in the
+    models but physically exist only inside each tenant schema, so without this
+    filter Alembic would want to *create* ``tenant_settings`` / ``pii_demo`` /
+    ``audit_records`` / ``outbox`` / ``processed_events`` in the default schema
     (the metadata side) and *drop* the real per-tenant copies. Dropping these
     tables from the comparison closes both halves of that phantom drift; the
     per-tenant copies are also already excluded by ``include_name`` (belt and
@@ -71,10 +72,16 @@ def include_object(object_, name, type_, reflected, compare_to) -> bool:
     would wrongly drop the platform twin too, so its exclusion is **schema-
     guarded** on ``object_.schema is None`` — only the default-schema copy is
     dropped, while ``platform.audit_records`` stays in the comparison and is
-    drift-checked against the migration. ``tenant_settings`` / ``pii_demo`` have
-    no platform twin, so name-only matching is safe for them.
+    drift-checked against the migration. ``tenant_settings`` / ``pii_demo`` /
+    ``outbox`` / ``processed_events`` have no platform twin, so name-only matching
+    is safe for them.
     """
-    if type_ == "table" and name in {"tenant_settings", "pii_demo"}:
+    if type_ == "table" and name in {
+        "tenant_settings",
+        "pii_demo",
+        "outbox",
+        "processed_events",
+    }:
         return False
     if (
         type_ == "table"

@@ -64,6 +64,18 @@ PLATFORM_ROLE = "platform_reader"
 # (Epic 4) sets this role before writing append-only records.
 AUDIT_WRITER_ROLE = "audit_writer"
 
+# The dedicated outbox-relay role. Phase P1.5 Epic 2's `0008` migration creates
+# it and grants it SELECT+UPDATE on each tenant's `outbox` table; the polling
+# relay (Epic 5) sets this role to read unpublished rows and stamp `published_at`
+# — never INSERT or DELETE, mirroring the tight `audit_writer` grant shape.
+OUTBOX_RELAY_ROLE = "outbox_relay"
+
+# The dedicated event-consumer role. Phase P1.5 Epic 2's `0008` migration creates
+# it and grants it INSERT+SELECT on each tenant's `processed_events` table; the
+# stub consumers (Epic 6) set this role to dedupe and record their processed
+# events — never UPDATE or DELETE, mirroring the tight `audit_writer` grant shape.
+EVENT_CONSUMER_ROLE = "event_consumer"
+
 
 def is_known_schema(schema_name: str) -> bool:
     """Return whether ``schema_name`` matches a registered tenant's schema.
