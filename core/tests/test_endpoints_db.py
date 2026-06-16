@@ -18,6 +18,7 @@ import pytest_asyncio
 from app.config import settings
 from app.models.user import Role
 from app.seed import demo_user_specs, seed
+from app.tenancy.registry import tenant_by_slug
 
 
 @pytest_asyncio.fixture
@@ -61,9 +62,21 @@ async def test_login_succeeds_for_seeded_tenant_admin(seeded, db_client):
     assert response.status_code == 200
     body = response.json()
     user = body["user"]
-    assert set(user) == {"id", "username", "role", "tenant_id"}
+    assert set(user) == {
+        "id",
+        "username",
+        "role",
+        "tenant_id",
+        "tenant_slug",
+        "tenant_name",
+    }
     assert user["username"] == email_for_role(Role.TENANT_ADMIN)
     assert user["role"] == Role.TENANT_ADMIN.value
+    # The identity body carries the signed-in user's tenant slug + name, read
+    # from the Tenant row by tenant_id and matching the registry exactly.
+    tenant_config = tenant_by_slug(tenant_slug_for_role(Role.TENANT_ADMIN))
+    assert user["tenant_slug"] == tenant_config.slug
+    assert user["tenant_name"] == tenant_config.display_name
     assert isinstance(body["capabilities"], list)
     assert "pf_session" in db_client.cookies
 

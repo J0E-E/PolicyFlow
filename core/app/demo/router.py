@@ -155,7 +155,7 @@ async def assume_persona(
         event_type=EventType.AUTH_LOGIN,
         outcome=Outcome.SUCCESS,
     )
-    return build_identity_response(persona_identity)
+    return await build_identity_response(db, persona_identity)
 
 
 async def _get_seeded_persona(

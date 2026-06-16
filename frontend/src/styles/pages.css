@@ -144,8 +144,30 @@
   padding: var(--space-4);
 }
 
+/* Clickable tenant card. Resets the native button (full-width, left-aligned,
+   inherits the page font) and reuses the flat .tenant-card surface; the global
+   :focus-visible ring and reduced-motion rule already apply (base.css). */
+.tenant-card-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color var(--motion-standard) var(--easing-standard);
+}
+
+.tenant-card-button:hover:not(:disabled) {
+  background-color: var(--surface-1);
+}
+
+.tenant-card-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .tenant-card-name {
   /* Title register — Public Sans 18/24/600 (Guide §3) */
+  display: block;
   margin: 0 0 var(--space-1);
   font-family: var(--font-ui);
   font-weight: 600;
@@ -155,10 +177,23 @@
 }
 
 .tenant-card-note {
+  display: block;
   margin: 0;
   font-size: 14px;
   line-height: 20px;
   color: var(--on-surface-variant);
+}
+
+/* Loading / empty / pending / error status lines on the select-tenant page. */
+.select-tenant-status {
+  margin: 0 0 var(--space-4);
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
+
+.select-tenant-error {
+  margin: 0 0 var(--space-4);
 }
 
 /* Text link — minimal, underlined, ink-toned (Guide §5 "Text" button) */
@@ -170,4 +205,54 @@
   font-weight: 500;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* ---- Guarded /app: session-restore skeleton ---- */
+
+.app-session-skeleton {
+  max-width: 640px;
+}
+
+.app-session-skeleton-message {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
+
+/* ---- Demo home (walking-skeleton /app landing) ---- */
+
+.demo-home-content {
+  max-width: 640px;
+}
+
+.demo-home-title {
+  /* Headline register — Besley 24/32/600 (Guide §3) */
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 32px;
+  color: var(--on-surface);
+}
+
+.demo-home-status {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
+
+/* The role and tenant read as the emphasized facts in the status line. */
+.demo-home-role,
+.demo-home-tenant {
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.demo-home-empty {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
 }

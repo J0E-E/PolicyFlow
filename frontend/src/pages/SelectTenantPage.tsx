@@ -1,11 +1,69 @@
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import PageLayout from "../components/PageLayout.tsx";
+import { listTenants } from "../api";
+import type { Tenant } from "../api";
+import { useSession } from "../session";
 
-// Tenant-selection route (`/select-tenant`). Static placeholder — no real
-// tenant data or selection logic (that lands in P1.6). Headline + two flat
-// bordered Cards naming the two seeded demo tenants, plus a Text back link
-// to the landing page (Guide §3, §5).
+// Tenant-selection route (`/select-tenant`). The live walking-skeleton flow:
+// fetch the public tenant list on mount, render each tenant as a focusable
+// button, and on click passwordlessly assume the Agent persona for that tenant
+// and route into the guarded `/app` zone. Un-branded — the tenant's brand color
+// is not used yet (that is Epic 15); this slice proves select -> assume ->
+// demo home end-to-end on the existing base styles.
+
+// What the page is currently doing — so the loading / empty / error / pending /
+// assume-error states each render exactly once and never overlap.
+type LoadState =
+  | { kind: "loading" }
+  | { kind: "loaded"; tenants: Tenant[] }
+  | { kind: "error" };
+
 export default function SelectTenantPage() {
+  const { assumePersona } = useSession();
+  const navigate = useNavigate();
+
+  const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
+  // The slug currently being signed in (disables the buttons), or null.
+  const [assumingSlug, setAssumingSlug] = useState<string | null>(null);
+  const [assumeError, setAssumeError] = useState<string | null>(null);
+
+  const loadTenants = useCallback(() => {
+    setLoadState({ kind: "loading" });
+    let isActive = true;
+    listTenants()
+      .then((tenants) => {
+        if (isActive) {
+          setLoadState({ kind: "loaded", tenants });
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setLoadState({ kind: "error" });
+        }
+      });
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => loadTenants(), [loadTenants]);
+
+  async function handleSelectTenant(tenant: Tenant) {
+    setAssumeError(null);
+    setAssumingSlug(tenant.slug);
+    try {
+      await assumePersona(tenant.slug, "agent");
+      navigate("/app");
+    } catch {
+      // Re-enable the controls and explain the failure in the page's own voice.
+      setAssumingSlug(null);
+      setAssumeError("Could not sign you in. Please try again.");
+    }
+  }
+
+  const isAssuming = assumingSlug !== null;
+
   return (
     <PageLayout pageId="select-tenant">
       <div id="select-tenant-content" className="select-tenant-content">
@@ -13,46 +71,108 @@ export default function SelectTenantPage() {
           Select a tenant
         </h1>
         <p id="select-tenant-intro" className="select-tenant-intro">
-          Two demo organizations are seeded for this walkthrough. Selection is
-          not wired up yet — these are placeholders.
+          Pick a demo organization to step into. Selecting one signs you in as an
+          Agent for that tenant.
         </p>
-        <ul id="select-tenant-card-list" className="tenant-card-list">
-          <li
-            id="select-tenant-card-item-sunshine"
-            className="tenant-card-item"
+
+        {loadState.kind === "loading" && (
+          <p
+            id="select-tenant-loading"
+            className="select-tenant-status"
+            role="status"
+            aria-live="polite"
           >
-            <div id="select-tenant-card-sunshine" className="tenant-card">
-              <h2
-                id="select-tenant-card-sunshine-name"
-                className="tenant-card-name"
+            Loading tenants…
+          </p>
+        )}
+
+        {loadState.kind === "error" && (
+          <div id="select-tenant-error" className="select-tenant-error">
+            <p
+              id="select-tenant-error-message"
+              className="select-tenant-status"
+              role="status"
+              aria-live="polite"
+            >
+              Could not load tenants.
+            </p>
+            <button
+              id="select-tenant-retry-button"
+              type="button"
+              className="button-tonal"
+              onClick={loadTenants}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {loadState.kind === "loaded" && loadState.tenants.length === 0 && (
+          <p
+            id="select-tenant-empty"
+            className="select-tenant-status"
+            role="status"
+            aria-live="polite"
+          >
+            No tenants are available.
+          </p>
+        )}
+
+        {loadState.kind === "loaded" && loadState.tenants.length > 0 && (
+          <ul id="select-tenant-card-list" className="tenant-card-list">
+            {loadState.tenants.map((tenant) => (
+              <li
+                id={`select-tenant-card-item-${tenant.slug}`}
+                key={tenant.slug}
+                className="tenant-card-item"
               >
-                Sunshine Senior Benefits
-              </h2>
-              <p
-                id="select-tenant-card-sunshine-note"
-                className="tenant-card-note"
-              >
-                Medicare and senior coverage. Placeholder — not yet selectable.
-              </p>
-            </div>
-          </li>
-          <li id="select-tenant-card-item-florida" className="tenant-card-item">
-            <div id="select-tenant-card-florida" className="tenant-card">
-              <h2
-                id="select-tenant-card-florida-name"
-                className="tenant-card-name"
-              >
-                Florida Family Planning
-              </h2>
-              <p
-                id="select-tenant-card-florida-note"
-                className="tenant-card-note"
-              >
-                Family and household coverage. Placeholder — not yet selectable.
-              </p>
-            </div>
-          </li>
-        </ul>
+                <button
+                  id={`select-tenant-card-${tenant.slug}`}
+                  type="button"
+                  className="tenant-card tenant-card-button"
+                  onClick={() => handleSelectTenant(tenant)}
+                  disabled={isAssuming}
+                >
+                  <span
+                    id={`select-tenant-card-${tenant.slug}-name`}
+                    className="tenant-card-name"
+                  >
+                    {tenant.display_name}
+                  </span>
+                  <span
+                    id={`select-tenant-card-${tenant.slug}-note`}
+                    className="tenant-card-note"
+                  >
+                    Sign in as an Agent for {tenant.display_name}.
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {isAssuming && (
+          <p
+            id="select-tenant-pending"
+            className="select-tenant-status"
+            role="status"
+            aria-live="polite"
+          >
+            Signing you in…
+          </p>
+        )}
+
+        {assumeError !== null && (
+          <p
+            id="select-tenant-assume-error"
+            className="select-tenant-status"
+            role="status"
+            aria-live="polite"
+          >
+            {assumeError}
+          </p>
+        )}
+
         <Link id="select-tenant-back-link" className="text-link" to="/">
           Back to landing
         </Link>

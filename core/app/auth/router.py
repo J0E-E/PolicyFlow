@@ -103,7 +103,7 @@ async def login(
         event_type=EventType.AUTH_LOGIN,
         outcome=Outcome.SUCCESS,
     )
-    return build_identity_response(identity)
+    return await build_identity_response(db, identity)
 
 
 @router.post("/logout")
@@ -143,10 +143,11 @@ async def logout(
 @router.get("/me")
 async def get_me(
     identity: Identity = Depends(require_authenticated),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Return the current identity body, mirroring login's shape exactly.
 
     The 401 for no/expired/revoked session is inherited from
     `require_authenticated` for free.
     """
-    return build_identity_response(identity)
+    return await build_identity_response(db, identity)

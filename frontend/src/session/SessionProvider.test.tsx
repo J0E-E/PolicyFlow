@@ -35,6 +35,8 @@ const agentIdentity: Identity = {
     username: "agent.one",
     role: "agent",
     tenant_id: "22222222-2222-2222-2222-222222222222",
+    tenant_slug: "sunshine-senior-benefits",
+    tenant_name: "Sunshine Senior Benefits",
   },
   capabilities: [
     "claim_leads_manage_tasks",
@@ -49,6 +51,8 @@ const tenantAdminIdentity: Identity = {
     username: "admin.one",
     role: "tenant_admin",
     tenant_id: "22222222-2222-2222-2222-222222222222",
+    tenant_slug: "sunshine-senior-benefits",
+    tenant_name: "Sunshine Senior Benefits",
   },
   capabilities: ["view_audit_logs", "view_tenant_config"],
 };

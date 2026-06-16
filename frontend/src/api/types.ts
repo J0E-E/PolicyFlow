@@ -5,7 +5,9 @@
 // backend sources each type tracks:
 //   - Role           -> core/app/models/user.py (the `Role` StrEnum values)
 //   - Capability     -> core/app/auth/rbac.py (the `Capability` StrEnum values)
-//   - Identity       -> core/app/auth/identity.py (build_identity_response)
+//   - Identity       -> core/app/auth/identity.py (build_identity_response;
+//                       the user block carries tenant_slug + tenant_name, both
+//                       null for the tenantless Platform Admin)
 //   - Tenant         -> core/app/demo/router.py (GET /api/tenants entries)
 //
 // Drift note: these unions mirror the backend StrEnums by hand, so a value
@@ -36,6 +38,10 @@ export interface IdentityUser {
   role: Role;
   /** Tenant UUID string, or `null` for the tenantless Platform Admin. */
   tenant_id: string | null;
+  /** Tenant slug (e.g. `sunshine-senior-benefits`), or `null` for Platform Admin. */
+  tenant_slug: string | null;
+  /** Tenant display name (e.g. `Sunshine Senior Benefits`), or `null` for Platform Admin. */
+  tenant_name: string | null;
 }
 
 /**

@@ -70,6 +70,10 @@ async def test_assume_agent_resolves_lowest_username_agent(seeded, db_client):
     assert user["role"] == Role.AGENT.value
     assert user["username"] == f"agent.one@{SUNSHINE.email_domain}"
     assert user["tenant_id"] is not None
+    # The identity body carries the assumed persona's tenant slug + name,
+    # matching the registry the seed derives the Tenant row from.
+    assert user["tenant_slug"] == SUNSHINE.slug
+    assert user["tenant_name"] == SUNSHINE.display_name
     assert "pf_session" in db_client.cookies
 
 
@@ -109,6 +113,9 @@ async def test_assume_platform_admin_resolves_global_tenantless_admin(
     user = response.json()["user"]
     assert user["role"] == Role.PLATFORM_ADMIN.value
     assert user["tenant_id"] is None
+    # The tenantless Platform Admin carries no tenant slug or name.
+    assert user["tenant_slug"] is None
+    assert user["tenant_name"] is None
 
 
 async def test_assume_platform_admin_ignores_unknown_slug(seeded, db_client):
