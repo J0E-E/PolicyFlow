@@ -1,9 +1,11 @@
 /*
- * Foundational design tokens — light subset used by the Epic 5 placeholder
- * pages. Values are copied verbatim from the UI/UX Guide (§2.1, §3, §4); this
- * is declarative config, not logic. The full tenant brand + persona token
- * ramps and the component-library tokens are deferred to P1.6 — nothing is
- * selected yet, so tenant-colored chrome is not applicable here.
+ * Foundational design tokens. Values are copied verbatim from the UI/UX Guide
+ * (§2.1–2.4, §3, §4); this is declarative config, not logic. As of P1.6 this
+ * layer carries the full token foundation: the tenant brand ramps (as
+ * `[data-tenant]` blocks), the persona accent palette + the Platform-Admin
+ * brand-drain (as `[data-persona]` blocks), the semantic state colors +
+ * containers, and the ink-console color tokens. The component-library tokens
+ * still arrive with their components in later P1.6 epics.
  */
 :root {
   /* Surfaces — warm paper, layered by rule and tint (Guide §2.1) */
@@ -18,10 +20,10 @@
   --on-surface: #21201a; /* primary text — warm ink */
   --on-surface-variant: #5c594f; /* secondary text, labels */
 
-  /* Typography (Guide §3) — Mono is a fallback only; no mono web font loads */
+  /* Typography (Guide §3) — IBM Plex Mono loads via index.html for machine identity */
   --font-display: "Besley", "Georgia", serif;
   --font-ui: "Public Sans", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Consolas", ui-monospace, monospace;
+  --font-mono: "IBM Plex Mono", "Consolas", ui-monospace, monospace;
 
   /* Spacing — 4px base scale (Guide §4) */
   --space-1: 4px;
@@ -31,17 +33,143 @@
   --space-5: 24px;
   --space-6: 32px;
   --space-7: 48px;
+  --space-8: 64px;
 
   /* Radius — near-square document geometry (Guide §4) */
-  --radius-sm: 2px;
-  --radius-md: 4px;
+  --radius-sm: 2px; /* stamp tags, inputs */
+  --radius-md: 4px; /* buttons, cards */
+  --radius-lg: 6px; /* dialogs, large panels */
+  --radius-full: 999px; /* avatars ONLY — no pills */
+
+  /* Elevation — paper lies flat; shadow is earned only by transient layers (Guide §4) */
+  --elevation-1: 0 1px 0 rgba(33, 31, 26, 0.05); /* resting card crease (+ 1px --outline border) */
+  --elevation-2: 0 2px 8px rgba(33, 31, 26, 0.1); /* menus, popovers */
+  --elevation-3: 0 16px 40px rgba(33, 31, 26, 0.18); /* dialogs */
+  --scrim: rgba(35, 33, 28, 0.45);
+
+  /* Interaction state layers (MD3) & disabled (Guide §4) */
+  --state-layer-hover: 0.08; /* of --on-surface over the surface */
+  --state-layer-pressed: 0.12;
+  --disabled-content-opacity: 0.38;
+  --disabled-container-opacity: 0.12;
+
+  /* Table density (Guide §4) */
+  --row-height-comfortable: 52px;
+  --row-height-dense: 44px; /* lead lists, pipeline, audit log, DLQ — with Body M */
+
+  /* Z-index scale (Guide §4) */
+  --z-nav: 10;
+  --z-banner: 20;
+  --z-stepper: 30;
+  --z-popover: 40;
+  --z-dialog: 50;
+  --z-toast: 60;
 
   /* Motion (Guide §4) */
-  --motion-standard: 200ms;
+  --motion-fast: 120ms; /* hover, press */
+  --motion-standard: 200ms; /* enter/exit, role swap */
+  --motion-slow: 320ms; /* dialogs, panels */
   --easing-standard: cubic-bezier(0.2, 0, 0, 1);
 
   /* Focus ring — editorial, tenant-agnostic, always AA (Guide §4) */
   --focus-ring-color: #21201a;
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
+
+  /* ===== State colors — the only hues that signal (Guide §2.2) ===== */
+  /* Deep "document inks", each AA as text on white, with a tint container */
+  --state-success: #1e6f50;
+  --state-success-container: #dfefe5;
+  --state-pending: #2c5fa8; /* enriching, quoting, retrying */
+  --state-pending-container: #dfe9f6;
+  --state-warning: #8a5a00; /* cautions, Simulated stamp */
+  --state-warning-container: #f6e8c8;
+  --state-error: #a8222b; /* failures, declined, DLQ */
+  --state-error-container: #f9e2e0;
+
+  /* State brights — used ONLY on --surface-ink consoles (all ≥4.5:1 on ink) (Guide §2.2) */
+  --state-success-on-ink: #5bc48f;
+  --state-pending-on-ink: #7fa9e8;
+  --state-warning-on-ink: #d9a84e;
+  --state-error-on-ink: #e8707a;
+
+  /* ===== Inverted ink console — machine surfaces ONLY (Guide §2.1) ===== */
+  /* Color tokens only; the ink-console components arrive in later epics */
+  --surface-ink: #23211c; /* iron-gall ink — warm, never blue */
+  --surface-ink-raised: #2e2b25; /* hover / raised rows on ink */
+  --on-ink: #efeae0; /* paper-toned text on ink */
+  --on-ink-variant: #a9a294; /* secondary text on ink */
+  --outline-ink: #3e3a31; /* hairlines on ink */
+
+  /* ===== Persona accent palette — annotation colors, role chrome only (Guide §2.4) ===== */
+  /* Named ramps; the active-persona generic tokens are mapped per [data-persona] below */
+  --persona-agent-accent: #21201a; /* the ink itself — the default working hand */
+  --persona-agent-container: #eae7e0;
+  --persona-agent-on-container: #21201a;
+
+  --persona-tenant-admin-accent: #6442b0; /* registrar violet */
+  --persona-tenant-admin-container: #e9e1f7;
+  --persona-tenant-admin-on-container: #3a2370;
+
+  --persona-read-only-accent: #7b7669; /* warm gray */
+  --persona-read-only-container: #ece9e2;
+  --persona-read-only-on-container: #4a463c;
+
+  --persona-platform-admin-accent: #a12568; /* ops magenta */
+  --persona-platform-admin-container: #f7deeb;
+  --persona-platform-admin-on-container: #5e1038;
+  --persona-platform-admin-on-ink: #d169a6; /* magenta on the inverted masthead */
+}
+
+/* ===== Tenant brand ramps (Guide §2.3) =====
+ * The authoritative --primary comes from the backend registry per tenant; these
+ * supporting ramp tokens are frontend design data. Set on a [data-tenant] scope
+ * by Epic 10's theming effect — selectors are the real wire slugs from
+ * GET /api/tenants. Warm-vs-cool so the same screen reads as a different tenant.
+ */
+[data-tenant="sunshine-senior-benefits"] {
+  --primary: #9c4a1e; /* sun-baked terracotta, ~6.1:1 on white */
+  --on-primary: #fff8f3;
+  --primary-container: #f6e2d4;
+  --on-primary-container: #5c2a10;
+}
+
+[data-tenant="florida-family-planning"] {
+  --primary: #0f6a72; /* Gulf petrol, ~6.3:1 on white */
+  --on-primary: #f2fafa;
+  --primary-container: #d6ecea;
+  --on-primary-container: #07343a;
+}
+
+/* ===== Persona theming blocks (Guide §2.4) =====
+ * Map the active-persona generic tokens to the named ramp above. Selectors are
+ * the real wire roles from the identity body (snake_case, underscores), set on a
+ * [data-persona] scope by Epic 10's theming effect.
+ */
+[data-persona="agent"] {
+  --persona-accent: var(--persona-agent-accent);
+  --persona-accent-container: var(--persona-agent-container);
+  --persona-on-accent-container: var(--persona-agent-on-container);
+}
+
+[data-persona="tenant_admin"] {
+  --persona-accent: var(--persona-tenant-admin-accent);
+  --persona-accent-container: var(--persona-tenant-admin-container);
+  --persona-on-accent-container: var(--persona-tenant-admin-on-container);
+}
+
+[data-persona="read_only"] {
+  --persona-accent: var(--persona-read-only-accent);
+  --persona-accent-container: var(--persona-read-only-container);
+  --persona-on-accent-container: var(--persona-read-only-on-container);
+}
+
+/* Platform Admin operates outside tenant scope: map the ops accent AND drain the
+ * tenant brand from the chrome — enforced in tokens, not convention (Guide §2.4). */
+[data-persona="platform_admin"] {
+  --persona-accent: var(--persona-platform-admin-accent);
+  --persona-accent-container: var(--persona-platform-admin-container);
+  --persona-on-accent-container: var(--persona-platform-admin-on-container);
+  --primary: var(--on-surface-variant); /* tenant color cannot render in ops mode */
+  --primary-container: var(--surface-3);
 }
