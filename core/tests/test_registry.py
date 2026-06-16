@@ -28,6 +28,10 @@ from app.tenancy.registry import (
 # the migration can interpolate them without quoting.
 BARE_SQL_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")
 
+# A 6-digit hex color with a leading `#` — the shape every tenant's authoritative
+# brand primary must take.
+HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
 
 def test_exactly_two_tenants_with_expected_slugs():
     """The registry defines exactly the two named demo tenants."""
@@ -67,6 +71,18 @@ def test_every_tenant_has_a_non_empty_email_domain():
     """Each tenant carries an email domain its personas live at."""
     for tenant in TENANTS:
         assert tenant.email_domain
+
+
+def test_every_tenant_has_a_well_formed_brand_primary_color():
+    """Each tenant carries a `brand_primary_color` that is a 6-digit hex color."""
+    for tenant in TENANTS:
+        assert HEX_COLOR.match(tenant.brand_primary_color)
+
+
+def test_brand_primary_colors_are_the_guide_authoritative_values():
+    """The two brand primaries are exactly the Guide §2.3 authoritative values."""
+    assert SUNSHINE.brand_primary_color == "#9C4A1E"
+    assert FLORIDA.brand_primary_color == "#0F6A72"
 
 
 def test_tenant_by_slug_returns_the_matching_config():

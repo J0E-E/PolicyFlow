@@ -27,12 +27,18 @@ its acceptance, per the TDD. The **tenant-isolation / PII invariant** holds thro
 the role switcher changes *identity*, not enforcement; the seed password never reaches the
 browser; no PII crosses the new surfaces.
 
-## Epic 1 — Tenant list endpoint + registry brand color
+## Epic 1 — Tenant list endpoint + registry brand color — **COMPLETED**
 - **Goal:** Stand up the public, unauthenticated `GET /api/tenants` that returns the canonical tenant list (`slug`, `display_name`, `brand_primary_color`) straight from the registry — no DB read, no PII — so the pre-login tenant-selection screen has one authoritative source.
 - **Rough scope:** A new demo router under `core/app/demo/` mounted in `main.py`; add `brand_primary_color` to the registry's `TenantConfig` (the authoritative Guide-aligned primary lives here). Tests assert the public shape and that no PII/DB read is involved.
 - **Open questions / decisions for stakeholders:** Confirm the registry is where the authoritative `--primary` lives (vs `tenant_settings`); the Guide-aligned *values* land here but the seed's derivation from them is Epic 22's job — settle the boundary at epic time.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Added `brand_primary_color: str` to the frozen `TenantConfig` and set the Guide §2.3 authoritative primaries: Sunshine `#9C4A1E`, Florida `#0F6A72`. The registry is now the single source of truth for each tenant's `--primary`.
+  - New `core/app/demo/` package (`__init__.py` + `router.py`): `APIRouter(prefix="/api")` with a public `GET /tenants` that loops `TENANTS` and returns `{"tenants": [{"slug","display_name","brand_primary_color"}, ...]}` in registry order (Sunshine, then Florida). No auth dependency and no `get_db` dependency — reads only the in-memory registry. Used the `/api` prefix (not `/api/demo`) so Epic 2 can add `POST /demo/assume-persona` to the same router without rework.
+  - Mounted in `main.py` via `app.include_router(demo_router)`; updated the module docstring's router list.
+  - **Epic-1 / Epic-22 boundary (recorded):** the registry now holds the authoritative Guide primaries, but the seed still hardcodes the placeholder colors (`#F5A623` / `#2E86C1`) into the `tenant_settings` rows. So `/api/tenants` (Guide colors) and the seeded DB rows (placeholders) intentionally diverge until Epic 22 rewrites the seed to derive its color from the registry. This is harmless per TDD §7 + Decisions 4/5/8: the masthead brand is frontend-owned and reads `/api/tenants`, not the DB rows. **`seed.py` / `tenant_settings` colors were deliberately not touched** — that is Epic 22.
+  - Tests: new `core/tests/test_demo_tenants.py` (pure no-DB/no-Docker, mounts the real demo router on a throwaway FastAPI + `TestClient` with no overrides) covers 200 + exact body/order/Guide colors, public access with no `pf_session` cookie, exactly the three whitelisted keys per tenant (no PII), and correctness with no DB wiring (proves no DB read). `core/tests/test_registry.py` gains: every tenant's `brand_primary_color` matches `^#[0-9A-Fa-f]{6}$`, and the two values are exactly `#9C4A1E` / `#0F6A72`.
+  - Targeted run (per `0-conventions.md`): `./.venv/Scripts/python.exe -m pytest tests/test_demo_tenants.py tests/test_registry.py` → 15 passed.
 
 ## Epic 2 — Passwordless assume-persona endpoint
 - **Goal:** Build `POST /api/demo/assume-persona {tenant_slug, role}` — the one seam serving both first entry ("assume Agent") and every role switch. It resolves a **seeded** persona deterministically, re-mints the session as that real user, and returns the same identity body as login, so "RBAC enforced per assumed role" is literally true.

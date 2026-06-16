@@ -31,16 +31,22 @@ class TenantConfig:
     schema_name: str
     db_role: str
     email_domain: str
+    brand_primary_color: str
 
 
 # The two demo tenants. Slugs and display names match the seed's current demo
 # tenants verbatim; email domains match the seed's current per-tenant domains.
+# `brand_primary_color` holds the Guide §2.3 authoritative brand primaries — the
+# single source of truth for each tenant's `--primary`. The seed derives its
+# `tenant_settings` colors from these values in Epic 22 (until then the seed keeps
+# its own placeholder colors, so the two intentionally diverge).
 SUNSHINE = TenantConfig(
     slug="sunshine-senior-benefits",
     display_name="Sunshine Senior Benefits",
     schema_name="sunshine",
     db_role="tenant_sunshine",
     email_domain="sunshine.example",
+    brand_primary_color="#9C4A1E",
 )
 
 FLORIDA = TenantConfig(
@@ -49,6 +55,7 @@ FLORIDA = TenantConfig(
     schema_name="florida",
     db_role="tenant_florida",
     email_domain="florida.example",
+    brand_primary_color="#0F6A72",
 )
 
 # Every tenant, in seed and migration order.
