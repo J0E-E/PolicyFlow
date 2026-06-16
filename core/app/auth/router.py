@@ -15,9 +15,11 @@ Three endpoints under `/api/auth`:
   inherits the 401 from `require_authenticated` when nobody is signed in.
 
 Login and `me` return the **identical body shape**, built once in
-`_identity_response`: the user's public fields plus a flat, sorted array of the
-capability strings the role holds. Raw `UUID`/`StrEnum` values are returned as-is
-and FastAPI's encoder serializes them, the style `health.py` uses.
+`build_identity_response` (shared from `auth/identity.py`, so the demo
+assume-persona endpoint returns the same body): the user's public fields plus a
+flat, sorted array of the capability strings the role holds. Raw `UUID`/`StrEnum`
+values are returned as-is and FastAPI's encoder serializes them, the style
+`health.py` uses.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -28,8 +30,8 @@ from ..audit.records import EventType, Outcome
 from ..audit.service import record_audit_event
 from ..db import get_db
 from .dependencies import require_authenticated
+from .identity import build_identity_response
 from .provider import AuthProvider, Identity, LocalPasswordAuthProvider
-from .rbac import CAPABILITIES
 from .sessions import (
     SESSION_COOKIE_NAME,
     clear_session_cookie,
@@ -58,27 +60,6 @@ def get_auth_provider() -> AuthProvider:
     instead, with no change to the login route.
     """
     return LocalPasswordAuthProvider()
-
-
-def _identity_response(identity: Identity) -> dict:
-    """Build the shared response body for both login and `me`.
-
-    Returns the signed-in user's public fields plus a flat, sorted array of the
-    capability strings the role holds (per the RBAC matrix). Raw `UUID`/`StrEnum`
-    values are left as-is for FastAPI's encoder to serialize.
-    """
-    capabilities = sorted(
-        capability.value for capability in CAPABILITIES[identity.role]
-    )
-    return {
-        "user": {
-            "id": identity.user_id,
-            "username": identity.username,
-            "role": identity.role,
-            "tenant_id": identity.tenant_id,
-        },
-        "capabilities": capabilities,
-    }
 
 
 @router.post("/login")
@@ -122,7 +103,7 @@ async def login(
         event_type=EventType.AUTH_LOGIN,
         outcome=Outcome.SUCCESS,
     )
-    return _identity_response(identity)
+    return build_identity_response(identity)
 
 
 @router.post("/logout")
@@ -168,4 +149,4 @@ async def get_me(
     The 401 for no/expired/revoked session is inherited from
     `require_authenticated` for free.
     """
-    return _identity_response(identity)
+    return build_identity_response(identity)

@@ -96,3 +96,32 @@ def test_outbox_poll_interval_honors_environment_override(monkeypatch):
     fresh_settings = Settings()
 
     assert fresh_settings.outbox_poll_interval_seconds == 2.5
+
+
+def test_demo_login_enabled_defaults_on(monkeypatch):
+    """With no env var set, the demo login is enabled — this build is the demo."""
+    monkeypatch.delenv("DEMO_LOGIN_ENABLED", raising=False)
+
+    fresh_settings = Settings()
+
+    assert fresh_settings.demo_login_enabled is True
+
+
+def test_demo_login_enabled_honors_environment_override_off(monkeypatch):
+    """`DEMO_LOGIN_ENABLED=false` turns the flag off (the non-demo off-switch)."""
+    monkeypatch.setenv("DEMO_LOGIN_ENABLED", "false")
+
+    fresh_settings = Settings()
+
+    assert fresh_settings.demo_login_enabled is False
+
+
+def test_demo_login_enabled_truthy_values_turn_it_on(monkeypatch):
+    """`true` / `1` / `yes` all read as on; anything else reads as off."""
+    for truthy_value in ("true", "1", "yes", "TRUE", "Yes"):
+        monkeypatch.setenv("DEMO_LOGIN_ENABLED", truthy_value)
+        assert Settings().demo_login_enabled is True
+
+    for falsy_value in ("false", "0", "no", "off", ""):
+        monkeypatch.setenv("DEMO_LOGIN_ENABLED", falsy_value)
+        assert Settings().demo_login_enabled is False

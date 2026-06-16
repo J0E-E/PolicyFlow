@@ -78,6 +78,14 @@ class Settings:
             "SESSION_COOKIE_SECURE", "false"
         ).strip().lower() in ("true", "1", "yes")
 
+        # Whether the passwordless demo login (assume-persona) is enabled. Default
+        # on, since this build is the demo; the off-switch is for a hypothetical
+        # non-demo deployment, where DEMO_LOGIN_ENABLED=false makes the endpoint
+        # refuse with 403. Mirrors the session_cookie_secure truthy-set idiom.
+        self.demo_login_enabled: bool = os.environ.get(
+            "DEMO_LOGIN_ENABLED", "true"
+        ).strip().lower() in ("true", "1", "yes")
+
         # The password every seeded demo persona is created with. The dev/test
         # default is a throwaway value; prod injects the real password via SSM
         # (Terraform sets SEED_USER_PASSWORD in the container environment).

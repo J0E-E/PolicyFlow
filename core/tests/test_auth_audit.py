@@ -257,24 +257,46 @@ async def test_logout_audits_attributed_to_the_actor(
     """A login then logout writes one `auth.logout`/`success` attributed to the actor.
 
     The Tenant Admin's logout record lands in their tenant store, resolved from the
-    session before the token was revoked, attributed to that same actor.
+    session before the token was revoked, attributed to that same actor. A
+    before/after delta on the actor's logout rows proves *this* logout wrote exactly
+    one row: the shared seeded Tenant Admin persona is logged out across many tests
+    (`test_endpoints_db`, the assume-persona role switch) against the never-reset
+    session-scoped container DB, so a global `== 1` count of the actor's logout rows
+    would be order-dependent. Counting under serial test execution is exact — only
+    this test's logout can add an `auth.logout` row between the two snapshots. This
+    mirrors the before/after-delta idiom the login-success cases above already use.
     """
+    tenant_table = f"{SUNSHINE.schema_name}.audit_records"
+
     login_response = await login_as(db_client, Role.TENANT_ADMIN)
     assert login_response.status_code == 200
     actor_user_id = uuid.UUID(login_response.json()["user"]["id"])
 
+    rows_before = await _read_audit_rows_for_actor(
+        container_audit_session_factory, tenant_table, actor_user_id
+    )
+    logouts_before = [
+        row for row in rows_before if row.event_type == EventType.AUTH_LOGOUT
+    ]
+
     logout_response = await db_client.post("/api/auth/logout")
     assert logout_response.status_code == 200
 
-    tenant_rows = await _read_audit_rows_for_actor(
-        container_audit_session_factory,
-        f"{SUNSHINE.schema_name}.audit_records",
-        actor_user_id,
+    rows_after = await _read_audit_rows_for_actor(
+        container_audit_session_factory, tenant_table, actor_user_id
     )
     logout_rows = [
-        row for row in tenant_rows if row.event_type == EventType.AUTH_LOGOUT
+        row for row in rows_after if row.event_type == EventType.AUTH_LOGOUT
     ]
-    assert len(logout_rows) == 1
+
+    # Exactly one new logout row was written by this logout (a before/after delta,
+    # not a global `== 1` count — the container DB is never reset between tests).
+    assert len(logout_rows) == len(logouts_before) + 1
+
+    # `_read_audit_rows_for_actor` returns rows newest-first, so the actor's most
+    # recent logout row is the one this test just wrote; every logout row this
+    # persona writes is identical in the asserted fields, so inspecting the newest
+    # is order-independent.
     written = logout_rows[0]
     assert written.actor_user_id == actor_user_id
     assert written.actor_role == Role.TENANT_ADMIN

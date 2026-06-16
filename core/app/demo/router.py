@@ -1,28 +1,64 @@
-"""The demo HTTP surface: the public, pre-login tenant list.
+"""The demo HTTP surface: the public tenant list and passwordless assume-persona.
 
-This is the one authoritative source the pre-login tenant-selection screen asks
-"which tenants exist, what are they called, and what is each one's brand color?"
-It answers straight from the registry — the in-code list of tenants — so it
-touches **no database** and exposes **no personal data**.
-
-Endpoints under `/api`:
+Two endpoints under `/api`, at different sub-paths:
 
 - `GET /tenants` returns the canonical tenant list (`slug`, `display_name`,
   `brand_primary_color`) in registry order (Sunshine, then Florida). It is
-  **public**: it has no auth dependency and no `get_db` dependency, since it runs
-  before anyone signs in and reads only the in-memory registry.
+  **public** and **DB-free**: it has no auth dependency and no `get_db`
+  dependency, since it runs before anyone signs in and reads only the in-memory
+  registry.
+- `POST /demo/assume-persona` is the passwordless front door **and** every later
+  role switch. It takes `{tenant_slug, role}`, resolves a **seeded** demo user
+  deterministically, re-mints the server session as that real user, sets the
+  `pf_session` cookie, and returns the same identity body login returns. Because
+  the visitor literally becomes a distinct seeded user, "RBAC enforced per assumed
+  role" is literally true. This route is DB-backed (it reads the seeded users).
 
-The body uses the `{"tenants": [...]}` envelope, mirroring the tenant router's
-`{"tenant": {...}}` / `{"settings": {...}}` style. The router carries the `/api`
-prefix (not `/api/demo`) so Epic 2 can add `POST /demo/assume-persona` to the same
-router — the two demo endpoints live at different sub-paths under `/api`.
+The tenant-list body uses the `{"tenants": [...]}` envelope, mirroring the tenant
+router's `{"tenant": {...}}` / `{"settings": {...}}` style. The router carries the
+`/api` prefix (not `/api/demo`) so the two demo endpoints live at different
+sub-paths under `/api`.
+
+The assume-persona flow is kept **whole** — one coherent auth flow that resolves
+the persona, revokes any prior session, mints the new one, and audits both ends —
+because splitting it would scatter a single correctness-critical transaction.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..tenancy.registry import TENANTS
+from ..audit.records import EventType, Outcome
+from ..audit.service import record_audit_event
+from ..auth.identity import build_identity_response
+from ..auth.provider import Identity
+from ..auth.sessions import (
+    SESSION_COOKIE_NAME,
+    create_session,
+    get_session_identity,
+    revoke_session,
+    set_session_cookie,
+)
+from ..config import settings
+from ..db import get_db
+from ..models.tenant import Tenant
+from ..models.user import Role, User
+from ..tenancy.registry import TENANTS, tenant_by_slug
 
 router = APIRouter(prefix="/api")
+
+
+class AssumePersonaRequest(BaseModel):
+    """The assume-persona request body: which tenant and which role to become.
+
+    `role` is typed as the `Role` enum, so an unrecognized role value is rejected
+    with a `422` by FastAPI's request validation before the route runs — no manual
+    role check is needed.
+    """
+
+    tenant_slug: str
+    role: Role
 
 
 @router.get("/tenants")
@@ -46,3 +82,134 @@ async def list_tenants() -> dict:
             for tenant in TENANTS
         ]
     }
+
+
+@router.post("/demo/assume-persona")
+async def assume_persona(
+    request: Request,
+    response: Response,
+    persona_request: AssumePersonaRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Become a seeded persona: revoke any prior session, mint a new one, audit both.
+
+    The one seam serving both the passwordless front door (tenant-pick = "assume
+    Agent") and every later role switch. In order:
+
+    1. If `demo_login_enabled` is off, refuse with `403 {"detail": "demo login is
+       disabled"}` — the route exists but is the off-switch for a non-demo
+       deployment.
+    2. Resolve the seeded persona for `{tenant_slug, role}` (deterministic, lowest
+       username for the two-Agent tie-break). A tenant-scoped role with an unknown
+       slug → `404`; Platform Admin ignores the slug and resolves the global
+       tenantless admin.
+    3. If a `pf_session` cookie is present, resolve its identity **before** revoking
+       (a revoked row stops resolving), revoke that session, and — if it resolved —
+       record an `auth.logout` / `success` audit event routed by the **old**
+       identity's `tenant_id`. This is the role-switch re-mint path.
+    4. Mint a fresh session for the persona, set the `pf_session` cookie, and record
+       an `auth.login` / `success` audit event routed by the **new** persona's
+       `tenant_id` (a tenant user lands in their tenant store; the tenantless
+       Platform Admin lands in the platform store).
+    5. Return the persona's identity body — the same shape login and `me` return.
+
+    No password ever crosses the wire: only `{tenant_slug, role}` go in, and the
+    response is the same PII-free identity body login already returns.
+    """
+    if not settings.demo_login_enabled:
+        raise HTTPException(status_code=403, detail="demo login is disabled")
+
+    persona = await _get_seeded_persona(
+        db, persona_request.tenant_slug, persona_request.role
+    )
+
+    # Role-switch re-mint: retire any prior session before minting the new one.
+    # Resolve the old identity first (a revoked session no longer resolves) so the
+    # logout is audited under the tenant the visitor was previously in.
+    prior_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if prior_token is not None:
+        prior_identity = await get_session_identity(db, prior_token)
+        await revoke_session(db, prior_token)
+        if prior_identity is not None:
+            await record_audit_event(
+                tenant_id=prior_identity.tenant_id,
+                actor_user_id=prior_identity.user_id,
+                actor_role=prior_identity.role,
+                event_type=EventType.AUTH_LOGOUT,
+                outcome=Outcome.SUCCESS,
+            )
+
+    raw_token = await create_session(db, persona.id)
+    set_session_cookie(response, raw_token)
+
+    persona_identity = Identity(
+        user_id=persona.id,
+        tenant_id=persona.tenant_id,
+        role=persona.role,
+        username=persona.username,
+    )
+    await record_audit_event(
+        tenant_id=persona_identity.tenant_id,
+        actor_user_id=persona_identity.user_id,
+        actor_role=persona_identity.role,
+        event_type=EventType.AUTH_LOGIN,
+        outcome=Outcome.SUCCESS,
+    )
+    return build_identity_response(persona_identity)
+
+
+async def _get_seeded_persona(
+    db: AsyncSession, tenant_slug: str, role: Role
+) -> User:
+    """Resolve the seeded `User` for a `{tenant_slug, role}` pair, deterministically.
+
+    Two branches:
+
+    - **Platform Admin** ignores `tenant_slug` (the admin belongs to no tenant) and
+      resolves the single global user where `role == PLATFORM_ADMIN` and
+      `tenant_id IS NULL`. An unknown slug does **not** 404 for this role.
+    - **Any tenant-scoped role** registry-validates `tenant_slug` first (an unknown
+      slug → `404`), looks up the `Tenant` row by slug for its `tenant_id`, then
+      picks the persona with that `(tenant_id, role)` and the **lowest username**.
+      Ordering by username is the deterministic tie-break for the two seeded Agents
+      (`agent.one` wins over `agent.two`), and falls out harmlessly for the
+      single-user roles.
+
+    A missing persona row → `404`: the demo always seeds every persona, so an
+    absent one is a misconfiguration, not a client error to leak details about.
+    """
+    if role is Role.PLATFORM_ADMIN:
+        persona = (
+            await db.execute(
+                select(User).where(
+                    User.role == Role.PLATFORM_ADMIN,
+                    User.tenant_id.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if persona is None:
+            raise HTTPException(status_code=404, detail="persona not found")
+        return persona
+
+    try:
+        tenant_by_slug(tenant_slug)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="unknown tenant")
+
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.slug == tenant_slug))
+    ).scalar_one_or_none()
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="unknown tenant")
+
+    persona = (
+        await db.execute(
+            select(User)
+            .where(User.tenant_id == tenant.id, User.role == role)
+            .order_by(User.username)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if persona is None:
+        raise HTTPException(status_code=404, detail="persona not found")
+    return persona
