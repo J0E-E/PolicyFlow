@@ -5,6 +5,7 @@ import App from "./App.tsx";
 import { SessionProvider } from "./session";
 import "./styles/tokens.css";
 import "./styles/base.css";
+import "./styles/button.css";
 import "./styles/pages.css";
 
 const rootElement = document.getElementById("root");

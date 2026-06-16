@@ -1,0 +1,125 @@
+/*
+ * Button primitive — the Guide's four variants (Filled / Tonal / Outlined /
+ * Text), shared by `Button` and `ButtonLink` (Guide §5). Height 40px,
+ * --radius-md, Label type. Colors come through var() fallbacks so the variants
+ * theme under [data-tenant] / [data-persona] (Epic 10) yet render neutrally
+ * here: the Tonal fallback reproduces the retired .button-tonal look exactly,
+ * and the Filled fallback is an ink-on-paper button. An MD3 state-layer overlay
+ * gives uniform hover/press across all four. Tokens only; no raw hex
+ * (Guide §2, §4). The global :focus-visible ring and reduced-motion rule in
+ * base.css cover the focus state and neutralise the spin/transition.
+ */
+
+/* ---- Shared base ---- */
+
+.button {
+  /* A local stacking context so the ::before state layer can sit below the
+     label (which gets its own z-index) without escaping the button. */
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 40px;
+  padding: 0 var(--space-5);
+  border: 0;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  /* Label type — Public Sans 13/16/500, +0.1px tracking (Guide §3) */
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--easing-standard);
+}
+
+/* MD3 state-layer overlay: a currentColor wash that strengthens on hover/press.
+   Works for every variant — transparent variants get a tint, filled gets a
+   film. Sits below the label and never intercepts pointer events. */
+.button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-color: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) var(--easing-standard);
+}
+
+.button:hover:not(:disabled)::before {
+  opacity: var(--state-layer-hover);
+}
+
+.button:active:not(:disabled)::before {
+  opacity: var(--state-layer-pressed);
+}
+
+/* The label rides above the state layer. */
+.button-label {
+  position: relative;
+  z-index: 0;
+}
+
+/* ---- Variants (Guide §5) ---- */
+
+/* Filled — primary action. Themed: --primary on --on-primary. Unthemed
+   fallback: ink on paper. */
+.button-filled {
+  background-color: var(--primary, var(--on-surface));
+  color: var(--on-primary, var(--surface-2));
+}
+
+/* Tonal — --primary-container. Unthemed fallback reproduces the retired
+   .button-tonal exactly: --surface-3 fill, ink text, 1px hairline. */
+.button-tonal {
+  background-color: var(--primary-container, var(--surface-3));
+  color: var(--on-primary-container, var(--on-surface));
+  border: 1px solid var(--outline);
+}
+
+/* Outlined — transparent with a hairline. */
+.button-outlined {
+  color: var(--on-surface);
+  border: 1px solid var(--outline);
+}
+
+/* Text — transparent, no border, reduced horizontal padding. */
+.button-text {
+  color: var(--on-surface);
+  padding: 0 var(--space-3);
+}
+
+/* ---- Disabled (native) ---- */
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: var(--disabled-content-opacity);
+}
+
+/* ---- Pending spinner ---- */
+
+/* An inline ring spun from the current ink — a quarter cut away so the rotation
+   reads. Sized to the Label type. The base.css reduced-motion rule freezes the
+   spin to a single frame globally, so no override is needed here. */
+.button-spinner {
+  position: relative;
+  z-index: 0;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-full);
+  animation: button-spinner-rotation var(--motion-slow) linear infinite;
+}
+
+@keyframes button-spinner-rotation {
+  to {
+    transform: rotate(360deg);
+  }
+}

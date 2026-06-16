@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import Button from "../components/Button.tsx";
 import PageLayout from "../components/PageLayout.tsx";
 import { listTenants } from "../api";
 import type { Tenant } from "../api";
@@ -96,14 +97,13 @@ export default function SelectTenantPage() {
             >
               Could not load tenants.
             </p>
-            <button
+            <Button
               id="select-tenant-retry-button"
-              type="button"
-              className="button-tonal"
+              variant="tonal"
               onClick={loadTenants}
             >
               Retry
-            </button>
+            </Button>
           </div>
         )}
 

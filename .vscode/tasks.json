@@ -1,0 +1,102 @@
+{
+  // Docker stack tasks for local dev. `docker compose` here auto-loads
+  // docker-compose.yml + docker-compose.override.yml (dev overlay), so no -f
+  // flags are needed. Run via Terminal > Run Task, or Ctrl+Shift+B for the
+  // default "Fresh Rebuild" task.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Full clean slate: stop containers, DELETE data volumes (postgres +
+      // rabbitmq), rebuild images from scratch, then start detached. Use this
+      // when you want to connect and test a genuinely fresh build.
+      "label": "Docker: Fresh Rebuild (full reset)",
+      "detail": "down -v  →  build --no-cache  →  up -d   (wipes local DB + queue data)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Docker: Down + wipe volumes",
+        "Docker: Build (no cache)",
+        "Docker: Up (detached)"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      // Stop and remove containers, networks, AND named volumes so the next
+      // start comes up with an empty database and queue. --remove-orphans clears
+      // any containers left behind by an older compose file.
+      "label": "Docker: Down + wipe volumes",
+      "type": "shell",
+      "command": "docker compose down -v --remove-orphans",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      // Rebuild both images (core + frontend) ignoring the layer cache so no
+      // stale build artifacts survive.
+      "label": "Docker: Build (no cache)",
+      "type": "shell",
+      "command": "docker compose build --no-cache",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      // Start the whole stack detached, building any images that are missing or
+      // changed. The frontend is the only public entry: http://localhost
+      // (RabbitMQ management UI at http://localhost:15672 via the dev overlay).
+      "label": "Docker: Up (detached)",
+      "type": "shell",
+      "command": "docker compose up -d --build",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      // Lighter rebuild that KEEPS data volumes: stop containers, then rebuild
+      // and start. Use when you only changed code and want your existing DB/queue
+      // state preserved.
+      "label": "Docker: Rebuild (keep data)",
+      "type": "shell",
+      "command": "docker compose down --remove-orphans; docker compose up -d --build",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      // Tail logs from the running stack so you can watch a fresh build come up.
+      "label": "Docker: Logs (follow)",
+      "type": "shell",
+      "command": "docker compose logs -f",
+      "options": { "cwd": "${workspaceFolder}" },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": [],
+      "isBackground": true
+    }
+  ]
+}
