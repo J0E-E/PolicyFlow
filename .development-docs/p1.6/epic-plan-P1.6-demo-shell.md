@@ -153,12 +153,15 @@ browser; no PII crosses the new surfaces.
   - Card built to the full Guide contract (title + body + optional footer) + `headingLevel` (2|3|4, default 2) so later epics nest cards under deeper page headings without breaking heading order. Untitled card carries no `aria-labelledby` (unnamed section, deliberately not a landmark).
   - **No migration** of the existing `.tenant-card` (`styles/pages.css`); Epic 15 rebuilds the select-tenant cards branded on `Card`. Recorded so review doesn't flag the absence.
 
-## Epic 9 — Popover / MarginNote primitive [UI]
+## Epic 9 — Popover / MarginNote primitive [UI] — **COMPLETED**
 - **Goal:** The anchored, focus-trapped, Esc-closes popover primitive that is the shared substrate for both the explainer and the Simulated-badge popovers later — built once, correctly, with full keyboard a11y.
 - **Rough scope:** A `Popover`/`MarginNote` component under `frontend/src/components/`: anchoring, focus trap, Esc + outside-click close, ARIA wiring. Hand-rolled (no new deps, per TDD Decision 6). Tests: open/close/Esc + focus trap.
-- **Open questions / decisions for stakeholders:** Confirm hand-rolled focus-trap is acceptable vs a tiny dependency (the TDD says no new deps) — this is fiddly, correctness-critical interaction code; confirm the keyboard contract at epic time.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time (see Implementation notes).
 - **Depends on:** Epic 6.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **API (affects Epics 19/20):** self-contained `Popover` owns the trigger button + open state. Required props `id`, `trigger: ReactNode`, `triggerLabel: string` (accessible name for the icon-only trigger), `surfaceLabel: string` (the panel's `aria-label`), `children`; optional `triggerClassName` (consumer styling — e.g. Epic 20's dashed stamp). Derived ids `${id}-trigger`, `${id}-surface`. Epic 19 `ExplainerPopover` / Epic 20 `SimulatedBadge` wrap it and pass only their own icon/label + contents; the Guide's illustrative `id="explainer-<surface>-icon"` maps to `${id}-trigger`.
+  - **Contract (affects Epics 19/20):** non-modal `role="dialog"` + `aria-label`, **no scrim** (never blocks the workflow). On open, focus moves into the surface (`tabIndex={-1}`); Tab is trapped (wraps last→first / first→last, pins to the container when there are no interior controls). Closes on **Esc** (focus restored to trigger), **outside `mousedown`** (focus left where clicked), and **trigger toggle** (focus already on the trigger). The focus trap is hand-rolled in a colocated `useFocusTrap.ts` hook (no new dependency, TDD Decision 6) — extracted to keep `Popover.tsx` readable; tested through the component.
+  - **Positioning caveat (affects Epics 19/20):** in-tree (no portal, stays glued on scroll), absolute, single default placement (below-start: `top: calc(100% + --space-2)`, `left: 0`); `min-width: 240px` / `max-width: 360px`. **No collision/flip logic** — Epics 19/20 must place the trigger with room below/right or revisit (deferred, not in scope here).
 
 ## Epic 10 — App-shell masthead + theming wiring [UI]
 - **Goal:** The branded app-shell masthead — wordmark + tenant seal mark + 3px letterhead rule + persona indicator + placeholder session indicator + notification-bell placeholder + "How it's built" link — plus the data-attribute theming effect that sets `data-tenant`/`data-persona` on the app root from the current identity, so the Guide's declarative theming (including Platform-Admin inversion) takes over.

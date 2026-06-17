@@ -1,0 +1,66 @@
+/*
+ * Popover / margin note — the Guide's anchored explainer panel (Guide §6.2): a
+ * white sheet (--surface-2) with a 1px --outline border, a 2px --on-surface
+ * "ink rule" down its left edge, --radius-md corners, the --elevation-2 lift
+ * popovers earn, and --space-4 padding. It is NON-MODAL — no scrim — so it never
+ * blocks the workflow. Anchored below the trigger with plain CSS (in-tree, no
+ * portal, no edge-flip); a single default placement (below-start). The trigger
+ * is a minimal button reset that inherits its font; the global :focus-visible
+ * ring in base.css covers its focus state. A short fade-in on enter; the global
+ * reduced-motion rule in base.css neutralises it (no per-component override).
+ * Tokens only; no raw hex (Guide §2).
+ */
+
+/* ---- Root: the positioning context the surface anchors to ---- */
+
+.popover-root {
+  position: relative;
+  display: inline-block;
+}
+
+/* ---- Trigger: a minimal button reset; the consumer styles it further via
+   triggerClassName, and the global :focus-visible ring applies as-is. ---- */
+
+.popover-trigger {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ---- Surface: the margin-note sheet, anchored below the trigger ---- */
+
+.popover-surface {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: var(--z-popover);
+  min-width: 240px;
+  max-width: 360px;
+  padding: var(--space-4);
+  background-color: var(--surface-2);
+  border: 1px solid var(--outline);
+  /* The 2px ink rule down the left edge — the Guide's margin-note signature. */
+  border-left: 2px solid var(--on-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-2);
+  /* A short opacity/translate fade-in on enter (base.css neutralises it under
+     prefers-reduced-motion). */
+  animation: popover-fade-in var(--motion-standard) var(--easing-standard);
+}
+
+@keyframes popover-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
