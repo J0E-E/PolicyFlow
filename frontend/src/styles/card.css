@@ -1,0 +1,36 @@
+/*
+ * Card — the Guide's flat bordered "paper" container (Guide §5). --surface-2
+ * face, a 1px --outline border, --radius-md, the resting --elevation-1 crease
+ * (paper lies flat — border, not glow), and --space-4 padding. A vertical flex
+ * column separates the header (Title type), body, and optional footer actions.
+ * Tokens only; no raw hex or spacing (Guide §2, §4). Non-interactive, so no
+ * focus rule is needed here.
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background-color: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-1);
+  padding: var(--space-4);
+}
+
+/* Title register — Public Sans 18/24/600 (Guide §3). The flex gap owns the
+   spacing, so the heading carries no margin of its own. */
+.card-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+/* Footer holds actions side by side. */
+.card-footer {
+  display: flex;
+  gap: var(--space-2);
+}

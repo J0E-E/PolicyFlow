@@ -141,12 +141,17 @@ browser; no PII crosses the new surfaces.
   - **Size:** one concern (the Button primitive). Production code is modest; the bulk of the diff is the test file + tokens-only CSS (both excluded from the budget per the plan's note). Within budget — no split.
   - **Out-of-scope working-tree note:** the tree already carried two unrelated, pre-existing uncommitted changes when this epic started — `core/alembic.ini` (a `prepend_sys_path = .` line) and `.vscode/tasks.json` — neither touched by Epic 7 (frontend-only). Left as-is for the human; they are not part of this epic's commit.
 
-## Epic 8 — Card + StampTag [UI]
+## Epic 8 — Card + StampTag [UI] — **COMPLETED**
 - **Goal:** Two small presentational primitives — `Card` (the Guide container) and `StampTag` (status + overline stamp) — that later surfaces (tenant cards, nav markers, "How it's built" cards, the Simulated badge) build on.
 - **Rough scope:** Both components under `frontend/src/components/`, each with a unique `id` and ARIA where relevant. Tests cover the StampTag status/overline variants.
-- **Open questions / decisions for stakeholders:** Confirm the StampTag status set needed now (which states render in P1.6 vs arrive with feature phases) — settle at epic time.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time (see Implementation notes).
 - **Depends on:** Epic 6.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **StampTag status set = full five** (`success`/`pending`/`warning`/`error`/`neutral`), gate decision, though only `warning` + `neutral` render in P1.6 — feature phases (P1.7+) reuse it without reopening the component. Discriminated-union API: `status` required on the (default) `status` variant, disallowed on the `overline` variant. Exports `StampStatus` for later callers.
+  - **On-ink deferred** (affects Epics 20/21): stamps ship paper-ground only; the `--state-*-on-ink` bright variant arrives with the first ink-console stamp usage. No P1.6 surface renders stamps on ink.
+  - StampTag `icon` is an optional `aria-hidden` slot; the always-present uppercase text label satisfies "not by color alone" — no icon system built (TDD Decision 6, no new deps).
+  - Card built to the full Guide contract (title + body + optional footer) + `headingLevel` (2|3|4, default 2) so later epics nest cards under deeper page headings without breaking heading order. Untitled card carries no `aria-labelledby` (unnamed section, deliberately not a landmark).
+  - **No migration** of the existing `.tenant-card` (`styles/pages.css`); Epic 15 rebuilds the select-tenant cards branded on `Card`. Recorded so review doesn't flag the absence.
 
 ## Epic 9 — Popover / MarginNote primitive [UI]
 - **Goal:** The anchored, focus-trapped, Esc-closes popover primitive that is the shared substrate for both the explainer and the Simulated-badge popovers later — built once, correctly, with full keyboard a11y.

@@ -6,6 +6,8 @@ import { SessionProvider } from "./session";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/button.css";
+import "./styles/card.css";
+import "./styles/stamp-tag.css";
 import "./styles/pages.css";
 
 const rootElement = document.getElementById("root");

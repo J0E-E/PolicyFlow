@@ -1,0 +1,82 @@
+/*
+ * Stamp tag — the Guide's rubber-stamp status label (Guide §5, §3 Stamp type),
+ * replacing pill chips. Near-square (--radius-sm), Stamp type, state-container
+ * background with state-ink foreground and a solid state-ink border (the Guide's
+ * "solid border = real" law). Two presentations share the base: a colored status
+ * box (.stamp-tag-<status>) and a plain section overline (.stamp-tag-overline,
+ * no box). Neutral follows the §2.2 "information is not a signal" treatment —
+ * paper greys, never a hue. Tokens only; no raw hex (Guide §2). Both presentations
+ * are non-interactive and unanimated, so no focus/motion rules are needed.
+ */
+
+/* ---- Shared base: Stamp type (Guide §3 — 11/16/700, uppercase, +0.8px) ---- */
+
+.stamp-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+/* The icon slot rides next to the always-present label; it carries no meaning
+   of its own (aria-hidden in the markup). */
+.stamp-tag-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ---- Status box geometry (Guide §5 — near-square stamp on a document) ---- */
+
+.stamp-tag-success,
+.stamp-tag-pending,
+.stamp-tag-warning,
+.stamp-tag-error,
+.stamp-tag-neutral {
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  padding: var(--space-1) var(--space-2);
+}
+
+/* ---- Per-status colors: Epic-6 state container/ink pairs (Guide §2.2) ---- */
+
+.stamp-tag-success {
+  background-color: var(--state-success-container);
+  color: var(--state-success);
+  border-color: var(--state-success);
+}
+
+.stamp-tag-pending {
+  background-color: var(--state-pending-container);
+  color: var(--state-pending);
+  border-color: var(--state-pending);
+}
+
+.stamp-tag-warning {
+  background-color: var(--state-warning-container);
+  color: var(--state-warning);
+  border-color: var(--state-warning);
+}
+
+.stamp-tag-error {
+  background-color: var(--state-error-container);
+  color: var(--state-error);
+  border-color: var(--state-error);
+}
+
+/* Neutral is NOT a signal (Guide §2.2): paper greys, never a state hue. */
+.stamp-tag-neutral {
+  background-color: var(--surface-3);
+  color: var(--on-surface-variant);
+  border-color: var(--outline);
+}
+
+/* ---- Overline: the same Stamp type as a plain section eyebrow, no box ---- */
+
+.stamp-tag-overline {
+  color: var(--on-surface-variant);
+}
