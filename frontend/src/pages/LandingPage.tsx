@@ -1,9 +1,13 @@
 import ButtonLink from "../components/ButtonLink.tsx";
 import PageLayout from "../components/PageLayout.tsx";
 
-// Landing route (`/`). Static editorial placeholder — copy is replaced in P1.6.
-// Besley Display hero, Public Sans subtitle, an Oxford double rule beneath the
-// title, and one Tonal button-link through to tenant selection (Guide §3, §4, §5).
+// Landing route (`/`). Real editorial orientation (Guide §6.13) in a calm,
+// four-beat register: what PolicyFlow is and why, that everything is simulated and
+// safe to explore, the time commitment, and one Filled CTA into tenant selection.
+// Besley Display hero, an Oxford double rule beneath the title, Public Sans body
+// registers, and the Epic 7 Filled button-link through to tenant selection
+// (Guide §3, §4, §5). The lede retains the exact phrase "event-driven insurance
+// operations platform" (the RequireSession redirect test matches it).
 export default function LandingPage() {
   return (
     <PageLayout pageId="landing">
@@ -12,16 +16,27 @@ export default function LandingPage() {
           PolicyFlow
         </h1>
         <hr id="landing-oxford-rule" className="oxford-double-rule" />
-        <p id="landing-subtitle" className="landing-subtitle">
-          An event-driven insurance operations platform. Choose a demo tenant to
-          begin exploring leads, policies, and the engineering behind them.
+        <p id="landing-lede" className="landing-lede">
+          An event-driven insurance operations platform — a working demonstration
+          of how a regulated industry's everyday work holds together: multi-tenant
+          isolation, role-based access, encrypted customer records, and the async
+          event machinery that carries a lead through to a bound policy.
+        </p>
+        <p id="landing-safe-note" className="landing-safe-note">
+          Everything here is simulated and safe to explore — no real customer data,
+          nothing you can break. Click into anything, switch roles, trigger the
+          workflows.
+        </p>
+        <p id="landing-time-commitment" className="landing-time-commitment">
+          A guided walkthrough takes about 10–15 minutes, or pick a tenant and
+          wander.
         </p>
         <ButtonLink
           id="landing-select-tenant-button"
-          variant="tonal"
+          variant="filled"
           to="/select-tenant"
         >
-          Select a tenant
+          Choose a demo tenant
         </ButtonLink>
       </div>
     </PageLayout>

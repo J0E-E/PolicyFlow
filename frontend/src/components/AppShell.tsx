@@ -3,6 +3,7 @@ import { useSession } from "../session";
 import { useIdentityTheming } from "./useIdentityTheming.ts";
 import Masthead from "./Masthead.tsx";
 import LeftNav from "./LeftNav.tsx";
+import Footer from "./Footer.tsx";
 
 interface AppShellProperties {
   /** The routed content rendered into the shell's `<main>`. */
@@ -36,6 +37,7 @@ export default function AppShell({ children }: AppShellProperties) {
           {children}
         </main>
       </div>
+      <Footer />
     </div>
   );
 }

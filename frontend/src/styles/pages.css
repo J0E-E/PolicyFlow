@@ -71,11 +71,26 @@
   padding-top: 2px; /* the 2px gap between the ink rule and the hairline */
 }
 
-.landing-subtitle {
-  margin: 0 0 var(--space-6);
+/* Landing editorial body — three calm registers (Guide §3, §6.13). The lede leads
+   the eye (Body L 16/24), the safe-note + time-commitment follow in the secondary
+   ink. The CTA sits below the time-commitment's bottom margin. */
+.landing-lede {
+  margin: 0 0 var(--space-4);
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface);
+}
+
+.landing-safe-note,
+.landing-time-commitment {
+  margin: 0 0 var(--space-4);
   font-size: 16px;
   line-height: 24px;
   color: var(--on-surface-variant);
+}
+
+.landing-time-commitment {
+  margin-bottom: var(--space-6);
 }
 
 /* ---- Select-tenant page ---- */

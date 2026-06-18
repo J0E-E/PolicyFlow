@@ -12,6 +12,7 @@ import "./styles/popover.css";
 import "./styles/persona-chip.css";
 import "./styles/app-shell.css";
 import "./styles/left-nav.css";
+import "./styles/footer.css";
 import "./styles/pages.css";
 
 const rootElement = document.getElementById("root");

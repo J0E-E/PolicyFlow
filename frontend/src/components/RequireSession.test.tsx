@@ -113,6 +113,8 @@ describe("RequireSession guard", () => {
     );
     // The branded shell wraps the page: the masthead is present.
     expect(document.getElementById("app-masthead")).toBeInTheDocument();
+    // The global footer mounts inside the app-shell column too (the workspace path).
+    expect(document.getElementById("app-footer")).toBeInTheDocument();
   });
 });
 

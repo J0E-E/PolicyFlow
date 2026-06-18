@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Footer from "./Footer.tsx";
 
 interface PageLayoutProperties {
   /** Stable id prefix so each page's layout elements stay uniquely targetable. */
@@ -24,6 +25,7 @@ export default function PageLayout({ pageId, children }: PageLayoutProperties) {
       <main id={`${pageId}-main`} className="page-main">
         {children}
       </main>
+      <Footer />
     </div>
   );
 }

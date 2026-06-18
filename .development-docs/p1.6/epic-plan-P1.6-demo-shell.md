@@ -234,12 +234,14 @@ the seed password never reaches the browser; no PII crosses the new surfaces.
   - The posture tag is built fresh on the read-only persona-container tokens, **not** on `StampTag` (a status-hue component) — any future posture tag should follow this pattern, not StampTag.
   - **Deviation:** the chip uses `--radius-sm`, not a pill — `tokens.css` reserves `--radius-full` for "avatars ONLY — no pills" (Epic 12's note); a pill here would violate that constraint.
 
-## Epic 14 — Landing page + global footer [UI]
+## Epic 14 — Landing page + global footer [UI] — **COMPLETED**
 - **Goal:** Replace the placeholder landing with real editorial orientation (Guide §6.13): what PolicyFlow is and why, "simulated & safe to click," the time commitment, and one CTA into tenant selection — plus the global footer (repo + author links) shown on every page.
 - **Rough scope:** The landing page and a shared footer component, using the Epic 7 Button for the CTA. Public route. Tests cover the CTA route and footer presence.
-- **Open questions / decisions for stakeholders:** Final orientation **copy** (Guide §6.13) is settled at epic time — confirm tone/length and the exact repo/author links.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 6, Epic 7.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - One shared `Footer` mounted in `PageLayout` + `AppShell` (both sticky-footer flex columns), so it shows on public pages, the `/app` loading skeleton, AND the signed-in workspace. **Epic 23** must mount it in `ShopperLayout` to keep the footer on every surface.
+  - Landing CTA migrated from Tonal to the Epic 7 Filled `ButtonLink`; the old `.landing-subtitle` register was replaced by the lede/safe-note/time registers in `pages.css`.
 
 ## Epic 15 — Select-tenant page (branded) [UI]
 - **Goal:** Upgrade the thin select-tenant slice into the real branded screen: per-tenant cards with specialization blurbs and the "why two tenants" (differentiation + isolation proof), each visibly branded; selecting a tenant assumes Agent and routes to `/app`.
