@@ -19,13 +19,23 @@ UI-bearing epics isolated"). Epics are ordered simplest-first in three layers:
 - **Demo surfaces (Epics 14–21)** — real content dropped into the seams (landing,
   tenant-select, demo home, stepper, scenario panel, explainer, Simulated badge, "How it's
   built"). A trailing backend cleanup (Epic 22) aligns the seed's brand colors to the registry.
+- **Two-surface model (Epics 23–24)** — added by the **2026-06-17** design refinement
+  (program-plan + requirements *Demo Access Model*): a public, tenant-branded **Shopper
+  site** distinct from the Agent workspace (Epic 23) and the persistent **surface toggle**
+  between them (Epic 24). Appended rather than renumbered to avoid churning every
+  cross-reference; their **Depends on** lines carry the real ordering (they need only Epics
+  6/8/10/19 — all early or already done), and both must land **before P1.7** wires the real
+  intake form onto the Shopper surface. **TDD not yet synced:** §5.2 (routing), §5.4
+  (surfaces), Decision 7, and the Work Breakdown still describe only the single `/app`
+  workspace — they need a pass to add the second public surface + toggle.
 
 Each epic leaves the mainline working when merged — the shell stands up incrementally and
 nothing dead-links. Every `[UI]` epic folds the **Guide §7 accessibility checklist**
 (contrast across paper + ink, focus order, popover focus-trap, reduced-motion, ARIA) into
 its acceptance, per the TDD. The **tenant-isolation / PII invariant** holds throughout:
-the role switcher changes *identity*, not enforcement; the seed password never reaches the
-browser; no PII crosses the new surfaces.
+the role switcher changes *identity*, not enforcement; **the surface toggle changes
+*surface*, not identity — the Shopper site is unauthenticated and carries no RBAC role**;
+the seed password never reaches the browser; no PII crosses the new surfaces.
 
 ## Epic 1 — Tenant list endpoint + registry brand color — **COMPLETED**
 - **Goal:** Stand up the public, unauthenticated `GET /api/tenants` that returns the canonical tenant list (`slug`, `display_name`, `brand_primary_color`) straight from the registry — no DB read, no PII — so the pre-login tenant-selection screen has one authoritative source.
@@ -249,7 +259,7 @@ browser; no PII crosses the new surfaces.
 - **Goal:** The `ExplainerIcon` + `ExplainerPopover` (PATTERN / HOW POLICYFLOW DOES IT / REAL VS SIMULATED / CRM PARALLEL), seeded with **real foundational copy** on the surfaces that already exist — landing, tenant-switch, role switcher, and the session model.
 - **Rough scope:** The icon + popover (built on the Epic 9 primitive) and seeding it on the four named surfaces with real copy. Tests: popover open/close/Esc + focus trap, and that seeded affordances render on their surfaces.
 - **Open questions / decisions for stakeholders:** The real foundational **copy** per surface and confirmation of the four popover sections — settle at epic time.
-- **Depends on:** Epic 9; seeds onto Epics 10, 11, 14, 15.
+- **Depends on:** Epic 9; seeds onto Epics 10, 11, 14, 15. (The two-surface / surface-toggle explainer is seeded later by **Epic 24**, which reuses this epic's popover — out of scope here.)
 - **Implementation notes:** _none yet_
 
 ## Epic 20 — "Simulated" badge component [UI]
@@ -271,4 +281,18 @@ browser; no PII crosses the new surfaces.
 - **Rough scope:** `app/seed.py` reads the brand primary from the registry rather than its own constants; confirm the registry holds the Guide-aligned values (added in Epic 1). No migration — applied on the next seed / DB-reset. Tests assert the seed-vs-registry consistency.
 - **Open questions / decisions for stakeholders:** none expected — the values and the single-source approach are fixed by TDD Decision 8.
 - **Depends on:** Epic 1.
+- **Implementation notes:** _none yet_
+
+## Epic 23 — Shopper surface shell + consumer chrome [UI]
+- **Goal:** Stand up the public, tenant-branded **Shopper site** — the consumer-facing front end where the visitor plays the prospective buyer — as a shell distinct from the Agent workspace: its own **public** (unauthenticated) tenant-scoped route zone, a consumer masthead (tenant wordmark + seal, **no** CRM nav / role switcher / agent affordances), `data-tenant` brand theming only (no `data-persona`), and a placeholder buyer home into which **P1.7** drops the real public intake form. Extends the TDD's "public routes + guarded `/app`" split (Decision 7) with a second public surface; authority is the requirements *Demo Access Model* + the program-plan **2026-06-17** refinement (the P1.6 TDD predates both — see the intro's TDD-sync flag).
+- **Rough scope:** A new public route zone (e.g. `/site/:slug`) in `App.tsx` **outside** `RequireSession` (the Shopper is unauthenticated); a `ShopperLayout` + `ShopperMasthead` under `frontend/src/`; tenant-brand theming from the slug, reusing the Epic 6 `[data-tenant]` tokens and the Epic 10 theming-wiring pattern but **persona-free**; a placeholder buyer home (the intake form, prefill buttons, and abuse controls are all P1.7). Reuses Epic 8 `Card` and Epic 10 `TenantSealMark`. Tests: the Shopper zone renders **unauthenticated** (no guard / no redirect), is tenant-branded by slug, and shows **none** of the agent chrome (no switcher, no left-nav).
+- **Open questions / decisions for stakeholders:** The route shape (`/site/:slug` carrying the tenant explicitly vs deriving the slug from the session); how a *direct* public visit with no demo session presents in the shell (the anonymous-session-on-submit is P1.7 backend work); and the buyer-home placeholder **copy** — settle at epic time.
+- **Depends on:** Epic 6 (tokens), Epic 8 (Card), Epic 10 (seal mark + `data-tenant` theming pattern).
+- **Implementation notes:** _none yet_
+
+## Epic 24 — Surface toggle (Shopper ↔ Agent workspace) [UI]
+- **Goal:** The persistent, clearly-marked demo control that flips between the **Shopper site** and the **Agent workspace**, carrying the demo session + tenant (slug) across — "View the public site →" in the agent masthead, "← Back to the agent workspace" in the consumer masthead — with a foundational explainer stating it is a **demo convenience** (in production these are genuinely separate front ends). It changes *surface*, not identity; the role switcher stays staff-only and the Shopper carries no RBAC role.
+- **Rough scope:** A small `SurfaceToggle` affordance added to both the Epic 10 agent `Masthead` and the Epic 23 `ShopperMasthead`, navigating between `/app` and `/site/<slug>` while the `pf_session` cookie persists (so toggling back lands signed-in); the slug comes from the session context (Epic 4) on the agent side and the route on the Shopper side. Seeds its own "demo convenience" copy via the Epic 19 `ExplainerPopover`. Tests: the toggle navigates between the two zones, preserves the active tenant, and the explainer marks it a demo convenience (not a role).
+- **Open questions / decisions for stakeholders:** Whether the "back to agent workspace" toggle shows for a direct public visitor with **no** session (vs only inside an active demo session), and the toggle's exact label + placement in each masthead — settle at epic time.
+- **Depends on:** Epic 4 (session/slug), Epic 10 (agent masthead), Epic 19 (explainer popover), Epic 23 (Shopper shell).
 - **Implementation notes:** _none yet_

@@ -364,26 +364,36 @@ ordered so the system stays runnable/deployable after each.
 
 #### P1.6 — Demo shell `[UI]`
 
-- **Goal:** Real landing + tenant-selection, branding, demo access model + role
-  switcher, guided-stepper shell (prefill row + scenario-reference panel), explainer
-  shell, "Simulated" badge component, "How it's built" page shell.
+- **Goal:** Real landing + tenant-selection, branding, **two-surface demo model
+  (Shopper site ↔ Agent workspace) with a persistent surface toggle**, demo access
+  model + staff-only role switcher, guided-stepper shell (prefill row +
+  scenario-reference panel), explainer shell, "Simulated" badge component, "How it's
+  built" page shell.
 - **Shippable outcome / acceptance:** a visitor lands, reads orientation, picks a
-  tenant, is signed in as a seeded Agent, and can switch roles; stepper + explainer
-  shells render.
+  tenant, is dropped into the Agent workspace signed in as a seeded Agent, can switch
+  roles, and can toggle to the consumer-facing Shopper site and back; stepper +
+  explainer shells render.
 - **Depends on:** P1.1 (auth/role), P0.1 (SPA shell).
 - **Isolation note:** role switcher changes identity, not enforcement; RBAC stays
-  server-enforced per assumed role.
+  server-enforced per assumed role. The surface toggle changes *surface*, not identity
+  — the Shopper site is unauthenticated and carries no RBAC role.
 - **Size:** L (split likely at epic-plan time; keep UI-bearing epics isolated).
 
 #### P1.7 — Lead intake, queue, qualification & duplicate detection `[UI]`
 
-- **Goal:** Public intake forms (validation + abuse controls), unassigned queue +
-  claiming, qualify/reject, deterministic duplicate detection + resolution.
+- **Goal:** **Two intake routes behind the same `lead.created` event** — self-service
+  on the public Shopper surface (validation + abuse controls; lands unassigned) and
+  agent-entered in the Agent workspace (authenticated, `CREATE_LEAD`; born owned by the
+  entering agent) — plus unassigned queue + claiming, qualify/reject, deterministic
+  duplicate detection + resolution.
 - **Shippable outcome / acceptance:** walkthrough steps 3–6 demoable on the local
-  stack; duplicate-bait flags and resolves.
-- **Depends on:** P1.3 (blind index), P1.5 (events), P1.6 (shell).
-- **Isolation note:** intake is an unauthenticated write — rate-limited, honeypot,
-  schema-validated; every submission tied to a demo session and tenant.
+  stack via **either** route (the stepper describes both up front; the demoer picks);
+  a self-service lead lands in the queue and is claimed, an agent-entered lead is born
+  owned; duplicate-bait flags and resolves; both routes drive identical downstream.
+- **Depends on:** P1.3 (blind index), P1.5 (events), P1.6 (shell + surface toggle).
+- **Isolation note:** the self-service route is an unauthenticated write —
+  rate-limited, honeypot, schema-validated; the agent-entered route is behind session +
+  RBAC; every submission tied to a demo session and tenant.
 - **Size:** L.
 
 #### P1.8 — Seed data, demo-session lifecycle & reset
@@ -681,3 +691,22 @@ container — remade event-pinned (the Epic 11 idiom). Risk #4's contract artifa
 M3's real sidecars bind to) is in place; full retirement lands when M3 swaps a stub behind
 the identical events. **Next move:** **P1.6 (Demo shell `[UI]`)** — real landing +
 tenant-selection, role switcher, stepper/explainer shells.
+
+**2026-06-17** — **Design refinement (unbuilt phases P1.6/P1.7): two demo surfaces +
+two intake routes.** Resolving a demo-UX concern — playing the shopper and the agent on
+one surface blurred *who the visitor is* — the demo now has two distinct surfaces, the
+public **Shopper site** and the authenticated **Agent workspace**, joined by a persistent
+**surface toggle** (a demo convenience; in production they are genuinely separate front
+ends). The toggle changes *surface*, not identity, and is kept **separate from the
+staff-only role switcher** (Shopper is not an RBAC role). Lead intake accordingly grows
+**two routes behind the identical `lead.created` event**: **self-service** (shopper fills
+the public form, lands unassigned) and **agent-entered** (authenticated agent enters it as
+if taking a call — **decision: born owned by the entering agent**, skipping the queue, so
+self-service demonstrates *claiming* and agent-entered demonstrates *direct ownership*).
+The demoer picks either route at walkthrough step 3, told both up front; both drive the
+identical downstream pipeline, so the entry route is a *front door*, not a fork in the
+domain. No backend re-architecture — the public intake path was already unauthenticated +
+demo-session-scoped; this layers a UX surface + narrative over the existing seam. Folded
+into the requirements (Demo Access Model, Lead Intake, Lead Assignment, Walkthrough 1–6,
+glossary) and the P1.6/P1.7 scope above. **Next move (unchanged):** **P1.6 (Demo shell
+`[UI]`)**, now including the surface toggle + Shopper surface shell.

@@ -63,6 +63,7 @@ The following are explicitly **not** part of this project. The design must not i
 | **Product Line** | A category of insurance a tenant sells (e.g. Medicare Advantage, Life Insurance). |
 | **Product** | A catalog entry under a Product Line, per tenant (e.g. a specific mock plan). |
 | **Lead** | An unqualified prospect created by intake. Becomes frozen once converted. |
+| **Shopper** | The prospective insurance buyer — the unauthenticated public actor who submits a Lead through self-service intake. A demo *surface*, not an RBAC role (see Demo Access Model). |
 | **Contact** | A person record created by lead conversion. |
 | **Household** | The grouping of Contacts at one address/family unit. PolicyFlow's only account-like entity (both demo tenants are B2C). Maps to the external CRM object "Account" during sync. |
 | **Opportunity** | A potential sale of one product line to one Contact. Progresses through pipeline stages. |
@@ -77,6 +78,7 @@ The following are explicitly **not** part of this project. The design must not i
 | **Domain Event** | An immutable record that a business action occurred, published on the event bus. |
 | **Sidecar Service** | A worker process that consumes domain events and performs simulated external-integration work. |
 | **Demo Session** | A visitor's sandboxed walkthrough context; visitor-created records are tagged with its ID. |
+| **Surface** | One of the demo's two front ends — the public **Shopper site** or the authenticated **Agent workspace**. A demo-only *surface toggle* moves between them; distinct from the staff **role switcher**, which changes identity *within* the Agent workspace. |
 | **Explainer** | A dismissible info popover/panel on a showcase surface naming the engineering pattern, how PolicyFlow implements it, and what is real vs simulated. |
 | **CRM Parallel** | An explainer annotation naming the real-world CRM equivalent of a PolicyFlow pattern (e.g. Salesforce lead conversion). |
 | **Simulated Badge** | A UI marker on simulated integration surfaces distinguishing what is mocked from the real machinery around it. |
@@ -280,23 +282,26 @@ The two seeded tenants must differ visibly in every one of these dimensions.
 
 ### Lead Intake
 
-**[MUST]** Public, tenant-specific intake forms.
+**[MUST]** A Lead can enter through **two routes**, and the demoer chooses which to play at the intake step (the guided stepper describes both up front). Both produce a tenant-scoped Lead and publish the **same** `lead.created` event into the **same** downstream pipeline (duplicate matching, enrichment, qualification) — the route changes only *who* creates the Lead, *how* tenant context is derived, and *who owns it*, never what happens next:
 
-**Intake fields** — required: first name, last name, email, phone, ZIP code, date of birth, product line(s) of interest (one or more). Optional: street address, preferred contact method, notes. Validation: email format, phone format, DOB plausible (age 18–110), field length limits, at least one product line.
+- **Self-service (Shopper).** The prospective buyer fills the tenant's **public** intake form on the Shopper surface. Unauthenticated; tenant context comes from the selected tenant / demo session. Lands `lead_source = public_form`, **unassigned** (into the queue — see Lead Assignment).
+- **Agent-entered (phone call).** An authenticated Agent enters the lead from within the Agent workspace, as if taking the prospect's call. Behind the session + RBAC (`CREATE_LEAD`); tenant context comes from the agent's authenticated session. Lands `lead_source = agent_entered`, **born owned by the entering agent** (it never hits the queue — you took the call, it's yours).
+
+**Intake fields** (identical for both routes) — required: first name, last name, email, phone, ZIP code, date of birth, product line(s) of interest (one or more). Optional: street address, preferred contact method, notes. Validation: email format, phone format, DOB plausible (age 18–110), field length limits, at least one product line.
 
 **Execution order (normative, async by design):**
 
 1. Validate the submission server-side.
-2. Create the tenant-scoped Lead (status `New`, unassigned, `lead_source = public_form`).
+2. Create the tenant-scoped Lead (status `New`; self-service → unassigned, `lead_source = public_form`; agent-entered → owned by the entering agent, `lead_source = agent_entered`).
 3. Run deterministic duplicate matching (see Duplicate Handling) and flag if matched.
 4. Publish `lead.created`.
 5. The Enrichment sidecar processes asynchronously; the lead detail view shows an "enriching" state that resolves when results arrive (see Sidecar Services). The UI must visibly reflect this async progression — it is part of the demo, not a defect.
 
-**Abuse controls** (the form is an unauthenticated internet-facing write endpoint): per-IP rate limiting, a honeypot field, strict server-side schema validation with length limits. Every submission belongs to a demo session: visitors arriving via tenant selection already have one; direct submissions without a session auto-create an anonymous demo session subject to the same 24-hour expiry — so all publicly submitted records are cleaned up via the demo-session lifecycle (see Demo Experience).
+**Abuse controls** apply to the **self-service public form only** (an unauthenticated internet-facing write endpoint): per-IP rate limiting, a honeypot field, strict server-side schema validation with length limits. The agent-entered route is already behind authentication + RBAC and carries the session's actor instead. Every submission belongs to a demo session: visitors arriving via tenant selection already have one; direct public submissions without a session auto-create an anonymous demo session subject to the same 24-hour expiry — so all submitted records are cleaned up via the demo-session lifecycle (see Demo Experience).
 
 ### Lead Assignment
 
-**[MUST]** Every Lead and Opportunity has an `owner` field. New intake leads land in a tenant-wide **unassigned queue**; any agent claims them (one click). Tenant Admins can reassign. Claiming/reassignment publishes `lead.assigned`, which drives the assignment notification. Assignment governs task routing and dashboards — **not visibility** (see Authorization).
+**[MUST]** Every Lead and Opportunity has an `owner` field. **Self-service** intake leads land in a tenant-wide **unassigned queue**; any agent claims them (one click). **Agent-entered** leads are born owned by the agent who entered them and never hit the queue (a lead created already-owned is no hand-off, so it emits no `lead.assigned`). Tenant Admins can reassign any lead. Claiming/reassignment publishes `lead.assigned`, which drives the assignment notification. Assignment governs task routing and dashboards — **not visibility** (see Authorization).
 
 ### Duplicate Handling
 
@@ -603,7 +608,14 @@ The demo must be **deterministic and repeatable** — every showcase moment obse
 
 ### Demo Access Model
 
-**[MUST]** Selecting a demo tenant auto-creates a demo session signed in as a seeded **Agent** (no credentials typed). A visible **role switcher** lets the visitor flip between Agent, Tenant Admin, Read-Only, and Platform Admin personas within the session. RBAC remains fully enforced server-side per assumed role — the switcher changes identity, not enforcement. Seeded demo users per tenant: two Agents (so reassignment is demonstrable), one Tenant Admin, one Read-Only user; one global Platform Admin.
+**[MUST]** The demo has **two surfaces**, and a persistent, clearly-marked **surface toggle** moves the visitor between them at will:
+
+- **Shopper site** — the tenant's public, consumer-facing front end (distinct chrome, no CRM navigation) where the visitor plays the prospective buyer and submits a lead via self-service intake. Unauthenticated, exactly as a real prospect would be.
+- **Agent workspace** — the authenticated internal application (the CRM) where the visitor plays tenant staff.
+
+The surface toggle is a **demo convenience** — in production these are genuinely separate front ends (a public quote site vs an authenticated console), and an explainer says so. It changes *where you are*, not *who you are*, and is distinct from the role switcher.
+
+**[MUST]** Selecting a demo tenant creates the demo session and drops the visitor into the **Agent workspace** signed in as a seeded **Agent** (no credentials typed); the surface toggle then lets them step out to the Shopper site whenever they want to play the buyer. A visible **role switcher** lets the visitor flip between Agent, Tenant Admin, Read-Only, and Platform Admin personas within the session. RBAC remains fully enforced server-side per assumed role — the switcher changes identity, not enforcement. The role switcher is **staff-only**: the Shopper is a surface, not one of its entries, so reaching the buyer surface is the toggle's job, not the switcher's. Seeded demo users per tenant: two Agents (so reassignment is demonstrable), one Tenant Admin, one Read-Only user; one global Platform Admin.
 
 ### Demo Sessions and Data Lifecycle
 
@@ -624,7 +636,7 @@ The demo must be **deterministic and repeatable** — every showcase moment obse
 
 **[MUST]** A persistent, dismissible guided-demo stepper overlays the app, tracking walkthrough progress with "next step" prompts and deep links. Built in Phase 1 as part of the demo shell, not an afterthought.
 
-**Prefill buttons (intake form):** every deterministic trigger is one click away — no deterministic trigger may exist only in documentation:
+**Prefill buttons (either intake form):** every deterministic trigger is one click away — no deterministic trigger may exist only in documentation:
 
 | Button | Prefill | Expected outcome |
 |---|---|---|
@@ -660,12 +672,12 @@ The demo must explain its own engineering. Features alone are insufficient: a re
 
 Each step is tagged with the phase in which it becomes demoable. Per Engineering Explainers, every step also carries a "what you're seeing / how it's built" note:
 
-1. Land on the orientation page: what PolicyFlow is, why it was built, what is simulated; choose the full walkthrough or the "5-minute highlights" path; select a demo tenant (each described with its specialization); land signed in as a seeded Agent with the guided stepper active. *(P1; highlights path P4)*
+1. Land on the orientation page: what PolicyFlow is, why it was built, what is simulated; choose the full walkthrough or the "5-minute highlights" path; select a demo tenant (each described with its specialization); land in the **Agent workspace** signed in as a seeded Agent with the guided stepper active. A persistent **surface toggle** (Shopper site ↔ Agent workspace) and the staff role switcher are both introduced here. *(P1; highlights path P4)*
 2. View tenant-specific branding and product lines. *(P1)*
-3. Submit a lead through the tenant's public intake form (or use a prefill button). *(P1)*
+3. **Choose how the lead enters** — the stepper describes both routes up front and the demoer picks one (the other can be run afterward): **(a) Self-service** — toggle to the **Shopper site** and submit the lead yourself as the prospective buyer (or use a prefill button); it lands **unassigned**. **(b) Agent-entered** — staying in the Agent workspace, enter the lead as if taking the prospect's phone call; it lands **owned by you**. Either way the same `lead.created` event drives the same downstream pipeline. *(P1)*
 4. Watch the lead's **event timeline** update live as enrichment runs; see enrichment results and quality score appear on the lead. *(P1 with stub; P3 with real sidecar)*
 5. Run the duplicate scenario; resolve it (link / new / reject). *(P1)*
-6. Claim the lead from the unassigned queue; qualify it. *(P1)*
+6. Take ownership and qualify: a **self-service** lead is claimed from the **unassigned queue** (one click); an **agent-entered** lead is already yours, so go straight to qualifying. Then qualify or reject. *(P1)*
 7. Convert the lead into Contact, Household, and one Opportunity per product line. *(P2)*
 8. Progress an opportunity through the pipeline stages; for Tenant 1, observe the Medicare eligibility gate. *(P2)*
 9. Request carrier quotes; review the returned options. *(P2 with stub; P3 real)*
