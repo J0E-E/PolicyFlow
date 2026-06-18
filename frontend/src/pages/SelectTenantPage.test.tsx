@@ -1,9 +1,13 @@
-// Tests for the live select-tenant flow and its robust states. jsdom has no
+// Tests for the branded select-tenant flow and its robust states. jsdom has no
 // backend, so `../api` is mocked: `getCurrentIdentity` rejects (the visitor is
 // signed-out on mount), `listTenants` and `assumePersona` are driven per test.
 // The page + the guarded `/app` zone render inside a real `<SessionProvider>`
 // and a `MemoryRouter`, so the full select -> assume -> demo-home flow is
 // exercised end-to-end.
+//
+// Each card's footer button now carries the same accessible name ("Enter the
+// agent workspace →"), so the per-card button is targeted by its derived id
+// (`select-tenant-card-<slug>-enter-button`) rather than by tenant name.
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -74,6 +78,23 @@ function renderSelectTenantFlow() {
   );
 }
 
+/** Wait for the tenant cards to render, then return the Sunshine card's footer
+ * button by its derived id (the accessible name is shared across cards). */
+async function findSunshineEnterButton(): Promise<HTMLElement> {
+  await waitFor(() => {
+    expect(
+      document.getElementById("select-tenant-card-sunshine-senior-benefits"),
+    ).toBeInTheDocument();
+  });
+  const button = document.getElementById(
+    "select-tenant-card-sunshine-senior-benefits-enter-button",
+  );
+  if (button === null) {
+    throw new Error("Sunshine enter-the-workspace button not found");
+  }
+  return button;
+}
+
 beforeEach(() => {
   getCurrentIdentityMock.mockReset();
   listTenantsMock.mockReset();
@@ -86,16 +107,61 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe("select-tenant branded render", () => {
+  it("renders the why-two-tenants block and a branded card per tenant", async () => {
+    listTenantsMock.mockResolvedValue(sampleTenants);
+
+    renderSelectTenantFlow();
+
+    // The "Why two tenants?" framing copy is present (Epic 19 anchors here).
+    await waitFor(() => {
+      expect(
+        document.getElementById("select-tenant-why-heading"),
+      ).toHaveTextContent("Why two tenants?");
+    });
+    expect(document.getElementById("select-tenant-why-body")).toHaveTextContent(
+      /neither can ever see the other's records/,
+    );
+
+    // Each card carries its tenant's display name, specialization blurb,
+    // `data-tenant` brand scope, and the shared footer button label.
+    const sunshineItem = document.getElementById(
+      "select-tenant-card-item-sunshine-senior-benefits",
+    );
+    expect(sunshineItem).toHaveAttribute(
+      "data-tenant",
+      "sunshine-senior-benefits",
+    );
+    expect(
+      document.getElementById("select-tenant-card-sunshine-senior-benefits-title"),
+    ).toHaveTextContent("Sunshine Senior Benefits");
+    expect(
+      document.getElementById("select-tenant-card-sunshine-senior-benefits-blurb"),
+    ).toHaveTextContent(/Medicare and senior-market coverage/);
+
+    const floridaItem = document.getElementById(
+      "select-tenant-card-item-florida-family-planning",
+    );
+    expect(floridaItem).toHaveAttribute("data-tenant", "florida-family-planning");
+    expect(
+      document.getElementById("select-tenant-card-florida-family-planning-blurb"),
+    ).toHaveTextContent(/Life and protection planning for growing households/);
+
+    // Both footer buttons share the "Enter the agent workspace →" label.
+    expect(
+      screen.getAllByRole("button", { name: /Enter the agent workspace/ }),
+    ).toHaveLength(2);
+  });
+});
+
 describe("select-tenant happy path", () => {
-  it("lists tenants and, on click, assumes Agent and lands on the demo home", async () => {
+  it("on click, assumes Agent and lands on the demo home", async () => {
     listTenantsMock.mockResolvedValue(sampleTenants);
     assumePersonaMock.mockResolvedValue(sunshineAgentIdentity);
 
     renderSelectTenantFlow();
 
-    const sunshineButton = await screen.findByRole("button", {
-      name: /Sunshine Senior Benefits/,
-    });
+    const sunshineButton = await findSunshineEnterButton();
     fireEvent.click(sunshineButton);
 
     expect(assumePersonaMock).toHaveBeenCalledWith(
@@ -145,10 +211,12 @@ describe("select-tenant robust states", () => {
 
     fireEvent.click(retryButton);
 
-    // The retry loaded the tenants successfully.
-    expect(
-      await screen.findByRole("button", { name: /Sunshine Senior Benefits/ }),
-    ).toBeInTheDocument();
+    // The retry loaded the tenants successfully — the branded cards render.
+    await waitFor(() => {
+      expect(
+        document.getElementById("select-tenant-card-sunshine-senior-benefits"),
+      ).toBeInTheDocument();
+    });
   });
 
   it("re-enables the controls and shows a message when assume fails", async () => {
@@ -157,9 +225,7 @@ describe("select-tenant robust states", () => {
 
     renderSelectTenantFlow();
 
-    const sunshineButton = await screen.findByRole("button", {
-      name: /Sunshine Senior Benefits/,
-    });
+    const sunshineButton = await findSunshineEnterButton();
     fireEvent.click(sunshineButton);
 
     await waitFor(() => {

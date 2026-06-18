@@ -1,17 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Button from "../components/Button.tsx";
+import Card from "../components/Card.tsx";
 import PageLayout from "../components/PageLayout.tsx";
+import TenantSealMark from "../components/TenantSealMark.tsx";
 import { listTenants } from "../api";
 import type { Tenant } from "../api";
 import { useSession } from "../session";
+import { WHY_TWO_TENANTS, getTenantBlurb } from "./tenantEditorial.ts";
 
-// Tenant-selection route (`/select-tenant`). The live walking-skeleton flow:
-// fetch the public tenant list on mount, render each tenant as a focusable
-// button, and on click passwordlessly assume the Agent persona for that tenant
-// and route into the guarded `/app` zone. Un-branded — the tenant's brand color
-// is not used yet (that is Epic 15); this slice proves select -> assume ->
-// demo home end-to-end on the existing base styles.
+// Tenant-selection route (`/select-tenant`) — the real branded screen. Above the
+// cards a "Why two tenants?" block frames the demo (two agencies on one platform,
+// neither able to see the other's records). Each tenant renders as a branded
+// Epic 8 Card: seal mark + specialization blurb, with a Filled footer button that
+// passwordlessly assumes the Agent persona and routes into the guarded `/app`
+// zone. Per-card branding rides the Guide's `[data-tenant]` token ramp — each
+// card's wrapping `<li>` carries `data-tenant`, so `--primary` cascades in and the
+// Filled button + the 3px letterhead rule paint that tenant's brand automatically
+// (terracotta for Sunshine, petrol for Florida) with no per-tenant color code.
+//
+// Entry is the agent workspace only (select -> assume Agent -> `/app`); the
+// Shopper surface and the surface toggle are Epics 23/24.
 
 // What the page is currently doing — so the loading / empty / error / pending /
 // assume-error states each render exactly once and never overlap.
@@ -69,12 +78,26 @@ export default function SelectTenantPage() {
     <PageLayout pageId="select-tenant">
       <div id="select-tenant-content" className="select-tenant-content">
         <h1 id="select-tenant-headline" className="select-tenant-headline">
-          Select a tenant
+          Choose a demo tenant
         </h1>
-        <p id="select-tenant-intro" className="select-tenant-intro">
-          Pick a demo organization to step into. Selecting one signs you in as an
-          Agent for that tenant.
-        </p>
+
+        {/* "Why two tenants?" — stable ids so Epic 19 can anchor its explainer
+            popover here; Epic 15 renders no placeholder of its own. */}
+        <section
+          id="select-tenant-why"
+          className="select-tenant-why"
+          aria-labelledby="select-tenant-why-heading"
+        >
+          <h2
+            id="select-tenant-why-heading"
+            className="select-tenant-why-heading"
+          >
+            Why two tenants?
+          </h2>
+          <p id="select-tenant-why-body" className="select-tenant-why-body">
+            {WHY_TWO_TENANTS}
+          </p>
+        </section>
 
         {loadState.kind === "loading" && (
           <p
@@ -119,35 +142,44 @@ export default function SelectTenantPage() {
         )}
 
         {loadState.kind === "loaded" && loadState.tenants.length > 0 && (
-          <ul id="select-tenant-card-list" className="tenant-card-list">
-            {loadState.tenants.map((tenant) => (
-              <li
-                id={`select-tenant-card-item-${tenant.slug}`}
-                key={tenant.slug}
-                className="tenant-card-item"
-              >
-                <button
-                  id={`select-tenant-card-${tenant.slug}`}
-                  type="button"
-                  className="tenant-card tenant-card-button"
-                  onClick={() => handleSelectTenant(tenant)}
-                  disabled={isAssuming}
+          <ul id="select-tenant-card-list" className="select-tenant-card-list">
+            {loadState.tenants.map((tenant) => {
+              const cardId = `select-tenant-card-${tenant.slug}`;
+              return (
+                // `data-tenant` scopes the Guide's [data-tenant] ramp to this
+                // card, so --primary cascades in and the brand paints itself.
+                <li
+                  id={`select-tenant-card-item-${tenant.slug}`}
+                  key={tenant.slug}
+                  className="select-tenant-card-item"
+                  data-tenant={tenant.slug}
                 >
-                  <span
-                    id={`select-tenant-card-${tenant.slug}-name`}
-                    className="tenant-card-name"
+                  <Card
+                    id={cardId}
+                    title={tenant.display_name}
+                    footer={
+                      <Button
+                        id={`${cardId}-enter-button`}
+                        variant="filled"
+                        isPending={assumingSlug === tenant.slug}
+                        disabled={isAssuming}
+                        onClick={() => handleSelectTenant(tenant)}
+                      >
+                        Enter the agent workspace →
+                      </Button>
+                    }
                   >
-                    {tenant.display_name}
-                  </span>
-                  <span
-                    id={`select-tenant-card-${tenant.slug}-note`}
-                    className="tenant-card-note"
-                  >
-                    Sign in as an Agent for {tenant.display_name}.
-                  </span>
-                </button>
-              </li>
-            ))}
+                    <TenantSealMark
+                      id={`${cardId}-seal`}
+                      slug={tenant.slug}
+                    />
+                    <p id={`${cardId}-blurb`} className="select-tenant-blurb">
+                      {getTenantBlurb(tenant.slug)}
+                    </p>
+                  </Card>
+                </li>
+              );
+            })}
           </ul>
         )}
 

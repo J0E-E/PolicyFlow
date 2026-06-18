@@ -243,12 +243,16 @@ the seed password never reaches the browser; no PII crosses the new surfaces.
   - One shared `Footer` mounted in `PageLayout` + `AppShell` (both sticky-footer flex columns), so it shows on public pages, the `/app` loading skeleton, AND the signed-in workspace. **Epic 23** must mount it in `ShopperLayout` to keep the footer on every surface.
   - Landing CTA migrated from Tonal to the Epic 7 Filled `ButtonLink`; the old `.landing-subtitle` register was replaced by the lede/safe-note/time registers in `pages.css`.
 
-## Epic 15 — Select-tenant page (branded) [UI]
+## Epic 15 — Select-tenant page (branded) [UI] — **COMPLETED**
 - **Goal:** Upgrade the thin select-tenant slice into the real branded screen: per-tenant cards with specialization blurbs and the "why two tenants" (differentiation + isolation proof), each visibly branded; selecting a tenant assumes Agent and routes to `/app`.
 - **Rough scope:** The branded cards (Epic 8 `Card`) fed by `listTenants()`, with frontend editorial blurbs keyed by slug and a slot for the explainer (seeded in Epic 19). Tests: branded render + select → assume → `/app`.
-- **Open questions / decisions for stakeholders:** The specialization blurbs and why-two-tenants **copy** (frontend editorial, keyed by slug) — confirm at epic time.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time (see Implementation notes).
 - **Depends on:** Epic 5, Epic 8.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Confirmed copy (frontend editorial, keyed by slug — the resolved open question).** Blurbs — `sunshine-senior-benefits`: "Medicare and senior-market coverage — Medicare Advantage, supplements, and final-expense plans for the 65-and-over community."; `florida-family-planning`: "Life and protection planning for growing households — term life, juvenile, and income-protection products built around families." Why-two-tenants: "Two separate insurance agencies run on one PolicyFlow platform — different brands, products, and pipelines on the very same screens, yet neither can ever see the other's records. Pick either to step in; switching between them later is how the demo proves that isolation."
+  - **Entry IA deferred (Epics 23 & 24).** Per the 2026-06-18 stakeholder decision the demo should land on the tenant's public **Shopper surface** first, assume a persona from there, and offer a toggle back. Epic 15 ships the **agent-workspace entry only** — select → `assumePersona(slug, "agent")` → `/app` — because `/site/:slug` (Epic 23) does not exist yet and routing there would dead-link. When Epic 23 lands, flip the select action to navigate `/site/<slug>`; Epic 24's surface toggle is the step-back. The Shopper is a **surface, not a persona** (no RBAC role).
+  - **Explainer anchor (Epic 19).** Epic 19 seeds its `ExplainerPopover` on this surface anchored to the "Why two tenants?" block (`select-tenant-why-*` ids); Epic 15 leaves the slot but renders no placeholder.
+  - none — branded select-tenant cards shipped as planned, no deviation; the Epic 5 select → assume Agent → `/app` flow and its load/assume state machine are preserved.
 
 ## Epic 16 — Demo home host [UI]
 - **Goal:** Turn the placeholder `/app` into the real "demo home" — in-app orientation hosting the active guided stepper, inside the real shell chrome — the landing pad after tenant pick.

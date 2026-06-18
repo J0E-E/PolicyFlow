@@ -97,7 +97,7 @@
 
 .select-tenant-headline {
   /* Headline register — Besley 24/32/600 (Guide §3) */
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-4);
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 24px;
@@ -105,14 +105,32 @@
   color: var(--on-surface);
 }
 
-.select-tenant-intro {
+/* "Why two tenants?" block — frames the two-agency demo above the cards. The
+   Headline-adjacent Title register over calm secondary body (Guide §3). Stable
+   ids carry the Epic 19 explainer anchor; no placeholder rendered here. */
+.select-tenant-why {
+  max-width: 640px;
   margin: 0 0 var(--space-6);
+}
+
+.select-tenant-why-heading {
+  /* Title register — Public Sans 18/24/600 (Guide §3) */
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 18px;
+  line-height: 24px;
+  color: var(--on-surface);
+}
+
+.select-tenant-why-body {
+  margin: 0;
   font-size: 16px;
   line-height: 24px;
   color: var(--on-surface-variant);
 }
 
-.tenant-card-list {
+.select-tenant-card-list {
   list-style: none;
   margin: 0 0 var(--space-6);
   padding: 0;
@@ -122,53 +140,25 @@
   max-width: 640px;
 }
 
-.tenant-card-item {
+.select-tenant-card-item {
   margin: 0;
 }
 
-/* Flat bordered Card — --surface-2, 1px --outline, --radius-md, --space-4
-   padding (Guide §5). Resting cards lie flat — border, not glow. */
-.tenant-card {
-  background-color: var(--surface-2);
-  border: 1px solid var(--outline);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
+/* 3px brand letterhead rule on each card's top edge (echoes the masthead
+   letterhead rule, Guide §2.3 / §6.8). --primary resolves from the card's
+   own [data-tenant] scope, so each card carries its tenant's hue — tokens
+   only, no raw hex. The border-radius rounds the rule into the top corners. */
+.select-tenant-card-item .card {
+  border-top: 3px solid var(--primary);
 }
 
-/* Clickable tenant card. Resets the native button (full-width, left-aligned,
-   inherits the page font) and reuses the flat .tenant-card surface; the global
-   :focus-visible ring and reduced-motion rule already apply (base.css). */
-.tenant-card-button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background-color var(--motion-standard) var(--easing-standard);
+/* The tenant seal mark sits above the blurb inside the card body. The body is a
+   plain block, so the seal owns the gap down to the blurb. */
+.select-tenant-card-item .masthead-seal-mark {
+  margin: 0 0 var(--space-3);
 }
 
-.tenant-card-button:hover:not(:disabled) {
-  background-color: var(--surface-1);
-}
-
-.tenant-card-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.tenant-card-name {
-  /* Title register — Public Sans 18/24/600 (Guide §3) */
-  display: block;
-  margin: 0 0 var(--space-1);
-  font-family: var(--font-ui);
-  font-weight: 600;
-  font-size: 18px;
-  line-height: 24px;
-  color: var(--on-surface);
-}
-
-.tenant-card-note {
-  display: block;
+.select-tenant-blurb {
   margin: 0;
   font-size: 14px;
   line-height: 20px;
