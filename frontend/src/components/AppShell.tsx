@@ -18,12 +18,14 @@ interface AppShellProperties {
 // `identity` is present here; a defensive null-guard renders just `<main>` so a
 // stray null can never throw while the masthead awaits an identity.
 export default function AppShell({ children }: AppShellProperties) {
-  const { identity } = useSession();
+  const { identity, assumePersona } = useSession();
   useIdentityTheming(identity);
 
   return (
     <div id="app-shell" className="app-shell">
-      {identity && <Masthead identity={identity} />}
+      {identity && (
+        <Masthead identity={identity} assumePersona={assumePersona} />
+      )}
       <main id="app-shell-main" className="app-shell-main">
         {children}
       </main>

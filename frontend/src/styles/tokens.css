@@ -75,6 +75,10 @@
   --focus-ring-color: #21201a;
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
+  /* Paper-toned focus ring for use on inverted ink surfaces (e.g. the
+     Platform-Admin masthead): the default ink-on-paper ring would be invisible
+     on `--surface-ink`. Matches `--on-ink` so it reads AA on ink (Guide §7). */
+  --focus-ring-on-ink: #efeae0;
 
   /* ===== State colors — the only hues that signal (Guide §2.2) ===== */
   /* Deep "document inks", each AA as text on white, with a tint container */

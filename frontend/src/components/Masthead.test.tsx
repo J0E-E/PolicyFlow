@@ -1,14 +1,20 @@
-// Tests for the app-shell masthead. The masthead is pure given an identity, so
-// it renders directly (no provider/router). These assert the two clusters, the
-// tenant brand cluster, the persona indicator, and — per the Guide §7
+// Tests for the app-shell masthead. The masthead is pure given an identity and an
+// `assumePersona` (a stub here — AppShell threads the real one in), so it renders
+// directly (no provider/router). These assert the two clusters, the tenant brand
+// cluster, the role switcher (the active persona label now lives in a switcher
+// chip), the Platform-Admin "OUTSIDE TENANT SCOPE" label, and — per the Guide §7
 // accessibility checklist — that the inert affordances are disabled and properly
 // labelled, not silently absent.
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Identity } from "../api";
 import Masthead from "./Masthead.tsx";
+
+// The switcher just needs a resolving stub; the switching behavior is covered by
+// RoleSwitcher.test.tsx.
+const assumePersonaStub = vi.fn().mockResolvedValue(undefined);
 
 const agentIdentity: Identity = {
   user: {
@@ -35,8 +41,10 @@ const platformAdminIdentity: Identity = {
 };
 
 describe("Masthead", () => {
-  it("renders the left brand cluster: seal, wordmark, tenant name, persona", () => {
-    render(<Masthead identity={agentIdentity} />);
+  it("renders the left brand cluster: seal, wordmark, tenant name, switcher", () => {
+    render(
+      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} />,
+    );
 
     expect(document.getElementById("app-masthead-wordmark")).toHaveTextContent(
       "PolicyFlow",
@@ -44,9 +52,15 @@ describe("Masthead", () => {
     expect(document.getElementById("app-masthead-tenant-name")).toHaveTextContent(
       "Sunshine Senior Benefits",
     );
-    expect(document.getElementById("app-masthead-persona-label")).toHaveTextContent(
-      "Agent",
+    // The active persona label now lives inside the role switcher (the active
+    // chip is marked aria-pressed); there is no standalone persona indicator.
+    const activeChip = document.getElementById(
+      "app-masthead-role-switcher-agent",
     );
+    expect(activeChip).toHaveAttribute("aria-pressed", "true");
+    expect(
+      document.getElementById("app-masthead-role-switcher-agent-label"),
+    ).toHaveTextContent("Agent");
 
     // The seal points at the slug-named SVG so swapping art needs no code change.
     const seal = document.getElementById("app-masthead-seal");
@@ -57,7 +71,9 @@ describe("Masthead", () => {
   });
 
   it("renders the static DEMO SESSION stamp placeholder", () => {
-    render(<Masthead identity={agentIdentity} />);
+    render(
+      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} />,
+    );
 
     expect(
       document.getElementById("app-masthead-session-stamp"),
@@ -69,7 +85,9 @@ describe("Masthead", () => {
   });
 
   it("renders the notification bell as a disabled, labelled placeholder", () => {
-    render(<Masthead identity={agentIdentity} />);
+    render(
+      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} />,
+    );
 
     const bell = screen.getByRole("button", { name: /notifications/i });
     expect(bell).toBe(document.getElementById("app-masthead-notifications-button"));
@@ -78,7 +96,9 @@ describe("Masthead", () => {
   });
 
   it("renders the inert How it's built affordance, not a live link", () => {
-    render(<Masthead identity={agentIdentity} />);
+    render(
+      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} />,
+    );
 
     const howItsBuilt = document.getElementById("app-masthead-how-its-built");
     expect(howItsBuilt).toHaveTextContent("How it's built");
@@ -89,15 +109,41 @@ describe("Masthead", () => {
   });
 
   it("omits the tenant brand cluster for the tenantless Platform Admin", () => {
-    render(<Masthead identity={platformAdminIdentity} />);
+    render(
+      <Masthead
+        identity={platformAdminIdentity}
+        assumePersona={assumePersonaStub}
+      />,
+    );
 
-    // No tenant scope: no seal, no tenant name (Epic 11 owns the inversion).
+    // No tenant scope: no seal, no tenant name (the masthead inverts to ink).
     expect(document.getElementById("app-masthead-seal")).toBeNull();
     expect(document.getElementById("app-masthead-tenant-name")).toBeNull();
-    // The wordmark and persona indicator still render.
+    // The wordmark and the switcher still render; the active chip is Platform Admin.
     expect(document.getElementById("app-masthead-wordmark")).toBeInTheDocument();
-    expect(document.getElementById("app-masthead-persona-label")).toHaveTextContent(
-      "Platform Admin",
+    expect(
+      document.getElementById("app-masthead-role-switcher-platform_admin"),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      document.getElementById("app-masthead-role-switcher-platform_admin-label"),
+    ).toHaveTextContent("Platform Admin");
+  });
+
+  it("renders the OUTSIDE TENANT SCOPE label only for Platform Admin", () => {
+    const { rerender } = render(
+      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} />,
     );
+    // A tenant-scoped persona has no platform-ops label.
+    expect(document.getElementById("app-masthead-platform-ops")).toBeNull();
+
+    rerender(
+      <Masthead
+        identity={platformAdminIdentity}
+        assumePersona={assumePersonaStub}
+      />,
+    );
+    expect(
+      document.getElementById("app-masthead-platform-ops-label"),
+    ).toHaveTextContent("PLATFORM OPERATIONS — OUTSIDE TENANT SCOPE");
   });
 });

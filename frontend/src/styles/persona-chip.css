@@ -1,0 +1,122 @@
+/*
+ * Role switcher + persona chips (Guide §2.4, §6.7). The switcher is the four
+ * personas as annotated chips on the masthead; each chip colors itself from its
+ * OWN named persona ramp so all four accents are visible at rest (a palette of
+ * choices, not one themed indicator). Tokens only — no raw hex or off-scale
+ * spacing (Guide §2, §4, §8).
+ *
+ * Accessibility (Guide §7): the chips read AA on BOTH grounds — paper at rest and
+ * the inverted ink masthead under Platform Admin. The global :focus-visible ring
+ * (base.css) is ink-on-paper and would vanish on ink, so the inverted scope swaps
+ * in a paper-toned focus ring (--focus-ring-on-ink, tokens.css).
+ */
+
+/* ---- The switcher group ---- */
+
+.role-switcher {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.role-switcher-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* The shared aria-live status line (pending / error). Kept reserved-but-quiet
+   when empty so the layout does not jump when a message appears. */
+.role-switcher-message {
+  margin: 0;
+  min-height: var(--space-4);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: var(--space-4);
+  color: var(--on-surface-variant);
+}
+
+.role-switcher-message:empty {
+  /* No visual footprint while idle, but the live region stays in the DOM so a
+     screen reader announces the change in place. */
+  min-height: 0;
+}
+
+/* ---- One persona chip (accent + glyph + name) ---- */
+
+.persona-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  /* Near-square stamp geometry — no pills (Guide §4, anti-template law). */
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid transparent;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  /* The accent transition is felt on the role swap (Guide §2.4 — animate the
+     accent at 200ms so the change is felt, not just seen). */
+  transition: background-color var(--motion-standard) var(--easing-standard),
+    color var(--motion-standard) var(--easing-standard),
+    border-color var(--motion-standard) var(--easing-standard),
+    box-shadow var(--motion-standard) var(--easing-standard);
+}
+
+.persona-chip:disabled {
+  cursor: not-allowed;
+  opacity: var(--disabled-content-opacity);
+}
+
+.persona-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.persona-chip-icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.persona-chip-label {
+  /* Stamp type — 11/16/700, uppercase, +0.8px tracking (Guide §3). */
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Per-role accent at rest: each chip reads from its OWN named persona ramp
+   (tokens.css), so the whole palette is visible before any switch. */
+.persona-chip-agent {
+  background-color: var(--persona-agent-container);
+  color: var(--persona-agent-on-container);
+}
+
+.persona-chip-tenant_admin {
+  background-color: var(--persona-tenant-admin-container);
+  color: var(--persona-tenant-admin-on-container);
+}
+
+.persona-chip-read_only {
+  background-color: var(--persona-read-only-container);
+  color: var(--persona-read-only-on-container);
+}
+
+.persona-chip-platform_admin {
+  background-color: var(--persona-platform-admin-container);
+  color: var(--persona-platform-admin-on-container);
+}
+
+/* The active chip: a stronger accent outline so the pressed persona reads clearly
+   against the resting palette (the text label + aria-pressed carry the meaning;
+   the outline is reinforcement, not the sole signal — Guide §7). */
+.persona-chip[aria-pressed="true"] {
+  border-color: currentColor;
+  box-shadow: inset 0 0 0 1px currentColor;
+}

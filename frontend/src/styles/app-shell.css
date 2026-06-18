@@ -95,23 +95,16 @@
   text-overflow: ellipsis;
 }
 
-/* ---- Persona indicator: a static accent chip (Guide §2.4) ---- */
+/* ---- Platform-Admin "OUTSIDE TENANT SCOPE" label (Guide §2.4, §6.7) ---- */
+/* Rendered only for the Platform-Admin persona (the masthead inverts to ink and
+   tenant brand drains); the magenta-on-ink accent reads AA on ink (Guide §2.5). */
 
-.persona-indicator {
+.masthead-platform-ops {
   display: inline-flex;
   align-items: center;
-  /* Near-square stamp geometry — no pills (Guide §4, anti-template law). */
-  border-radius: var(--radius-sm);
-  padding: var(--space-1) var(--space-2);
-  /* Persona accent (annotation color), resolved from the [data-persona] scope. */
-  background-color: var(--persona-accent-container);
-  color: var(--persona-on-accent-container);
-  /* The accent transition is felt on the Epic 11 role swap (Guide §2.4). */
-  transition: background-color var(--motion-standard) var(--easing-standard),
-    color var(--motion-standard) var(--easing-standard);
 }
 
-.persona-indicator-label {
+.masthead-platform-ops-label {
   /* Stamp type — 11/16/700, uppercase, +0.8px tracking (Guide §3). */
   font-family: var(--font-ui);
   font-size: 11px;
@@ -119,6 +112,8 @@
   font-weight: 700;
   letter-spacing: 0.8px;
   text-transform: uppercase;
+  color: var(--persona-platform-admin-on-ink);
+  white-space: nowrap;
 }
 
 /* ---- Right cluster: session stamp + inert bell + inert link ---- */
@@ -205,4 +200,61 @@
      brand-drain maps it to a neutral, so the rule never carries a tenant hue
      outside tenant scope (Guide §2.4). */
   background-color: var(--primary);
+  transition: background-color var(--motion-standard) var(--easing-standard);
+}
+
+/* ===== Platform-Admin masthead inversion (Guide §2.4, §6.7) =====
+ * Selecting Platform Admin inverts the masthead to the ink console ground with a
+ * 3px magenta rule (the deferred-from-Epic-10 surface inversion); the
+ * [data-persona="platform_admin"] scope is set on <html> by useIdentityTheming,
+ * so it is an ancestor of the masthead here. Tenant brand has already drained in
+ * tokens.css; this layer flips the masthead surface, hairlines, and text to ink.
+ * The surface/accent transition runs at --motion-standard (200ms) so the switch
+ * is felt (Guide §2.4). Reduced motion is honored by the global rule in base.css.
+ */
+[data-persona="platform_admin"] .masthead {
+  background-color: var(--surface-ink);
+  border-bottom-color: var(--outline-ink);
+  color: var(--on-ink);
+  transition: background-color var(--motion-standard) var(--easing-standard),
+    border-color var(--motion-standard) var(--easing-standard);
+}
+
+/* Wordmark on ink (the tenant name + seal have already drained for the tenantless
+   Platform Admin, so only the wordmark remains on the left). */
+[data-persona="platform_admin"] .masthead-wordmark {
+  color: var(--on-ink);
+}
+
+/* The 3px rule becomes the ops magenta-on-ink (≥4.5:1 on ink, Guide §2.5). */
+[data-persona="platform_admin"] .masthead-letterhead-rule {
+  background-color: var(--persona-platform-admin-on-ink);
+}
+
+/* Right-cluster chrome reads on ink: the inert bell hairline + glyph and the
+   inert "How it's built" link use the on-ink variant. */
+[data-persona="platform_admin"] .masthead-icon-button {
+  border-color: var(--outline-ink);
+  color: var(--on-ink-variant);
+}
+
+[data-persona="platform_admin"] .masthead-how-its-built {
+  color: var(--on-ink-variant);
+}
+
+/* The active persona chip is Platform Admin on the inverted ground: keep its
+   container readable on ink (the resting palette for the other three chips stays
+   on its own ramp; the magenta container would muddy on ink, so the active chip
+   reads as magenta-on-ink). Ground is --surface-ink (not -raised) so the inherited
+   label keeps the Guide's verified ≥4.5:1 magenta-on-ink contrast (Guide §2.5, §7;
+   #d169a6 on #23211c = 4.81:1, vs 4.22:1 on -raised). */
+[data-persona="platform_admin"] .persona-chip-platform_admin {
+  background-color: var(--surface-ink);
+  color: var(--persona-platform-admin-on-ink);
+}
+
+/* Paper-toned focus ring inside the inverted masthead: the global ink-on-paper
+   :focus-visible ring (base.css) would be invisible on ink (Guide §7). */
+[data-persona="platform_admin"] .masthead :focus-visible {
+  outline-color: var(--focus-ring-on-ink);
 }
