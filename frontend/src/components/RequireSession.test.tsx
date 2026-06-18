@@ -98,7 +98,12 @@ describe("RequireSession guard", () => {
     renderGuardedTreeAtApp();
 
     await waitFor(() => {
-      expect(screen.getByText("Demo home")).toBeInTheDocument();
+      // "Demo home" now appears both as the page heading and the live left-nav
+      // item, so target the demo-home page title by id (the LeftNav rail shares
+      // the label) — same id-targeting deviation Epic 10 recorded for the masthead.
+      expect(document.getElementById("demo-home-title")).toHaveTextContent(
+        "Demo home",
+      );
     });
     // The role + tenant appear in the demo-home status line (the masthead also
     // shows them, so target the demo-home spans by id to stay unambiguous).

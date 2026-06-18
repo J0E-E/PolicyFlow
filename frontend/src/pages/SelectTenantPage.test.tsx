@@ -103,7 +103,11 @@ describe("select-tenant happy path", () => {
       "agent",
     );
     await waitFor(() => {
-      expect(screen.getByText("Demo home")).toBeInTheDocument();
+      // "Demo home" is now both the page heading and the live left-nav item, so
+      // target the demo-home page title by id (the LeftNav rail shares the label).
+      expect(document.getElementById("demo-home-title")).toHaveTextContent(
+        "Demo home",
+      );
     });
     // The demo home shows the assumed role and tenant from the identity body.
     // The masthead (rendered by the app shell) also shows them, so target the

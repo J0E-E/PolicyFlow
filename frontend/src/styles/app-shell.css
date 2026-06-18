@@ -7,7 +7,8 @@
  * names tokens, never tenant/persona values.
  */
 
-/* ---- Shell frame: masthead above a scrolling content column ---- */
+/* ---- Shell frame: a sticky masthead above a [left-nav rail | scrolling main] row
+   (Guide §4 — "fixed left nav + top masthead; content scrolls"). ---- */
 
 .app-shell {
   min-height: 100vh;
@@ -15,9 +16,20 @@
   flex-direction: column;
 }
 
+/* The body row under the masthead: the fixed-width rail beside the content column.
+   `min-height: 0` lets the row take the remaining height so the rail can be sticky
+   against it; the rail's own styling lives in left-nav.css. */
+.app-shell-body {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  min-height: 0;
+  width: 100%;
+}
+
 .app-shell-main {
   flex: 1;
-  width: 100%;
+  min-width: 0;
   max-width: 1280px;
   margin: 0 auto;
   /* Chrome breathes around page content (Guide §4). */

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useSession } from "../session";
 import { useIdentityTheming } from "./useIdentityTheming.ts";
 import Masthead from "./Masthead.tsx";
+import LeftNav from "./LeftNav.tsx";
 
 interface AppShellProperties {
   /** The routed content rendered into the shell's `<main>`. */
@@ -11,14 +12,15 @@ interface AppShellProperties {
 // The branded chrome wrapping every guarded `/app` surface (Guide §4 — "App shell
 // is a fixed left nav + top masthead; content scrolls"). It runs the identity →
 // data-attribute theming effect (so the whole document re-themes to the active
-// tenant/persona) and renders the masthead above a `<main>` that holds the routed
-// page. The left nav arrives in Epic 12; this epic stands up the masthead + main.
+// tenant/persona) and lays out: the sticky masthead full-width on top, with a
+// fixed-width left-nav rail beside the scrolling `<main>` below it.
 //
 // The guard (RequireSession) only renders this on its signed-in branch, so
 // `identity` is present here; a defensive null-guard renders just `<main>` so a
-// stray null can never throw while the masthead awaits an identity.
+// stray null can never throw while the chrome awaits an identity (the rail also
+// reads the identity, so it lives inside the same guard).
 export default function AppShell({ children }: AppShellProperties) {
-  const { identity, assumePersona } = useSession();
+  const { identity, capabilities, assumePersona } = useSession();
   useIdentityTheming(identity);
 
   return (
@@ -26,9 +28,14 @@ export default function AppShell({ children }: AppShellProperties) {
       {identity && (
         <Masthead identity={identity} assumePersona={assumePersona} />
       )}
-      <main id="app-shell-main" className="app-shell-main">
-        {children}
-      </main>
+      <div id="app-shell-body" className="app-shell-body">
+        {identity && (
+          <LeftNav role={identity.user.role} capabilities={capabilities} />
+        )}
+        <main id="app-shell-main" className="app-shell-main">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
