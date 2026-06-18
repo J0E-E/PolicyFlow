@@ -1,20 +1,12 @@
-import PageLayout from "../components/PageLayout.tsx";
 import { useSession } from "../session";
-import type { Role } from "../api";
+import { ROLE_LABELS } from "../components/roleLabels.ts";
 
 // The walking-skeleton demo home behind the `/app` guard. It proves the whole
 // access model end-to-end in the browser: a visitor who picked a tenant (which
 // passwordlessly assumed Agent) lands here and sees exactly who they are signed
-// in as. Un-branded on purpose — real chrome and content arrive in later epics.
-
-// Human-readable label for each role, so the status line reads in plain words
-// ("Agent", "Tenant Admin") rather than the wire value ("agent", "tenant_admin").
-const ROLE_LABELS: Record<Role, string> = {
-  agent: "Agent",
-  tenant_admin: "Tenant Admin",
-  read_only: "Read-Only",
-  platform_admin: "Platform Admin",
-};
+// in as. Real chrome now comes from the surrounding AppShell (masthead +
+// theming); this page renders only its content into the shell's `<main>`, so it
+// carries no header of its own (no double header).
 
 export default function DemoHomePage() {
   const { identity } = useSession();
@@ -24,13 +16,11 @@ export default function DemoHomePage() {
   // never throw.
   if (identity === null) {
     return (
-      <PageLayout pageId="demo-home">
-        <div id="demo-home-content" className="demo-home-content">
-          <p id="demo-home-empty" className="demo-home-empty">
-            No active session.
-          </p>
-        </div>
-      </PageLayout>
+      <div id="demo-home-content" className="demo-home-content">
+        <p id="demo-home-empty" className="demo-home-empty">
+          No active session.
+        </p>
+      </div>
     );
   }
 
@@ -41,22 +31,20 @@ export default function DemoHomePage() {
     identity.user.tenant_name ?? "Platform — no tenant scope";
 
   return (
-    <PageLayout pageId="demo-home">
-      <div id="demo-home-content" className="demo-home-content">
-        <h1 id="demo-home-title" className="demo-home-title">
-          Demo home
-        </h1>
-        <p id="demo-home-status" className="demo-home-status">
-          Signed in as{" "}
-          <span id="demo-home-role" className="demo-home-role">
-            {roleLabel}
-          </span>{" "}
-          ·{" "}
-          <span id="demo-home-tenant" className="demo-home-tenant">
-            {tenantLabel}
-          </span>
-        </p>
-      </div>
-    </PageLayout>
+    <div id="demo-home-content" className="demo-home-content">
+      <h1 id="demo-home-title" className="demo-home-title">
+        Demo home
+      </h1>
+      <p id="demo-home-status" className="demo-home-status">
+        Signed in as{" "}
+        <span id="demo-home-role" className="demo-home-role">
+          {roleLabel}
+        </span>{" "}
+        ·{" "}
+        <span id="demo-home-tenant" className="demo-home-tenant">
+          {tenantLabel}
+        </span>
+      </p>
+    </div>
   );
 }

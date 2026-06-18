@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from "react-router-dom";
 import PageLayout from "./PageLayout.tsx";
+import AppShell from "./AppShell.tsx";
 import { useSession } from "../session";
 
 // Route guard for the `/app` zone. A react-router v6 layout-route guard: it sits
@@ -40,5 +41,11 @@ export default function RequireSession() {
     return <Navigate to="/" replace />;
   }
 
-  return <Outlet />;
+  // Signed in: wrap the routed content in the branded app shell (masthead +
+  // theming) so every guarded surface renders inside the chrome.
+  return (
+    <AppShell>
+      <Outlet />
+    </AppShell>
+  );
 }

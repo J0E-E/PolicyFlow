@@ -9,6 +9,7 @@ import "./styles/button.css";
 import "./styles/card.css";
 import "./styles/stamp-tag.css";
 import "./styles/popover.css";
+import "./styles/app-shell.css";
 import "./styles/pages.css";
 
 const rootElement = document.getElementById("root");

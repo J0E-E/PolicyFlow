@@ -106,8 +106,12 @@ describe("select-tenant happy path", () => {
       expect(screen.getByText("Demo home")).toBeInTheDocument();
     });
     // The demo home shows the assumed role and tenant from the identity body.
-    expect(screen.getByText("Agent")).toBeInTheDocument();
-    expect(screen.getByText("Sunshine Senior Benefits")).toBeInTheDocument();
+    // The masthead (rendered by the app shell) also shows them, so target the
+    // demo-home spans by id to stay unambiguous.
+    expect(document.getElementById("demo-home-role")).toHaveTextContent("Agent");
+    expect(document.getElementById("demo-home-tenant")).toHaveTextContent(
+      "Sunshine Senior Benefits",
+    );
   });
 });
 

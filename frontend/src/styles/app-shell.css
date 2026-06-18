@@ -1,0 +1,208 @@
+/*
+ * App-shell chrome — the branded masthead and the content `<main>` that wraps
+ * every guarded `/app` surface (Guide §2.3, §3, §4, §6.5). Tokens only; no raw
+ * hex or spacing outside the foundational token set (Guide §2, §4, §8). Theming
+ * is declarative: `--primary` and the persona accent resolve from the ancestor
+ * `[data-tenant]` / `[data-persona]` scope the theming effect sets, so this file
+ * names tokens, never tenant/persona values.
+ */
+
+/* ---- Shell frame: masthead above a scrolling content column ---- */
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell-main {
+  flex: 1;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  /* Chrome breathes around page content (Guide §4). */
+  padding: var(--space-7) var(--space-5);
+}
+
+/* ---- Masthead: the top bar + the 3px letterhead rule ---- */
+
+.masthead {
+  /* Paper panel register, lifted off the canvas by a hairline at its foot
+     (Guide §2.1, §4 — structure from rules, not shadows). */
+  background-color: var(--surface-1);
+  border-bottom: 1px solid var(--outline);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-nav);
+}
+
+.masthead-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+}
+
+.masthead-cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* ---- Left cluster: seal + wordmark + tenant name + persona ---- */
+
+.masthead-seal-mark {
+  display: block;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.masthead-wordmark {
+  /* Brand wordmark — Besley display register, restrained weight (Guide §3). */
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 28px;
+  letter-spacing: 0.2px;
+  color: var(--on-surface);
+  white-space: nowrap;
+}
+
+/* Thin vertical hairline separating the wordmark from the tenant name. */
+.masthead-divider {
+  width: 1px;
+  align-self: stretch;
+  min-height: var(--space-5);
+  background-color: var(--outline);
+}
+
+.masthead-tenant-name {
+  /* The tenant is an entity name — Besley, smaller than the wordmark so the
+     product mark leads (Guide §3 "entity names" → Besley). */
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Persona indicator: a static accent chip (Guide §2.4) ---- */
+
+.persona-indicator {
+  display: inline-flex;
+  align-items: center;
+  /* Near-square stamp geometry — no pills (Guide §4, anti-template law). */
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  /* Persona accent (annotation color), resolved from the [data-persona] scope. */
+  background-color: var(--persona-accent-container);
+  color: var(--persona-on-accent-container);
+  /* The accent transition is felt on the Epic 11 role swap (Guide §2.4). */
+  transition: background-color var(--motion-standard) var(--easing-standard),
+    color var(--motion-standard) var(--easing-standard);
+}
+
+.persona-indicator-label {
+  /* Stamp type — 11/16/700, uppercase, +0.8px tracking (Guide §3). */
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+/* ---- Right cluster: session stamp + inert bell + inert link ---- */
+
+.masthead-right {
+  gap: var(--space-4);
+}
+
+/* Inert notification-bell placeholder (Guide §6.12 — wired live later). A real
+   disabled button so assistive tech announces it present-but-unavailable. */
+.masthead-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-6);
+  height: var(--space-6);
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  color: var(--on-surface-variant);
+  cursor: not-allowed;
+}
+
+.masthead-icon-button:disabled {
+  opacity: var(--disabled-content-opacity);
+}
+
+/* A minimal bell glyph drawn in CSS (no icon system yet, TDD Decision 6): a
+   rounded dome (the body) over a small clapper (the ::after dot). Decorative —
+   the button carries the accessible name. */
+.masthead-bell-glyph {
+  position: relative;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-bottom: 0;
+  border-radius: 50% 50% 0 0;
+}
+
+.masthead-bell-glyph::before {
+  /* The flared rim under the dome. */
+  content: "";
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  bottom: -1.5px;
+  height: 1.5px;
+  background-color: currentColor;
+}
+
+.masthead-bell-glyph::after {
+  /* The clapper. */
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -3.5px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background-color: currentColor;
+  transform: translateX(-50%);
+}
+
+/* Inert "How it's built" link (Epic 21 wires it to the real page). Reads as a
+   link but is disabled — dimmed, not underlined, not focusable. */
+.masthead-how-its-built {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+  opacity: var(--disabled-content-opacity);
+  cursor: not-allowed;
+}
+
+/* ---- The 3px letterhead rule in the tenant brand (Guide §2.3, §6.8) ---- */
+
+.masthead-letterhead-rule {
+  height: 3px;
+  /* Tenant --primary resolves from the [data-tenant] scope; Platform Admin's
+     brand-drain maps it to a neutral, so the rule never carries a tenant hue
+     outside tenant scope (Guide §2.4). */
+  background-color: var(--primary);
+}

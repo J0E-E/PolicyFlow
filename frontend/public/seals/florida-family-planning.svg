@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PLACEHOLDER tenant seal mark for Florida Family Planning.
+  Square monogram designed to read at ~32px on warm light paper (#F2EFE9),
+  drawn in the tenant brand primary (Gulf petrol #0F6A72, UI/UX Guide §2.3).
+  Decorative only (the <img> carries empty alt). The human overwrites this file
+  with the real logo — same path, same name, so swapping the art needs no code
+  change.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="presentation">
+  <rect x="1.5" y="1.5" width="29" height="29" rx="2" fill="none" stroke="#0F6A72" stroke-width="1.5"/>
+  <rect x="4.5" y="4.5" width="23" height="23" rx="1" fill="none" stroke="#0F6A72" stroke-width="0.75" opacity="0.5"/>
+  <text x="16" y="21.5" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="16" fill="#0F6A72">F</text>
+</svg>

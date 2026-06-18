@@ -92,7 +92,7 @@ describe("RequireSession guard", () => {
     expect(screen.queryByText("Demo home")).not.toBeInTheDocument();
   });
 
-  it("renders the demo home with the tenant name when signed in", async () => {
+  it("renders the demo home inside the app shell when signed in", async () => {
     getCurrentIdentityMock.mockResolvedValue(agentIdentity);
 
     renderGuardedTreeAtApp();
@@ -100,8 +100,14 @@ describe("RequireSession guard", () => {
     await waitFor(() => {
       expect(screen.getByText("Demo home")).toBeInTheDocument();
     });
-    expect(screen.getByText("Agent")).toBeInTheDocument();
-    expect(screen.getByText("Sunshine Senior Benefits")).toBeInTheDocument();
+    // The role + tenant appear in the demo-home status line (the masthead also
+    // shows them, so target the demo-home spans by id to stay unambiguous).
+    expect(document.getElementById("demo-home-role")).toHaveTextContent("Agent");
+    expect(document.getElementById("demo-home-tenant")).toHaveTextContent(
+      "Sunshine Senior Benefits",
+    );
+    // The branded shell wraps the page: the masthead is present.
+    expect(document.getElementById("app-masthead")).toBeInTheDocument();
   });
 });
 

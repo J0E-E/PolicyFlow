@@ -163,19 +163,32 @@ browser; no PII crosses the new surfaces.
   - **Contract (affects Epics 19/20):** non-modal `role="dialog"` + `aria-label`, **no scrim** (never blocks the workflow). On open, focus moves into the surface (`tabIndex={-1}`); Tab is trapped (wraps last→first / first→last, pins to the container when there are no interior controls). Closes on **Esc** (focus restored to trigger), **outside `mousedown`** (focus left where clicked), and **trigger toggle** (focus already on the trigger). The focus trap is hand-rolled in a colocated `useFocusTrap.ts` hook (no new dependency, TDD Decision 6) — extracted to keep `Popover.tsx` readable; tested through the component.
   - **Positioning caveat (affects Epics 19/20):** in-tree (no portal, stays glued on scroll), absolute, single default placement (below-start: `top: calc(100% + --space-2)`, `left: 0`); `min-width: 240px` / `max-width: 360px`. **No collision/flip logic** — Epics 19/20 must place the trigger with room below/right or revisit (deferred, not in scope here).
 
-## Epic 10 — App-shell masthead + theming wiring [UI]
+## Epic 10 — App-shell masthead + theming wiring [UI] — **COMPLETED**
 - **Goal:** The branded app-shell masthead — wordmark + tenant seal mark + 3px letterhead rule + persona indicator + placeholder session indicator + notification-bell placeholder + "How it's built" link — plus the data-attribute theming effect that sets `data-tenant`/`data-persona` on the app root from the current identity, so the Guide's declarative theming (including Platform-Admin inversion) takes over.
 - **Rough scope:** The masthead component(s) under the shell, and the small identity→data-attribute effect. Renders within the guarded `/app` zone. Tests cover the theming attributes and the placeholder affordances.
-- **Open questions / decisions for stakeholders:** Confirm the tenant seal-mark asset/source and the placeholder session-indicator copy (P1.8 owns the live countdown). Settle masthead layout specifics against the Guide at epic time.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time (see Implementation notes).
 - **Depends on:** Epic 5, Epic 6, Epic 7.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Plan decisions (resolved at gate):**
+    - **Seal mark = real human-supplied SVG per tenant** at `frontend/public/seals/<slug>.svg` (slug-named, square, ~32px display, paper-ground), referenced via `<img src="/seals/<slug>.svg">` so swapping the art needs no code change. Placeholder monogram SVGs ship now to keep the build green; the human overwrites them with real logos. **Epic 15** may reuse `TenantSealMark` for the branded select-tenant cards.
+    - **Session indicator = static "DEMO SESSION" stamp** (no number). The live mono countdown is **P1.8**.
+    - **"How it's built" link = inert placeholder** (disabled, "coming later"); **Epic 21** wires it to the real `/how-its-built` page.
+    - **Persona indicator = static accent chip**; **Epic 11** turns it into the interactive role switcher (+200ms accent animation).
+    - **Platform-Admin masthead-surface inversion + "OUTSIDE TENANT SCOPE" label deferred to Epic 11** (owns that copy; Platform Admin is unreachable until the switcher exists). Epic 10 only wires `data-tenant`/`data-persona` + the token brand-drain, which activates automatically.
+    - **Theming = a `useIdentityTheming` effect** that sets/clears `data-tenant`/`data-persona` on `document.documentElement` (per TDD §5.2, "an effect on the app root"); the tenantless Platform Admin omits `data-tenant`.
+  - Shared `ROLE_LABELS` extracted to `components/roleLabels.ts` (was inline in `DemoHomePage`); `PersonaIndicator` + `DemoHomePage` import it. **Epic 11**'s switcher reuses it.
+  - `TenantSealMark` (`<img src="/seals/<slug>.svg">`, decorative) is reusable as planned — **Epic 15** can compose it on branded select-tenant cards.
+  - Masthead tenant cluster (seal + tenant name) is gated on `hasTenantScope`, so a tenantless identity degrades to wordmark+persona (no broken seal). **Epic 11** still owns the full Platform-Admin masthead inversion (`--surface-ink` ground, magenta rule, "OUTSIDE TENANT SCOPE" label) — Epic 10 wired only `data-*` + the token brand-drain.
+  - Inert bell glyph is CSS-drawn (no icon system yet, TDD Decision 6); "How it's built" is an inert `role="link"` + `aria-disabled` `<span>` (no `href`), **Epic 21** wires it live.
+  - Deviation (test-only): the shell now renders role+tenant in the masthead, so `RequireSession`/`SelectTenantPage` happy-path assertions target the `demo-home-role`/`-tenant` spans by id instead of `getByText` (no behavior change).
 
 ## Epic 11 — Role switcher [UI]
 - **Goal:** The four personas as annotated chips (accent + glyph) in the masthead; selecting one calls `assumePersona`, animates the accent (~200ms), and re-identifies — Platform Admin inverts the masthead and drains tenant brand ("PLATFORM OPERATIONS — OUTSIDE TENANT SCOPE"). RBAC is enforced because the visitor now *is* that seeded user.
 - **Rough scope:** The switcher component in the masthead, wired to the session context's `assumePersona`. Tests: switching re-themes (`data-persona`, Platform-Admin inversion) and re-identifies.
 - **Open questions / decisions for stakeholders:** Confirm the persona glyph set and the exact Platform-Admin inversion copy against the Guide — settle at epic time.
 - **Depends on:** Epic 4, Epic 10.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **From Epic 10 (deferred to here):** Epic 10 wired `data-tenant`/`data-persona` + the token brand-drain but **deferred the Platform-Admin masthead-surface inversion — dark `--surface-ink` background + 3px magenta rule + the "PLATFORM OPERATIONS — OUTSIDE TENANT SCOPE" label — to this epic**, which owns that copy. Epic 10's static `PersonaIndicator` becomes the interactive switcher here (+200ms accent animation).
 
 ## Epic 12 — Left nav [UI]
 - **Goal:** The role-conditional left navigation with an active marker and future sections shown as **disabled / "coming in a later step"** — previewing the app's structure honestly without dead links.
