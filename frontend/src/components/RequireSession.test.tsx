@@ -73,7 +73,9 @@ describe("RequireSession guard", () => {
 
     expect(screen.getByText("Restoring your session…")).toBeInTheDocument();
     // The guarded child has not rendered yet.
-    expect(screen.queryByText("Demo home")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Welcome to the PolicyFlow demo"),
+    ).not.toBeInTheDocument();
   });
 
   it("redirects a signed-out visitor from /app back to the landing page", async () => {
@@ -89,7 +91,9 @@ describe("RequireSession guard", () => {
         screen.getByText(/event-driven insurance operations platform/i),
       ).toBeInTheDocument();
     });
-    expect(screen.queryByText("Demo home")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Welcome to the PolicyFlow demo"),
+    ).not.toBeInTheDocument();
   });
 
   it("renders the demo home inside the app shell when signed in", async () => {
@@ -98,11 +102,11 @@ describe("RequireSession guard", () => {
     renderGuardedTreeAtApp();
 
     await waitFor(() => {
-      // "Demo home" now appears both as the page heading and the live left-nav
-      // item, so target the demo-home page title by id (the LeftNav rail shares
-      // the label) — same id-targeting deviation Epic 10 recorded for the masthead.
+      // The demo home opens with the welcome headline (Epic 16). Target the page
+      // title by id — the LeftNav rail still carries a "Demo home" label, so the
+      // id keeps this unambiguous (the id-targeting deviation Epics 10/12 recorded).
       expect(document.getElementById("demo-home-title")).toHaveTextContent(
-        "Demo home",
+        "Welcome to the PolicyFlow demo",
       );
     });
     // The role + tenant appear in the demo-home status line (the masthead also

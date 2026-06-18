@@ -201,7 +201,7 @@
   color: var(--on-surface-variant);
 }
 
-/* ---- Demo home (walking-skeleton /app landing) ---- */
+/* ---- Demo home (the /app orientation landing + guided-walkthrough host) ---- */
 
 .demo-home-content {
   max-width: 640px;
@@ -217,18 +217,37 @@
   color: var(--on-surface);
 }
 
-.demo-home-status {
-  margin: 0;
+/* Beat 2 — the persona-aware grounding line. */
+.demo-home-grounding {
+  margin: 0 0 var(--space-3);
   font-size: 16px;
   line-height: 24px;
   color: var(--on-surface-variant);
 }
 
-/* The role and tenant read as the emphasized facts in the status line. */
+/* The role and tenant read as the emphasized facts in the grounding line. */
 .demo-home-role,
 .demo-home-tenant {
   font-weight: 600;
   color: var(--on-surface);
+}
+
+/* Beat 3 — the how-to-proceed line, sitting just above the walkthrough host. */
+.demo-home-proceed {
+  margin: 0 0 var(--space-5);
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
+
+/* The guided-walkthrough host's coming-soon note — the established Epic 12 nav
+   voice ("available in a later step"), set as quiet body copy inside the Card.
+   Epic 17 swaps the real docket into the host (id demo-home-stepper-host). */
+.demo-home-stepper-host-note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface-variant);
 }
 
 .demo-home-empty {

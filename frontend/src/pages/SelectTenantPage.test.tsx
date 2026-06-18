@@ -169,10 +169,11 @@ describe("select-tenant happy path", () => {
       "agent",
     );
     await waitFor(() => {
-      // "Demo home" is now both the page heading and the live left-nav item, so
-      // target the demo-home page title by id (the LeftNav rail shares the label).
+      // The demo home now opens with the welcome headline (Epic 16). Target the
+      // page title by id — the LeftNav rail still carries a "Demo home" label, so
+      // the id keeps this unambiguous (the id-targeting deviation Epics 10/12 recorded).
       expect(document.getElementById("demo-home-title")).toHaveTextContent(
-        "Demo home",
+        "Welcome to the PolicyFlow demo",
       );
     });
     // The demo home shows the assumed role and tenant from the identity body.
@@ -233,9 +234,12 @@ describe("select-tenant robust states", () => {
         screen.getByText("Could not sign you in. Please try again."),
       ).toBeInTheDocument();
     });
-    // The controls are re-enabled and the visitor is still on the select page.
+    // The controls are re-enabled and the visitor is still on the select page —
+    // the demo home (whose welcome headline would prove the redirect) never rendered.
     expect(sunshineButton).not.toBeDisabled();
-    expect(screen.queryByText("Demo home")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Welcome to the PolicyFlow demo"),
+    ).not.toBeInTheDocument();
   });
 });
 
