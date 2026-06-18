@@ -1,0 +1,86 @@
+/*
+ * "Simulated" badge (Epic 20, Guide §6.3) — the dashed-border warning stamp that
+ * triggers the wrapped margin-note Popover, plus the three small-caps sections of
+ * the "official notice" inside it (popover.css owns the panel sheet itself). The
+ * stamp reuses the Epic 8 StampTag warning styling (--state-warning on
+ * --state-warning-container); this file ONLY overrides the StampTag's solid
+ * border to the Guide §6.3 "border law": the Simulated stamp always uses a 1px
+ * *dashed* border (dashed = not yet real), so it can never be confused with a
+ * solid real warning even in the same hue family. Each notice section has a
+ * small-caps label in the Guide's Label register (Stamp type — uppercase,
+ * tracked) over a Public Sans body, with mechanism / adapter names set in
+ * `--font-mono`. Tokens only; no raw hex (Guide §2).
+ *
+ * On-ink deferred (Epic 21 / P1.7): ships paper-ground; the
+ * --state-warning-on-ink dashed variant arrives with the first ink-console usage.
+ */
+
+/* ---- The trigger button: the dashed warning stamp. The base reset comes from
+   .popover-trigger; this aligns the stamp inline and rounds the focus ring to the
+   stamp's near-square corner. The global :focus-visible ring (base.css) applies
+   to the real <button> as-is. ---- */
+
+.simulated-badge-trigger {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+}
+
+/* The border law (Guide §6.3): override the StampTag warning stamp's solid border
+   to a 1px DASHED border — "dashed = not yet real", never a solid real warning.
+   The --state-warning ink/container colors are inherited from .stamp-tag-warning. */
+.simulated-badge-trigger .stamp-tag-warning {
+  border-style: dashed;
+}
+
+/* The stamp reads as interactive: a quiet container wash on hover/focus (the hue
+   itself never changes — identity/state color law, Guide §1.4). */
+.simulated-badge-trigger:hover .stamp-tag-warning {
+  background-color: var(--surface-3);
+}
+
+/* ---- The official-notice sections inside the open margin note ---- */
+
+.simulated-notice-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.simulated-notice-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The Label register (Guide §3 — small-caps eyebrow): uppercase, tracked, the
+   same Stamp-type treatment the stamp tag / explainer labels use. */
+.simulated-notice-section-label {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.simulated-notice-section-body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface);
+}
+
+/* Mechanism / adapter terms in the mono register (Guide §6.3) — a faint paper-grey
+   chip so the term reads as a literal name, not prose (matches the explainer mono). */
+.simulated-notice-mono {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-3);
+  color: var(--on-surface);
+}

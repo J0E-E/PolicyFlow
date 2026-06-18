@@ -1,6 +1,7 @@
 import ButtonLink from "../components/ButtonLink.tsx";
 import ExplainerPopover from "../components/ExplainerPopover.tsx";
 import PageLayout from "../components/PageLayout.tsx";
+import SimulatedBadge from "../components/SimulatedBadge.tsx";
 import { landingExplainer } from "../components/explainerContent.ts";
 
 // Landing route (`/`). Real editorial orientation (Guide §6.13) in a calm,
@@ -32,7 +33,11 @@ export default function LandingPage() {
         <p id="landing-safe-note" className="landing-safe-note">
           Everything here is simulated and safe to explore — no real customer data,
           nothing you can break. Click into anything, switch roles, trigger the
-          workflows.
+          workflows.{" "}
+          <SimulatedBadge
+            id="simulated-landing"
+            surfaceLabel="the whole demo"
+          />
         </p>
         <p id="landing-time-commitment" className="landing-time-commitment">
           A guided walkthrough takes about 10–15 minutes, or pick a tenant and

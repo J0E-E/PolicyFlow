@@ -37,4 +37,21 @@ describe("LandingPage", () => {
     expect(trigger).toBeInTheDocument();
     expect(trigger).toHaveAttribute("aria-label", "Explain: event-driven operations");
   });
+
+  it("seeds the Simulated badge beside the safe-note (Epic 20)", () => {
+    renderLanding();
+
+    // The badge sits inside the "simulated & safe to explore" note.
+    const safeNote = document.getElementById("landing-safe-note");
+    const trigger = document.getElementById("simulated-landing-trigger");
+    expect(trigger).toBeInTheDocument();
+    expect(safeNote).toContainElement(trigger);
+    expect(trigger).toHaveAttribute(
+      "aria-label",
+      "Simulated: the whole demo — what is mocked vs real",
+    );
+    expect(
+      document.getElementById("simulated-landing-stamp-label"),
+    ).toHaveTextContent("Simulated");
+  });
 });
