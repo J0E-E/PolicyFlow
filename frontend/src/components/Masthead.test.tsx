@@ -176,6 +176,29 @@ describe("Masthead", () => {
     ).toHaveTextContent("PLATFORM OPERATIONS — OUTSIDE TENANT SCOPE");
   });
 
+  it("seeds the RBAC and session-model explainer affordances (Epic 19)", () => {
+    render(
+      <Masthead
+        identity={agentIdentity}
+        assumePersona={assumePersonaStub}
+        onOpenScenarioReference={openScenarioReferenceStub}
+      />,
+    );
+
+    const rbacTrigger = document.getElementById("explainer-role-switcher-trigger");
+    expect(rbacTrigger).toBeInTheDocument();
+    expect(rbacTrigger).toHaveAttribute(
+      "aria-label",
+      "Explain: role-based access control",
+    );
+
+    const sessionTrigger = document.getElementById(
+      "explainer-session-model-trigger",
+    );
+    expect(sessionTrigger).toBeInTheDocument();
+    expect(sessionTrigger).toHaveAttribute("aria-label", "Explain: the demo session");
+  });
+
   it("shows the VIEW ONLY tag only for the Read-Only persona", () => {
     // Read-Only: the posture tag renders with its natural-case label (CSS
     // uppercases it) and an aria-hidden glyph.

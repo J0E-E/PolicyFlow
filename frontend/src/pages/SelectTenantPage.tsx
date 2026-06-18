@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Button from "../components/Button.tsx";
 import Card from "../components/Card.tsx";
+import ExplainerPopover from "../components/ExplainerPopover.tsx";
 import PageLayout from "../components/PageLayout.tsx";
 import TenantSealMark from "../components/TenantSealMark.tsx";
+import { tenantSwitchExplainer } from "../components/explainerContent.ts";
 import { listTenants } from "../api";
 import type { Tenant } from "../api";
 import { useSession } from "../session";
@@ -92,7 +94,12 @@ export default function SelectTenantPage() {
             id="select-tenant-why-heading"
             className="select-tenant-why-heading"
           >
-            Why two tenants?
+            Why two tenants?{" "}
+            <ExplainerPopover
+              id="explainer-select-tenant-why"
+              surfaceLabel="multi-tenant isolation"
+              content={tenantSwitchExplainer}
+            />
           </h2>
           <p id="select-tenant-why-body" className="select-tenant-why-body">
             {WHY_TWO_TENANTS}

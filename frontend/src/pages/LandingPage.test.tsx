@@ -29,4 +29,12 @@ describe("LandingPage", () => {
 
     expect(document.getElementById("app-footer")).toBeInTheDocument();
   });
+
+  it("seeds the event-driven explainer affordance (Epic 19)", () => {
+    renderLanding();
+
+    const trigger = document.getElementById("explainer-landing-trigger");
+    expect(trigger).toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-label", "Explain: event-driven operations");
+  });
 });

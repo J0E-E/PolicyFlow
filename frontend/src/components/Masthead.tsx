@@ -4,6 +4,11 @@ import TenantSealMark from "./TenantSealMark.tsx";
 import RoleSwitcher from "./RoleSwitcher.tsx";
 import StampTag from "./StampTag.tsx";
 import ViewOnlyTag from "./ViewOnlyTag.tsx";
+import ExplainerPopover from "./ExplainerPopover.tsx";
+import {
+  roleSwitcherExplainer,
+  sessionModelExplainer,
+} from "./explainerContent.ts";
 
 interface MastheadProperties {
   /** The signed-in identity — supplies the tenant brand cluster and persona. */
@@ -84,6 +89,15 @@ export default function Masthead({
             currentRole={role}
             currentTenantSlug={tenantSlug}
           />
+          {/* RBAC explainer (Epic 19) — beside the switcher, not inside it
+              (RoleSwitcher stays pure/props-only). The masthead's on-ink focus
+              scope (Epic 11's --focus-ring-on-ink, app-shell.css) keeps its focus
+              ring visible when Platform Admin inverts the masthead. */}
+          <ExplainerPopover
+            id="explainer-role-switcher"
+            surfaceLabel="role-based access control"
+            content={roleSwitcherExplainer}
+          />
           {isReadOnly && <ViewOnlyTag id="app-masthead-view-only" />}
           {isPlatformAdmin && (
             <span
@@ -124,6 +138,13 @@ export default function Masthead({
           <StampTag id="app-masthead-session-stamp" variant="overline">
             Demo session
           </StampTag>
+          {/* Session-model explainer (Epic 19) — after the DEMO SESSION stamp,
+              explaining the sandboxed demo session (no CRM PARALLEL section). */}
+          <ExplainerPopover
+            id="explainer-session-model"
+            surfaceLabel="the demo session"
+            content={sessionModelExplainer}
+          />
           <button
             id="app-masthead-notifications-button"
             type="button"

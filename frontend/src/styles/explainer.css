@@ -1,0 +1,89 @@
+/*
+ * Explainer affordance (Epic 19, Guide §6.2) — the info-icon trigger and the
+ * four small-caps sections inside the wrapped margin-note Popover (popover.css
+ * owns the panel sheet itself). The icon is a quiet inline glyph; each section
+ * has a small-caps label in the Guide's Label register (Stamp type — uppercase,
+ * tracked) over a Public Sans body, with mechanism / API terms set in
+ * `--font-mono`. Tokens only; no raw hex (Guide §2).
+ */
+
+/* ---- The info glyph (decorative; the trigger carries the accessible name) ---- */
+
+.explainer-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--on-surface-variant);
+}
+
+/* ---- The trigger button: a quiet inline affordance next to its surface's
+   text/control. The base reset comes from .popover-trigger; this adds the
+   resting color and a hover/focus brighten so the glyph reads as interactive. ---- */
+
+.explainer-trigger {
+  color: var(--on-surface-variant);
+  border-radius: var(--radius-full);
+  transition: color var(--motion-fast) var(--easing-standard);
+}
+
+.explainer-trigger:hover {
+  color: var(--on-surface);
+}
+
+/* ---- The sections inside the open margin note ---- */
+
+.explainer-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.explainer-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The Label register (Guide §3 — small-caps eyebrow): uppercase, tracked, the
+   same Stamp-type treatment the stamp tag / scenario-reference labels use. */
+.explainer-section-label {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.explainer-section-body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface);
+}
+
+/* Mechanism / API terms in the mono register (Guide §6.2) — a faint paper-grey
+   chip so the term reads as a literal name, not prose. */
+.explainer-mono {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-3);
+  color: var(--on-surface);
+}
+
+/* ---- Masthead triggers: on-ink-aware so the glyph stays visible when Platform
+   Admin inverts the masthead to `--surface-ink`. The focus ring is already
+   handled by the masthead's `:focus-visible` -> `--focus-ring-on-ink` scope
+   (app-shell.css, Epic 11); this only fixes the resting/hover glyph color. ---- */
+
+[data-persona="platform_admin"] .masthead .explainer-trigger {
+  color: var(--on-ink-variant);
+}
+
+[data-persona="platform_admin"] .masthead .explainer-trigger:hover {
+  color: var(--on-ink);
+}

@@ -151,6 +151,16 @@ describe("select-tenant branded render", () => {
     expect(
       screen.getAllByRole("button", { name: /Enter the agent workspace/ }),
     ).toHaveLength(2);
+
+    // Epic 19 seeds the multi-tenant-isolation explainer at the why-two-tenants block.
+    const explainerTrigger = document.getElementById(
+      "explainer-select-tenant-why-trigger",
+    );
+    expect(explainerTrigger).toBeInTheDocument();
+    expect(explainerTrigger).toHaveAttribute(
+      "aria-label",
+      "Explain: multi-tenant isolation",
+    );
   });
 });
 

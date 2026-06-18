@@ -1,5 +1,7 @@
 import ButtonLink from "../components/ButtonLink.tsx";
+import ExplainerPopover from "../components/ExplainerPopover.tsx";
 import PageLayout from "../components/PageLayout.tsx";
+import { landingExplainer } from "../components/explainerContent.ts";
 
 // Landing route (`/`). Real editorial orientation (Guide §6.13) in a calm,
 // four-beat register: what PolicyFlow is and why, that everything is simulated and
@@ -20,7 +22,12 @@ export default function LandingPage() {
           An event-driven insurance operations platform — a working demonstration
           of how a regulated industry's everyday work holds together: multi-tenant
           isolation, role-based access, encrypted customer records, and the async
-          event machinery that carries a lead through to a bound policy.
+          event machinery that carries a lead through to a bound policy.{" "}
+          <ExplainerPopover
+            id="explainer-landing"
+            surfaceLabel="event-driven operations"
+            content={landingExplainer}
+          />
         </p>
         <p id="landing-safe-note" className="landing-safe-note">
           Everything here is simulated and safe to explore — no real customer data,
