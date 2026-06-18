@@ -1,0 +1,295 @@
+/*
+ * Guided docket — the floating, dismissible 21-step walkthrough panel (Guide §6.6).
+ * A BESPOKE interactive panel built to the same "paper" tokens as the Epic 8 Card
+ * (--surface-2 face, 1px --outline, --radius, an elevation token, --space-4 padding,
+ * hairline rules between steps) but NOT the non-interactive Card itself. Tokens only;
+ * no raw hex or off-scale spacing (Guide §2–§4). Motion uses --motion-* / --easing;
+ * reduced motion is handled globally in base.css (no per-component override, Guide §7).
+ */
+
+/* Shared visually-hidden utility — keeps a label in the accessibility tree while
+   hiding it visually (meaning never by icon/color alone, Guide §7). */
+.guided-docket-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- The floating panel ---- */
+
+.guided-docket {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: var(--z-stepper);
+  width: 340px;
+  max-width: calc(100vw - var(--space-4) * 2);
+  /* Cap the panel so the step list scrolls internally rather than running off-screen. */
+  max-height: calc(100vh - var(--space-4) * 2);
+  display: flex;
+  flex-direction: column;
+  /* Paper language, matched to the Card tokens — a floating elevation reads as a
+     panel hovering over the workspace (Guide §2.4 elevation, §5 paper). */
+  background-color: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-3);
+}
+
+/* ---- Header: title + "X / 21" progress + dismiss ---- */
+
+.guided-docket-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--outline);
+}
+
+.guided-docket-heading-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.guided-docket-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+/* The progress readout uses mono + tabular numerals so "X / 21" reads as a ledger
+   counter (Guide §3). */
+.guided-docket-progress {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+}
+
+.guided-docket-dismiss {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--easing-standard);
+}
+
+.guided-docket-dismiss:hover {
+  background-color: var(--surface-3);
+}
+
+/* ---- The scrolling step list ---- */
+
+.guided-docket-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+}
+
+/* ---- One step row ---- */
+
+.guided-docket-step {
+  /* Position context for the active row's --primary left-edge marker. */
+  position: relative;
+  border-bottom: 1px solid var(--outline);
+}
+
+.guided-docket-step:last-child {
+  border-bottom: none;
+}
+
+/* The whole title line is the accordion toggle button (reset to a plain row). */
+.guided-docket-step-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  background-color: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  color: var(--on-surface);
+  transition: background-color var(--motion-fast) var(--easing-standard);
+}
+
+.guided-docket-step-toggle:hover {
+  background-color: var(--surface-1);
+}
+
+/* The number / checkmark marker — fixed-width so titles align in a column. */
+.guided-docket-step-marker {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.guided-docket-step-number {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+}
+
+/* Completed checkmark in tenant --primary (Guide §6.6). The glyph is aria-hidden;
+   the row's status text carries the meaning (Guide §7). --primary resolves from the
+   ancestor [data-tenant] scope; Platform Admin's brand-drain neutralizes it. */
+.guided-docket-step-check {
+  color: var(--primary);
+}
+
+.guided-docket-step-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+/* Active row: a --primary left-edge marker (3px bar, --radius-sm — NOT --radius-full,
+   which tokens.css reserves "avatars ONLY — no pills"). */
+.guided-docket-step-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: var(--space-2);
+  bottom: var(--space-2);
+  width: 3px;
+  border-radius: var(--radius-sm);
+  background-color: var(--primary);
+}
+
+.guided-docket-step-active > .guided-docket-step-toggle {
+  background-color: var(--surface-1);
+}
+
+.guided-docket-step-active .guided-docket-step-title {
+  font-weight: 600;
+}
+
+/* Completed rows quiet their title so the eye tracks remaining work; the checkmark
+   does the positive signalling. */
+.guided-docket-step-completed
+  > .guided-docket-step-toggle
+  .guided-docket-step-title {
+  color: var(--on-surface-variant);
+}
+
+/* ---- Expanded detail: the two notes, deep link, mark-done ---- */
+
+.guided-docket-step-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4)
+    /* indent under the marker so the detail aligns with the title column */
+    calc(var(--space-4) + 24px + var(--space-3));
+}
+
+.guided-docket-step-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--on-surface);
+}
+
+/* The "What you're seeing" / "How it's built" label — quiet overline above each note. */
+.guided-docket-step-note-label {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+/* The deep link — live anchor styling (used when a step gets a real `to`). */
+.guided-docket-step-link {
+  align-self: flex-start;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+/* Inert deep link — dimmed, non-link "available in a later step" (the left-nav
+   coming-later voice/styling, Guide §7 — present-but-unavailable, not a dead link). */
+.guided-docket-step-link-inert {
+  color: var(--on-surface-variant);
+  font-weight: 500;
+  cursor: not-allowed;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-size: 10px;
+}
+
+/* The "Mark done & next" primary action — reuses the Filled button (button.css);
+   only layout for the trailing arrow is added here. */
+.guided-docket-step-mark-done {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* ---- The collapsed corner reopen tab ---- */
+
+.guided-docket-reopen {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: var(--z-stepper);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-2);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--on-surface);
+  transition: background-color var(--motion-fast) var(--easing-standard);
+}
+
+.guided-docket-reopen:hover {
+  background-color: var(--surface-1);
+}
+
+.guided-docket-reopen-icon {
+  flex-shrink: 0;
+  color: var(--on-surface-variant);
+}

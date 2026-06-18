@@ -1,31 +1,46 @@
-import Card from "./Card.tsx";
+import { useGuidedDocketContext } from "./GuidedDocketContext.ts";
 
 interface GuidedWalkthroughHostProperties {
-  /** Required base id for the host region (CLAUDE.md). Epic 17 swaps the real
-   *  21-step docket into this stable id, so it lives in one place. Defaults to
-   *  `demo-home-stepper-host` — the seam name the plan fixed. */
+  /** Required base id for the host region (CLAUDE.md). Kept as the stable seam name
+   *  `demo-home-stepper-host` that beat 3 of the demo home points at. */
   id?: string;
 }
 
-// Beat 3's destination — the titled "Guided walkthrough" host region on the demo
-// home. Built on the Epic 8 Card so it reads as a real section of the page, with a
-// stable id (`demo-home-stepper-host`) that Epic 17 mounts the real 21-step docket
-// into. Until then it carries the established "available in a later step" voice
-// (the Epic 12 left-nav coming-soon register) so beat 3 never dead-links.
+// The demo-home anchor for the guided walkthrough — beat 3's destination. Epic 17
+// repurposed this from the placeholder host card into a slim one-line opener: the real
+// 21-step docket now lives as a floating overlay mounted shell-wide in AppShell (so it
+// persists across every /app screen and survives navigation), and this opener just
+// opens/focuses that same shared docket via GuidedDocketContext.
 //
-// Split out as its own focused component (React philosophy): the demo home owns the
-// orientation copy, this owns the walkthrough host, and Epic 17 changes only this
-// file when it lands the docket.
+// The stable id `demo-home-stepper-host` and beat 3's "guided walkthrough" reference
+// are preserved so nothing that pointed here dead-links. The button reads the shared
+// docket state, so its label reflects whether the docket is already open.
 export default function GuidedWalkthroughHost({
   id = "demo-home-stepper-host",
 }: GuidedWalkthroughHostProperties) {
+  const { isOpen, open } = useGuidedDocketContext();
+
   return (
-    <Card id={id} title="Guided walkthrough" headingLevel={2}>
+    // A plain block (not an aria-labelledby region) so the docket panel stays the
+    // single "Guided walkthrough" landmark — this is just an anchor on the demo home.
+    <div id={id} className="demo-home-stepper-host">
+      <h2 id={`${id}-title`} className="demo-home-stepper-host-title">
+        Guided walkthrough
+      </h2>
       <p id={`${id}-note`} className="demo-home-stepper-host-note">
-        The step-by-step tour lands here in a later step. For now, look around
-        using the left navigation and switch personas up top to see how the
-        workspace changes.
+        A 21-step tour of the workspace — what you're seeing and how it's built —
+        runs in a docket pinned to the corner of the screen.
       </p>
-    </Card>
+      <button
+        id={`${id}-open`}
+        type="button"
+        className="button button-filled demo-home-stepper-host-open"
+        onClick={open}
+      >
+        <span id={`${id}-open-label`} className="demo-home-stepper-host-open-label">
+          {isOpen ? "Go to the guided walkthrough" : "Open the guided walkthrough"}
+        </span>
+      </button>
+    </div>
   );
 }

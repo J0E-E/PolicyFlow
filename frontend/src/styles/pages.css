@@ -240,9 +240,31 @@
   color: var(--on-surface-variant);
 }
 
-/* The guided-walkthrough host's coming-soon note — the established Epic 12 nav
-   voice ("available in a later step"), set as quiet body copy inside the Card.
-   Epic 17 swaps the real docket into the host (id demo-home-stepper-host). */
+/* The guided-walkthrough host — slimmed by Epic 17 from a placeholder card into a
+   one-line anchor + opener for the real docket (which now lives as a floating overlay
+   in AppShell). A quiet bordered "paper" block (Card tokens) holding a title, a note,
+   and the "Open the guided walkthrough" button. Tokens only (Guide §2–§5). */
+.demo-home-stepper-host {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-4);
+  background-color: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-1);
+}
+
+.demo-home-stepper-host-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
 .demo-home-stepper-host-note {
   margin: 0;
   font-size: 14px;
