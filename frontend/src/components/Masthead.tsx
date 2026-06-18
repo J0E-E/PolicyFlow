@@ -2,6 +2,7 @@ import type { Identity, Role } from "../api";
 import TenantSealMark from "./TenantSealMark.tsx";
 import RoleSwitcher from "./RoleSwitcher.tsx";
 import StampTag from "./StampTag.tsx";
+import ViewOnlyTag from "./ViewOnlyTag.tsx";
 
 interface MastheadProperties {
   /** The signed-in identity — supplies the tenant brand cluster and persona. */
@@ -34,11 +35,17 @@ interface MastheadProperties {
 // inverts to `--surface-ink` via the `[data-persona="platform_admin"]` scope
 // (styles/app-shell.css), and a "PLATFORM OPERATIONS — OUTSIDE TENANT SCOPE" label
 // (Guide §2.4, §6.7 verbatim) renders alongside the switcher.
+//
+// The Read-Only persona instead carries a persistent "VIEW ONLY" posture tag after
+// the switcher (Guide §2.4). The two posture labels are mutually exclusive and only
+// the constrained personas carry one — Agent and Tenant Admin (the normal editable,
+// in-tenant state) get none (the deliberate Guide §2.4 asymmetry).
 export default function Masthead({ identity, assumePersona }: MastheadProperties) {
   const { role, tenant_slug: tenantSlug, tenant_name: tenantName } =
     identity.user;
   const hasTenantScope = tenantSlug !== null && tenantName !== null;
   const isPlatformAdmin = role === "platform_admin";
+  const isReadOnly = role === "read_only";
 
   return (
     <header id="app-masthead" className="masthead">
@@ -68,6 +75,7 @@ export default function Masthead({ identity, assumePersona }: MastheadProperties
             currentRole={role}
             currentTenantSlug={tenantSlug}
           />
+          {isReadOnly && <ViewOnlyTag id="app-masthead-view-only" />}
           {isPlatformAdmin && (
             <span
               id="app-masthead-platform-ops"

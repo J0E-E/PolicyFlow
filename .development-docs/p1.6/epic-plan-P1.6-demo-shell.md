@@ -225,12 +225,14 @@ the seed password never reaches the browser; no PII crosses the new surfaces.
   - **Deviation — pre-existing tests retargeted (affects nothing downstream):** rendering "Demo home" as a live nav label collided with two existing happy-path assertions that did `getByText("Demo home")` for the demo-home **page** (`RequireSession.test.tsx`, `SelectTenantPage.test.tsx`). Retargeted both to the page heading's id (`demo-home-title`) — the same id-targeting deviation Epic 10 recorded when the masthead duplicated role/tenant text. No behavior change.
   - **Tests + green gate (frontend-only, manual gate — no `green-gate.config.json`; foreground, piped to file, tail read):** new `LeftNav.test.tsx` (9) + `navSections.test.tsx` (6) follow the suite's `@testing-library/react` + `fireEvent` pattern (no `user-event` — not a dependency); the live `NavLink` wraps in `MemoryRouter`. They assert each role sees exactly its sections, Platform Admin sees ONLY Platform Health & DLQ + Demo home, future items are inert non-links with the hint, Demo home is the one live `/app` link with the active marker (and is NOT active under `/app/leads` via `end`), the `nav[aria-label="Primary"]` landmark, and focus order (the rail's only focusable control is the Demo home link, leading the list). `npm run build` (`tsc -b` strict + vite) → clean (1742 modules). `npx vitest run` (full suite) → **106 passed (16 files)**.
 
-## Epic 13 — Read-Only "VIEW ONLY" lock tag [UI]
+## Epic 13 — Read-Only "VIEW ONLY" lock tag [UI] — **COMPLETED**
 - **Goal:** The persistent "VIEW ONLY" lock tag shown on every screen while the Read-Only persona is active (Guide §2.4) — a constant, unmistakable signal of the persona's posture.
 - **Rough scope:** A small persona-conditional chrome element keyed off `data-persona`/identity, placed so it persists across surfaces. Tests: the tag shows for Read-Only and not for other personas.
-- **Open questions / decisions for stakeholders:** Confirm placement and whether any persona besides Read-Only carries a persistent posture tag — settle at epic time.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time: (1) **placement** = a lock-tag chip in the masthead left cluster, next to the role switcher (mirrors the Platform-Admin posture label; persists on every `/app` screen via the shared masthead), not a banner; (2) **scope** = Read-Only only — Platform Admin keeps its Epic 11 inversion + "OUTSIDE TENANT SCOPE" label, Agent/Tenant Admin carry no posture tag (the deliberate Guide §2.4 asymmetry — a posture tag flags deviation from the normal editable/in-tenant state, so only the constrained persona is flagged).
 - **Depends on:** Epic 10.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - The posture tag is built fresh on the read-only persona-container tokens, **not** on `StampTag` (a status-hue component) — any future posture tag should follow this pattern, not StampTag.
+  - **Deviation:** the chip uses `--radius-sm`, not a pill — `tokens.css` reserves `--radius-full` for "avatars ONLY — no pills" (Epic 12's note); a pill here would violate that constraint.
 
 ## Epic 14 — Landing page + global footer [UI]
 - **Goal:** Replace the placeholder landing with real editorial orientation (Guide §6.13): what PolicyFlow is and why, "simulated & safe to click," the time commitment, and one CTA into tenant selection — plus the global footer (repo + author links) shown on every page.

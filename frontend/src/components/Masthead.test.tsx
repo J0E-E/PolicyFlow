@@ -40,6 +40,30 @@ const platformAdminIdentity: Identity = {
   capabilities: [],
 };
 
+const tenantAdminIdentity: Identity = {
+  user: {
+    id: "44444444-4444-4444-4444-444444444444",
+    username: "tenant.admin@sunshine.example",
+    role: "tenant_admin",
+    tenant_id: "22222222-2222-2222-2222-222222222222",
+    tenant_slug: "sunshine-senior-benefits",
+    tenant_name: "Sunshine Senior Benefits",
+  },
+  capabilities: [],
+};
+
+const readOnlyIdentity: Identity = {
+  user: {
+    id: "55555555-5555-5555-5555-555555555555",
+    username: "read.only@sunshine.example",
+    role: "read_only",
+    tenant_id: "22222222-2222-2222-2222-222222222222",
+    tenant_slug: "sunshine-senior-benefits",
+    tenant_name: "Sunshine Senior Benefits",
+  },
+  capabilities: [],
+};
+
 describe("Masthead", () => {
   it("renders the left brand cluster: seal, wordmark, tenant name, switcher", () => {
     render(
@@ -145,5 +169,31 @@ describe("Masthead", () => {
     expect(
       document.getElementById("app-masthead-platform-ops-label"),
     ).toHaveTextContent("PLATFORM OPERATIONS — OUTSIDE TENANT SCOPE");
+  });
+
+  it("shows the VIEW ONLY tag only for the Read-Only persona", () => {
+    // Read-Only: the posture tag renders with its natural-case label (CSS
+    // uppercases it) and an aria-hidden glyph.
+    const { rerender } = render(
+      <Masthead identity={readOnlyIdentity} assumePersona={assumePersonaStub} />,
+    );
+    expect(
+      document.getElementById("app-masthead-view-only-label"),
+    ).toHaveTextContent("View only");
+    expect(
+      document.getElementById("app-masthead-view-only-icon"),
+    ).toHaveAttribute("aria-hidden", "true");
+
+    // Absent for every other persona — the deliberate Guide §2.4 asymmetry.
+    for (const identity of [
+      agentIdentity,
+      tenantAdminIdentity,
+      platformAdminIdentity,
+    ]) {
+      rerender(
+        <Masthead identity={identity} assumePersona={assumePersonaStub} />,
+      );
+      expect(document.getElementById("app-masthead-view-only")).toBeNull();
+    }
   });
 });
