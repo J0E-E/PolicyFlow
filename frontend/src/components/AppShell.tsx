@@ -1,3 +1,4 @@
+import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
 import { useSession } from "../session";
 import { useIdentityTheming } from "./useIdentityTheming.ts";
@@ -7,6 +8,7 @@ import Masthead from "./Masthead.tsx";
 import LeftNav from "./LeftNav.tsx";
 import Footer from "./Footer.tsx";
 import GuidedDocket from "./GuidedDocket.tsx";
+import ScenarioReferencePanel from "./ScenarioReferencePanel.tsx";
 
 interface AppShellProperties {
   /** The routed content rendered into the shell's `<main>`. */
@@ -31,16 +33,35 @@ interface AppShellProperties {
 // the shell — not on one page — is what keeps it (and its corner reopen tab) present
 // across /app screens (Epic 17 deliberately overrides Epic 16's "changes only
 // GuidedWalkthroughHost.tsx" note: the docket is a shell overlay, not an inline card).
+//
+// Likewise it holds the ONE scenario-reference open/closed flag (Epic 18) — a plain
+// useState, no new context — and passes the opener down to the two entry points (the
+// masthead help icon and the docket-header link), rendering the modal <ScenarioReferencePanel>
+// here so it overlays the whole shell from either opener.
 export default function AppShell({ children }: AppShellProperties) {
   const { identity, capabilities, assumePersona } = useSession();
   useIdentityTheming(identity);
   const guidedDocket = useGuidedDocket();
 
+  const [isScenarioReferenceOpen, setIsScenarioReferenceOpen] = useState(false);
+  const openScenarioReference = useCallback(
+    () => setIsScenarioReferenceOpen(true),
+    [],
+  );
+  const closeScenarioReference = useCallback(
+    () => setIsScenarioReferenceOpen(false),
+    [],
+  );
+
   return (
     <GuidedDocketContext.Provider value={guidedDocket}>
       <div id="app-shell" className="app-shell">
         {identity && (
-          <Masthead identity={identity} assumePersona={assumePersona} />
+          <Masthead
+            identity={identity}
+            assumePersona={assumePersona}
+            onOpenScenarioReference={openScenarioReference}
+          />
         )}
         <div id="app-shell-body" className="app-shell-body">
           {identity && (
@@ -51,7 +72,13 @@ export default function AppShell({ children }: AppShellProperties) {
           </main>
         </div>
         <Footer />
-        {identity && <GuidedDocket />}
+        {identity && (
+          <GuidedDocket onOpenScenarioReference={openScenarioReference} />
+        )}
+        <ScenarioReferencePanel
+          isOpen={isScenarioReferenceOpen}
+          onClose={closeScenarioReference}
+        />
       </div>
     </GuidedDocketContext.Provider>
   );

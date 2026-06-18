@@ -27,10 +27,12 @@ const TOTAL = STEPPER_STEPS.length;
 // test drive the real shared seam.
 function DocketHarness() {
   const state = useGuidedDocket();
+  // The docket header now carries a scenario-reference opener (Epic 18); a no-op
+  // stub here — the modal and its openers are covered by ScenarioReferencePanel.test.
   return (
     <GuidedDocketContext.Provider value={state}>
       <GuidedWalkthroughHost />
-      <GuidedDocket />
+      <GuidedDocket onOpenScenarioReference={() => {}} />
     </GuidedDocketContext.Provider>
   );
 }

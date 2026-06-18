@@ -1,0 +1,251 @@
+/*
+ * Scenario-reference modal — the Guide §5 modal dialog hosting the §6.9 scenario
+ * catalog. UNLIKE the non-modal Popover / guided docket, this is a true modal: a
+ * full-viewport scrim (--scrim) centring a paper dialog sheet that blocks the
+ * workspace while open. The sheet uses the dialog geometry from the Guide (§4 /
+ * §5): the top paper surface, a 1px --outline border, --radius-lg ("dialogs,
+ * large panels"), and --elevation-3 ("dialogs"). A short fade/scale-in on enter;
+ * the global reduced-motion rule in base.css neutralises it (no per-component
+ * override, Guide §7). Tokens only; no raw hex or off-scale spacing (Guide §2–§4).
+ *
+ * NOTE: the plan named --surface-4 for the sheet, but the Epic 6 token foundation
+ * stops at --surface-3; the dialog uses --surface-2 (the Guide's "cards, sheets"
+ * surface, which both the popover and the docket sheets already use). See the
+ * Epic 18 implementation note.
+ */
+
+/* Shared visually-hidden utility — keeps the close button's label in the
+   accessibility tree while the icon reads for sighted users (Guide §7). */
+.scenario-reference-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- The scrim: a full-viewport wash that blocks + centres the dialog ---- */
+
+.scenario-reference-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  background-color: var(--scrim);
+  animation: scenario-reference-scrim-in var(--motion-standard) var(--easing-standard);
+}
+
+@keyframes scenario-reference-scrim-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- The dialog sheet ---- */
+
+.scenario-reference-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 720px;
+  max-height: calc(100vh - var(--space-5) * 2);
+  background-color: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-3);
+  animation: scenario-reference-dialog-in var(--motion-slow) var(--easing-standard);
+}
+
+@keyframes scenario-reference-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- Header: title + intro + close ---- */
+
+.scenario-reference-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-bottom: 1px solid var(--outline);
+}
+
+.scenario-reference-heading-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Title role (Guide §3): 18px / 24px / 600 Public Sans — matches .card-title and
+   the peer .guided-docket-title's UI register. Besley (--font-display) is reserved
+   for Display / Headline / entity-names, never a dialog title. */
+.scenario-reference-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.scenario-reference-intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--on-surface-variant);
+}
+
+.scenario-reference-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
+  border: none;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--easing-standard);
+}
+
+.scenario-reference-close:hover {
+  background-color: var(--surface-3);
+}
+
+/* ---- Body: the three categories, scrolling within the capped sheet ---- */
+
+.scenario-reference-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-5);
+  overflow-y: auto;
+}
+
+.scenario-reference-category {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Intentional sub-heading register: 16px / 22px / 600 — below the Title role,
+   above body. Mirrors the docket title register (.guided-docket-title); not a
+   named Guide §3 role but a deliberate in-dialog section heading. */
+.scenario-reference-category-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.scenario-reference-category-description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--on-surface-variant);
+}
+
+/* The entries grid — Card per scenario, two-up where there is room. */
+.scenario-reference-entry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+
+.scenario-reference-entry-item {
+  display: flex;
+}
+
+.scenario-reference-entry-item > .card {
+  width: 100%;
+}
+
+/* ---- One entry card's beats: labelled "Trigger" / "Expected outcome" ---- */
+
+.scenario-reference-entry-beat {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--on-surface);
+}
+
+.scenario-reference-entry-beat-label {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+/* ---- The two openers' shared affordance styling ---- */
+
+/* The masthead help-icon button — sits in the right cluster beside the bell and
+   reuses .masthead-icon-button's geometry, but it is a LIVE control (the bell is
+   inert), so it overrides the inert cursor and earns a hover wash. */
+.masthead-help-button {
+  cursor: pointer;
+  color: var(--on-surface-variant);
+  transition: background-color var(--motion-fast) var(--easing-standard);
+}
+
+.masthead-help-button:hover {
+  background-color: var(--surface-3);
+}
+
+/* The active persona inverts the masthead to ink; the help button's hover wash
+   must read on that ground too. */
+[data-persona="platform_admin"] .masthead-help-button:hover {
+  background-color: var(--surface-ink-raised);
+}
+
+/* The docket-header "Scenario reference" link is a quiet text button matching the
+   docket's voice. */
+.guided-docket-scenario-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.guided-docket-scenario-link-icon {
+  flex-shrink: 0;
+}

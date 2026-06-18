@@ -1,8 +1,15 @@
 import { useEffect, useRef } from "react";
-import { Xmark, List } from "iconoir-react";
+import { Xmark, List, BookStack } from "iconoir-react";
 import { STEPPER_STEPS } from "./stepperSteps.ts";
 import { useGuidedDocketContext } from "./GuidedDocketContext.ts";
 import GuidedDocketStep from "./GuidedDocketStep.tsx";
+
+interface GuidedDocketProperties {
+  /** Open the scenario-reference modal (Epic 18). The docket header carries one of
+   *  the two entry points (the masthead help icon is the other); AppShell owns the
+   *  open flag and threads this opener in. */
+  onOpenScenarioReference: () => void;
+}
 
 // The floating guided-walkthrough docket (Guide §6.6 — "a persistent, dismissible
 // docket … a numbered table-of-contents overlay (01–21) tracking walkthrough
@@ -20,7 +27,9 @@ import GuidedDocketStep from "./GuidedDocketStep.tsx";
 // so there is no focus trap; focus order is natural DOM order. Meaning is carried by
 // text, never icon/color alone (Guide §7) — the dismiss/reopen controls and the
 // checkmarks all have text labels. Every element gets a unique descriptive id (CLAUDE.md).
-export default function GuidedDocket() {
+export default function GuidedDocket({
+  onOpenScenarioReference,
+}: GuidedDocketProperties) {
   const {
     isOpen,
     openRequestCount,
@@ -106,6 +115,25 @@ export default function GuidedDocket() {
             <span className="guided-docket-visually-hidden">Progress: </span>
             {completedCount} / {totalSteps}
           </p>
+          {/* The docket's entry point into the scenario-reference modal (Epic 18) —
+              the other is the masthead help icon. A real button opening the dialog. */}
+          <button
+            id="guided-docket-scenario-link"
+            type="button"
+            className="guided-docket-scenario-link"
+            aria-haspopup="dialog"
+            onClick={onOpenScenarioReference}
+          >
+            <BookStack
+              width={14}
+              height={14}
+              aria-hidden="true"
+              className="guided-docket-scenario-link-icon"
+            />
+            <span id="guided-docket-scenario-link-label">
+              Scenario reference
+            </span>
+          </button>
         </div>
         <button
           id="guided-docket-dismiss"

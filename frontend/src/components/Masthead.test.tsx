@@ -15,6 +15,9 @@ import Masthead from "./Masthead.tsx";
 // The switcher just needs a resolving stub; the switching behavior is covered by
 // RoleSwitcher.test.tsx.
 const assumePersonaStub = vi.fn().mockResolvedValue(undefined);
+// The masthead now also takes a scenario-reference opener (Epic 18); a no-op stub
+// here — the open behavior is covered separately and via the panel's own test.
+const openScenarioReferenceStub = vi.fn();
 
 const agentIdentity: Identity = {
   user: {
@@ -67,7 +70,7 @@ const readOnlyIdentity: Identity = {
 describe("Masthead", () => {
   it("renders the left brand cluster: seal, wordmark, tenant name, switcher", () => {
     render(
-      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} />,
+      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
     );
 
     expect(document.getElementById("app-masthead-wordmark")).toHaveTextContent(
@@ -96,7 +99,7 @@ describe("Masthead", () => {
 
   it("renders the static DEMO SESSION stamp placeholder", () => {
     render(
-      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} />,
+      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
     );
 
     expect(
@@ -110,7 +113,7 @@ describe("Masthead", () => {
 
   it("renders the notification bell as a disabled, labelled placeholder", () => {
     render(
-      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} />,
+      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
     );
 
     const bell = screen.getByRole("button", { name: /notifications/i });
@@ -121,7 +124,7 @@ describe("Masthead", () => {
 
   it("renders the inert How it's built affordance, not a live link", () => {
     render(
-      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} />,
+      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
     );
 
     const howItsBuilt = document.getElementById("app-masthead-how-its-built");
@@ -137,6 +140,7 @@ describe("Masthead", () => {
       <Masthead
         identity={platformAdminIdentity}
         assumePersona={assumePersonaStub}
+        onOpenScenarioReference={openScenarioReferenceStub}
       />,
     );
 
@@ -155,7 +159,7 @@ describe("Masthead", () => {
 
   it("renders the OUTSIDE TENANT SCOPE label only for Platform Admin", () => {
     const { rerender } = render(
-      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} />,
+      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
     );
     // A tenant-scoped persona has no platform-ops label.
     expect(document.getElementById("app-masthead-platform-ops")).toBeNull();
@@ -164,6 +168,7 @@ describe("Masthead", () => {
       <Masthead
         identity={platformAdminIdentity}
         assumePersona={assumePersonaStub}
+        onOpenScenarioReference={openScenarioReferenceStub}
       />,
     );
     expect(
@@ -175,7 +180,7 @@ describe("Masthead", () => {
     // Read-Only: the posture tag renders with its natural-case label (CSS
     // uppercases it) and an aria-hidden glyph.
     const { rerender } = render(
-      <Masthead identity={readOnlyIdentity} assumePersona={assumePersonaStub} />,
+      <Masthead identity={readOnlyIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
     );
     expect(
       document.getElementById("app-masthead-view-only-label"),
@@ -191,7 +196,7 @@ describe("Masthead", () => {
       platformAdminIdentity,
     ]) {
       rerender(
-        <Masthead identity={identity} assumePersona={assumePersonaStub} />,
+        <Masthead identity={identity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
       );
       expect(document.getElementById("app-masthead-view-only")).toBeNull();
     }

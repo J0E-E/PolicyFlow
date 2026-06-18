@@ -1,3 +1,4 @@
+import { HelpCircle } from "iconoir-react";
 import type { Identity, Role } from "../api";
 import TenantSealMark from "./TenantSealMark.tsx";
 import RoleSwitcher from "./RoleSwitcher.tsx";
@@ -11,6 +12,10 @@ interface MastheadProperties {
    *  in from AppShell so this stays a pure, props-only component (its tests render
    *  it with a stub, no provider). Forwarded to the role switcher. */
   assumePersona: (tenantSlug: string, role: Role) => Promise<void>;
+  /** Open the scenario-reference modal — AppShell owns the open flag and threads
+   *  this opener in (Epic 18). The persistent help-icon button in the right cluster
+   *  calls it; the docket header carries the other entry point. */
+  onOpenScenarioReference: () => void;
 }
 
 // The branded app-shell masthead (Guide §2.3, §4 "App shell is a fixed left nav +
@@ -40,7 +45,11 @@ interface MastheadProperties {
 // the switcher (Guide §2.4). The two posture labels are mutually exclusive and only
 // the constrained personas carry one — Agent and Tenant Admin (the normal editable,
 // in-tenant state) get none (the deliberate Guide §2.4 asymmetry).
-export default function Masthead({ identity, assumePersona }: MastheadProperties) {
+export default function Masthead({
+  identity,
+  assumePersona,
+  onOpenScenarioReference,
+}: MastheadProperties) {
   const { role, tenant_slug: tenantSlug, tenant_name: tenantName } =
     identity.user;
   const hasTenantScope = tenantSlug !== null && tenantName !== null;
@@ -92,6 +101,26 @@ export default function Masthead({ identity, assumePersona }: MastheadProperties
         </div>
 
         <div id="app-masthead-right" className="masthead-cluster masthead-right">
+          {/* Persistent help affordance (Epic 18): a LIVE icon button opening the
+              scenario-reference modal — the catalog of every demo scenario, its
+              trigger, and its outcome. Reuses the icon-button geometry but overrides
+              the bell's inert cursor (it is a real control). */}
+          <button
+            id="app-masthead-scenario-reference-button"
+            type="button"
+            className="masthead-icon-button masthead-help-button"
+            aria-haspopup="dialog"
+            aria-label="Scenario reference"
+            title="Scenario reference"
+            onClick={onOpenScenarioReference}
+          >
+            <HelpCircle
+              width={18}
+              height={18}
+              aria-hidden="true"
+              className="masthead-help-glyph"
+            />
+          </button>
           <StampTag id="app-masthead-session-stamp" variant="overline">
             Demo session
           </StampTag>
