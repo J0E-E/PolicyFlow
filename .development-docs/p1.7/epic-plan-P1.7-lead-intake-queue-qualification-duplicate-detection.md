@@ -18,12 +18,12 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
 - **Depends on:** none.
 - **Implementation notes:** The five `lead.*` `EventType` members now exist and `enrichment.stub` binds `lead.created`, so Epics 7/10/12-14 publish lead events through the existing outbox without re-touching the catalog.
 
-## Epic 2 — Lead status / source vocabulary + state machine
+## Epic 2 — Lead status / source vocabulary + state machine — **COMPLETED**
 - **Goal:** A pure, unit-tested state machine that defines the lead's statuses and sources and rejects any transition outside the allowed moves (`New → Working → Qualified | Rejected`, plus the duplicate-reject from `New`).
 - **Rough scope:** A `leads/state.py`-style module of string enums and a pure `assert_transition` guard, with unit tests. No persistence, no endpoints.
 - **Open questions / decisions for stakeholders:** none expected — the machine is fully drawn in the TDD.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** Epics 12–14 catch the framework-free `InvalidLeadTransition` at the endpoint edge and map it to HTTP 409/422 — the core (`app/leads/state.py`) never imports the web framework. `Converted` and the `Qualified → Converted` transition are deferred to P2.1; do not add them in P1.7.
 
 ## Epic 3 — Lead table migration + ORM model
 - **Goal:** Create the per-tenant `leads` table (columns, blind-index indexes, grants) via a new migration and a schema-less `Lead` ORM modeled on `pii_demo`, leaving the system migratable and round-trippable.
