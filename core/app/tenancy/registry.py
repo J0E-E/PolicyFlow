@@ -143,3 +143,18 @@ def tenant_by_slug(slug: str) -> TenantConfig:
         if tenant.slug == slug:
             return tenant
     raise KeyError(slug)
+
+
+def tenant_by_schema(schema_name: str) -> TenantConfig:
+    """Return the tenant configuration for ``schema_name``.
+
+    The schema-keyed sibling of ``tenant_by_slug``: an authenticated request is
+    scoped to its tenant by ``search_path`` (not by slug), so the lead intake
+    handler resolves the caller's product-line keys from the active schema name
+    rather than a slug. Raises ``KeyError`` if no tenant has that schema, so an
+    unrecognized schema fails loudly rather than returning a silent ``None``.
+    """
+    for tenant in TENANTS:
+        if tenant.schema_name == schema_name:
+            return tenant
+    raise KeyError(schema_name)

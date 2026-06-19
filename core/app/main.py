@@ -18,6 +18,7 @@ from .auth.router import router as auth_router
 from .demo.router import router as demo_router
 from .events.runtime import event_bus_lifespan
 from .health import router as health_router
+from .leads.router import router as leads_router
 from .pii_demo.router import router as pii_demo_router
 from .platform.router import router as platform_router
 from .tenant.router import router as tenant_router
@@ -30,3 +31,4 @@ app.include_router(platform_router)
 app.include_router(pii_demo_router)
 app.include_router(audit_router)
 app.include_router(demo_router)
+app.include_router(leads_router)
