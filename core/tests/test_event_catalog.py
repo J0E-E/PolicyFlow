@@ -22,12 +22,17 @@ from app.events.catalog import (
 EXPECTED_EVENT_TYPES: dict[str, str] = {
     "RECORD_CREATED": "record.created",
     "PII_REVEALED": "pii.revealed",
+    "LEAD_CREATED": "lead.created",
+    "LEAD_DUPLICATE_DETECTED": "lead.duplicate_detected",
+    "LEAD_ASSIGNED": "lead.assigned",
+    "LEAD_QUALIFIED": "lead.qualified",
+    "LEAD_REJECTED": "lead.rejected",
 }
 
 # Independent transcription of the TDD §5.3 / §5.4 consumer→binding registry,
 # consumer name -> expected routing-key tuple. Hand-built here on purpose.
 EXPECTED_CONSUMER_BINDINGS: dict[str, tuple[str, ...]] = {
-    "enrichment.stub": ("record.created",),
+    "enrichment.stub": ("record.created", "lead.created"),
     "sync.logger": ("#",),
 }
 

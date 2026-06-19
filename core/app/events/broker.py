@@ -73,8 +73,8 @@ class QueueTopology:
 # The full queue topology as pure data, **derived** from the catalog's
 # `CONSUMER_BINDINGS` so names and keys can never drift from the registry: each
 # consumer binding becomes one main queue (`binding.name`) on its routing keys plus
-# a matching `<name>.dlq`. Yields exactly `enrichment.stub` ← `record.created` (DLQ
-# `enrichment.stub.dlq`) and `sync.logger` ← `#` (DLQ `sync.logger.dlq`).
+# a matching `<name>.dlq`. Yields exactly `enrichment.stub` ← `record.created`,
+# `lead.created` (DLQ `enrichment.stub.dlq`) and `sync.logger` ← `#` (DLQ `sync.logger.dlq`).
 TOPOLOGY: tuple[QueueTopology, ...] = tuple(
     QueueTopology(
         queue=binding.name,

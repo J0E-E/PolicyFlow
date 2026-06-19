@@ -11,12 +11,12 @@ vocabulary and unit-testable building blocks land first, then the first end-to-e
 then the remaining endpoints, then the frontend, then the acceptance gate. Backend is isolated
 from its UI throughout; UI-bearing epics carry ` [UI]`.
 
-## Epic 1 — Lead event vocabulary
+## Epic 1 — Lead event vocabulary — **COMPLETED**
 - **Goal:** Add the five `lead.*` event types to the catalog and bind `enrichment.stub` to also receive `lead.created`, so the rest of the phase can publish lead events through the existing outbox.
 - **Rough scope:** Event catalog (the `EventType` members + consumer binding) and its catalog test. No publishing yet.
 - **Open questions / decisions for stakeholders:** none expected — the five events and their payload fields are spelled out in the TDD interfaces table.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** The five `lead.*` `EventType` members now exist and `enrichment.stub` binds `lead.created`, so Epics 7/10/12-14 publish lead events through the existing outbox without re-touching the catalog.
 
 ## Epic 2 — Lead status / source vocabulary + state machine
 - **Goal:** A pure, unit-tested state machine that defines the lead's statuses and sources and rejects any transition outside the allowed moves (`New → Working → Qualified | Rejected`, plus the duplicate-reject from `New`).

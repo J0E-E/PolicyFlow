@@ -24,7 +24,7 @@ EXPECTED_DEAD_LETTER_EXCHANGE = "policyflow.events.dlx"
 # Independent transcription of the TDD §5.4 queue topology, queue name ->
 # (expected routing keys, expected dead-letter queue). Hand-built here on purpose.
 EXPECTED_TOPOLOGY: dict[str, tuple[tuple[str, ...], str]] = {
-    "enrichment.stub": (("record.created",), "enrichment.stub.dlq"),
+    "enrichment.stub": (("record.created", "lead.created"), "enrichment.stub.dlq"),
     "sync.logger": (("#",), "sync.logger.dlq"),
 }
 

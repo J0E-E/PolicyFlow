@@ -29,15 +29,21 @@ __all__ = [
 
 
 class EventType(StrEnum):
-    """One member per kind of event published on the bus (the P1.5 subset).
+    """One member per kind of event published on the bus.
 
     Each string value is the dotted name that doubles as the message's routing
-    key on the topic exchange. Transcribed verbatim from the TDD §5.3
-    *Interfaces*.
+    key on the topic exchange. The `record.*` / `pii.*` pair is transcribed
+    verbatim from the TDD §5.3 *Interfaces*; the `lead.*` members are the P1.7
+    lead-lifecycle events from the TDD §5.4 *Interfaces*.
     """
 
     RECORD_CREATED = "record.created"
     PII_REVEALED = "pii.revealed"
+    LEAD_CREATED = "lead.created"
+    LEAD_DUPLICATE_DETECTED = "lead.duplicate_detected"
+    LEAD_ASSIGNED = "lead.assigned"
+    LEAD_QUALIFIED = "lead.qualified"
+    LEAD_REJECTED = "lead.rejected"
 
 
 # The contract's schema version, stamped onto every envelope (TDD §5.3,
@@ -66,9 +72,12 @@ class ConsumerBinding:
 
 
 # The consumer→binding registry as pure data (TDD §5.3 / §5.4): the enrichment
-# stub binds only `record.created`; the sync logger binds `#`, so every
-# published event has at least one consumer.
+# stub binds `record.created` and `lead.created`; the sync logger binds `#`, so
+# every published event has at least one consumer.
 CONSUMER_BINDINGS: tuple[ConsumerBinding, ...] = (
-    ConsumerBinding(name=ENRICHMENT_STUB, routing_keys=(EventType.RECORD_CREATED.value,)),
+    ConsumerBinding(
+        name=ENRICHMENT_STUB,
+        routing_keys=(EventType.RECORD_CREATED.value, EventType.LEAD_CREATED.value),
+    ),
     ConsumerBinding(name=SYNC_LOGGER, routing_keys=("#",)),
 )
