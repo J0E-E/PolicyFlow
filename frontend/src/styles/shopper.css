@@ -1,0 +1,113 @@
+/*
+ * Public Shopper surface — the tenant-branded consumer storefront chrome and its
+ * buyer-home placeholder (Guide §2.3, §3, §4, §5). Tokens only; no raw hex or
+ * spacing outside the foundational token set (Guide §2, §4, §8). Theming is
+ * declarative: `--primary` resolves from the `[data-tenant]` scope useTenantTheming
+ * sets on the document root, so this file names tokens, never tenant values. It
+ * reuses the masthead visual language (paper panel, hairline, letterhead rule) but
+ * persona-free — the Shopper carries no [data-persona] state.
+ */
+
+/* ---- Shopper frame: masthead above a centered scrolling main, sticky footer
+   (mirrors the app-shell / page-layout column). ---- */
+
+.shopper-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.shopper-main {
+  flex: 1;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  /* Chrome breathes around page content (Guide §4). */
+  padding: var(--space-7) var(--space-5);
+}
+
+/* ---- Consumer masthead: the tenant seal + name wordmark over the 3px brand rule.
+   Reuses the agent masthead's paper-panel register (Guide §2.1, §4 — structure
+   from rules, not shadows) without any of its agent/demo chrome. ---- */
+
+.shopper-masthead {
+  background-color: var(--surface-1);
+  border-bottom: 1px solid var(--outline);
+}
+
+.shopper-masthead-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-5);
+}
+
+/* The tenant name IS the consumer wordmark — Besley display register, the brand
+   leads here (Guide §3 "entity names" -> Besley). Larger than the agent masthead's
+   tenant name because there is no PolicyFlow wordmark competing with it. */
+.shopper-masthead-wordmark {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 28px;
+  letter-spacing: 0.2px;
+  color: var(--on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Buyer home: the per-tenant consumer hero + quote-coming-soon card. ---- */
+
+.shopper-home-content {
+  max-width: 640px;
+}
+
+.shopper-home-hero-title {
+  /* Display register — Besley 32/40/600, the consumer hero (Guide §3). */
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 32px;
+  line-height: 40px;
+  color: var(--on-surface);
+}
+
+.shopper-home-hero-body {
+  margin: 0 0 var(--space-6);
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
+
+.shopper-home-quote-body {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
+
+/* ---- Neutral states (loading / error / not-found) on the bare PageLayout. ---- */
+
+.shopper-state {
+  max-width: 640px;
+}
+
+.shopper-state-title {
+  /* Headline register — Besley 24/32/600 (Guide §3). */
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 32px;
+  color: var(--on-surface);
+}
+
+.shopper-state-message {
+  margin: 0 0 var(--space-4);
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
