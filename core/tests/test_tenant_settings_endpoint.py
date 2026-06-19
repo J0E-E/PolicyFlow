@@ -35,18 +35,18 @@ from .test_endpoints_db import (  # noqa: F401 — `seeded` fixture is used by n
 def expected_settings_for_slug(slug: str) -> dict[str, str]:
     """Return the seeded settings a tenant should read back, by tenant slug.
 
-    Mirrors how `seed.py` builds each tenant's row: the brand colour and welcome
-    message come from `DEMO_TENANT_SETTINGS`, and the logo URL is the same
-    per-tenant placeholder built from the registry schema name.
+    Mirrors how `seed.py` builds each tenant's row: the brand colour comes from
+    the registry (`TenantConfig.brand_primary_color`, the single source of
+    truth), the welcome message from `DEMO_TENANT_SETTINGS`, and the logo URL is
+    the same per-tenant placeholder built from the registry schema name.
     """
-    demo_settings = DEMO_TENANT_SETTINGS[slug]
-    schema_name = tenant_by_slug(slug).schema_name
+    config = tenant_by_slug(slug)
     return {
-        "brand_primary_color": demo_settings["brand_primary_color"],
+        "brand_primary_color": config.brand_primary_color,
         "brand_logo_url": (
-            f"https://assets.policyflow.example/{schema_name}/logo.svg"
+            f"https://assets.policyflow.example/{config.schema_name}/logo.svg"
         ),
-        "welcome_message": demo_settings["welcome_message"],
+        "welcome_message": DEMO_TENANT_SETTINGS[slug]["welcome_message"],
     }
 
 

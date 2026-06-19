@@ -207,6 +207,40 @@ async def test_seeded_users_link_to_their_tenant_and_carry_usable_password():
             assert user.tenant_id in slug_to_id.values()
 
 
+async def test_seed_brand_color_comes_from_the_registry():
+    """Each seeded settings row carries its tenant's REGISTRY brand colour.
+
+    The seed must derive `brand_primary_color` from the registry (the single
+    source of truth) — never from its own constants. This maps each recorded
+    settings INSERT's `tenant_id` back to its slug via the inserted `Tenant`
+    objects, then asserts the per-tenant colour equals the registry value and is
+    not either of the old hardcoded placeholders.
+    """
+    session = FakeAsyncSession(_empty_database_results())
+
+    await seed(session)
+
+    inserted_tenants = [row for row in session.added if isinstance(row, Tenant)]
+    slug_by_tenant_id = {tenant.id: tenant.slug for tenant in inserted_tenants}
+
+    inserted_colors = {
+        insert["brand_primary_color"] for insert in session.settings_inserts
+    }
+    # The old placeholders are gone entirely — the colour now lives only in the
+    # registry.
+    assert "#F5A623" not in inserted_colors
+    assert "#2E86C1" not in inserted_colors
+
+    # Both tenants got a settings row, each carrying its registry colour.
+    assert len(session.settings_inserts) == len(inserted_tenants) == 2
+    for insert in session.settings_inserts:
+        slug = slug_by_tenant_id[insert["tenant_id"]]
+        assert (
+            insert["brand_primary_color"]
+            == tenant_by_slug(slug).brand_primary_color
+        )
+
+
 async def test_fresh_seed_tenants_carry_registry_schema_and_role():
     """Inserted tenants carry the registry's schema_name / db_role for their slug."""
     session = FakeAsyncSession(_empty_database_results())

@@ -37,15 +37,47 @@ from app.models.user import Role
 
 AGENT_USER_ID = uuid.uuid4()
 AGENT_TENANT_ID = uuid.uuid4()
+# The Agent's tenant slug + name, as `build_identity_response` reads them back
+# from the `Tenant` row onto the identity body. These are fixed test fixtures —
+# the stubbed session below returns them for the tenant primary-key lookup and
+# `expected_agent_body` asserts them, so the two stay in lockstep with no DB.
+AGENT_TENANT_SLUG = "agent-tenant"
+AGENT_TENANT_NAME = "Agent Tenant"
+
+
+class StubTenant:
+    """A minimal stand-in for a `Tenant` row.
+
+    Carries only the `slug` + `name` that `build_identity_response` copies onto
+    the identity body.
+    """
+
+    def __init__(self, slug: str, name: str):
+        self.slug = slug
+        self.name = name
+
+
+class StubSession:
+    """A dummy DB session whose only real method is `get`.
+
+    `build_identity_response` looks the signed-in identity's tenant up by primary
+    key (`await db.get(Tenant, tenant_id)`); this returns the fixed Agent tenant
+    for that lookup. Every other DB-touching function the router calls (sessions,
+    audit) is monkeypatched out, so nothing else on the session is used.
+    """
+
+    async def get(self, model, primary_key):
+        return StubTenant(AGENT_TENANT_SLUG, AGENT_TENANT_NAME)
 
 
 async def stub_get_db():
-    """Stand in for the request-scoped DB dependency, yielding a dummy session.
+    """Stand in for the request-scoped DB dependency, yielding a `StubSession`.
 
-    The session functions are monkeypatched out, so this object is never used; it
-    only needs to satisfy the dependency wiring.
+    The session only needs to answer the tenant primary-key `get` that
+    `build_identity_response` makes; the session/audit functions are monkeypatched
+    out, so nothing else touches a database.
     """
-    yield object()
+    yield StubSession()
 
 
 def make_agent_identity() -> Identity:
@@ -66,6 +98,8 @@ def expected_agent_body() -> dict:
             "username": "ada",
             "role": Role.AGENT.value,
             "tenant_id": str(AGENT_TENANT_ID),
+            "tenant_slug": AGENT_TENANT_SLUG,
+            "tenant_name": AGENT_TENANT_NAME,
         },
         "capabilities": sorted(
             capability.value for capability in CAPABILITIES[Role.AGENT]

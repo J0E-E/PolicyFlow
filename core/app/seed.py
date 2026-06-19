@@ -66,21 +66,22 @@ TENANT_USER_TEMPLATES: tuple[tuple[str, Role], ...] = (
 PLATFORM_ADMIN_EMAIL = "platform.admin@policyflow.example"
 
 # The demo presentation settings for each tenant, keyed by slug. These are
-# presentation content (brand colour, logo, welcome message), so they live here
-# in the seed rather than in the tenant registry, which is reserved for isolation
-# config the migration imports. The seed writes one row per tenant into that
-# tenant's own `tenant_settings` table. The logo URL is a distinct per-tenant
-# placeholder built from the registry schema name.
+# presentation content (logo, welcome message), so they live here in the seed
+# rather than in the tenant registry, which is reserved for isolation config the
+# migration imports. The brand colour is the one exception: it lives only in the
+# registry (`TenantConfig.brand_primary_color`, the single source of truth) and
+# the seed derives each tenant's `tenant_settings` colour from there, so
+# `/api/tenants` and the seeded rows can never diverge. The seed writes one row
+# per tenant into that tenant's own `tenant_settings` table. The logo URL is a
+# distinct per-tenant placeholder built from the registry schema name.
 DEMO_TENANT_SETTINGS: dict[str, dict[str, str]] = {
     "sunshine-senior-benefits": {
-        "brand_primary_color": "#F5A623",
         "welcome_message": (
             "Welcome to Sunshine Senior Benefits — Medicare coverage made "
             "simple."
         ),
     },
     "florida-family-planning": {
-        "brand_primary_color": "#2E86C1",
         "welcome_message": (
             "Welcome to Florida Family Planning — coverage for every stage of "
             "your family's life."
@@ -393,6 +394,8 @@ async def seed(db: AsyncSession) -> None:
         brand_logo_url = (
             f"https://assets.policyflow.example/{config.schema_name}/logo.svg"
         )
+        # The brand colour comes from the registry (the single source of truth),
+        # so the seeded row can never diverge from `/api/tenants`.
         result = await db.execute(
             text(
                 f"INSERT INTO {config.schema_name}.tenant_settings "
@@ -404,7 +407,7 @@ async def seed(db: AsyncSession) -> None:
             ),
             {
                 "tenant_id": tenant_id,
-                "brand_primary_color": demo_settings["brand_primary_color"],
+                "brand_primary_color": config.brand_primary_color,
                 "brand_logo_url": brand_logo_url,
                 "welcome_message": demo_settings["welcome_message"],
             },
