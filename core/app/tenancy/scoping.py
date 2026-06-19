@@ -30,6 +30,7 @@ from `app.db`, the `Tenant` model from `app.models`, and the registry whitelist
 redeclared here.
 """
 
+import contextlib
 from typing import AsyncIterator
 
 from fastapi import Depends, HTTPException
@@ -42,7 +43,7 @@ from ..auth.dependencies import require_authenticated, require_platform_admin
 from ..auth.provider import Identity
 from ..db import get_db
 from ..models.tenant import Tenant
-from .registry import PLATFORM_ROLE, TENANTS
+from .registry import PLATFORM_ROLE, TENANTS, tenant_by_slug
 
 
 def is_known_tenant_pair(schema_name: str, db_role: str) -> bool:
@@ -122,6 +123,79 @@ async def get_tenant_db(
         # Identifiers cannot be bound as parameters, so they are interpolated —
         # but only after `is_known_tenant_pair` confirmed both come verbatim from
         # the registry whitelist, never from user input.
+        await db.execute(text(f"SET LOCAL ROLE {db_role}"))
+        await db.execute(text(f"SET LOCAL search_path TO {schema_name}"))
+
+        yield db
+
+
+@contextlib.asynccontextmanager
+async def get_public_tenant_db(
+    tenant_slug: str, db: AsyncSession
+) -> AsyncIterator[AsyncSession]:
+    """Yield a session scoped to the tenant named by ``tenant_slug`` — the public seam.
+
+    The single sanctioned exception to "tenant context comes only from the session
+    identity." An unauthenticated public-intake request has no session, so the tenant
+    it targets arrives as a **slug in the request body**, not from a logged-in caller.
+    This seam is the near-twin of `get_tenant_db` with three deliberate differences:
+
+    1. **Tenant from a request slug, not session identity.** The slug is the only
+       piece of user-controlled input on this path.
+    2. **Schema/role from the registry, not a `platform.tenants` read.** `get_tenant_db`
+       reads the schema/role from the database by the session's `tenant_id`; this seam
+       resolves them straight from the trusted in-process registry via `tenant_by_slug`.
+       A registry hit hands back `schema_name` + `db_role` verbatim, so the lookup
+       itself **is** the whitelist guard — an attacker can only ever name a slug that
+       already maps to a real tenant, and the resulting identifiers never came from the
+       request.
+    3. **Unknown slug → 404, not 500.** A stranger guessing a slug that maps to no
+       tenant is a **client** error (`tenant_by_slug` raises `KeyError`, caught and
+       re-raised as ``404``). Contrast `get_tenant_db`, which raises ``500`` for an
+       unknown ``(schema, role)`` pair: there the tenant came from an authenticated
+       session, so a missing tenant is a **server** invariant violation, not the
+       caller's fault.
+
+    It is an ``@asynccontextmanager`` consumed by an explicit ``async with``, **not**
+    a FastAPI ``Depends``-injected generator like its two sibling seams. Those siblings
+    are raw ``Depends`` generators because their inputs (`Identity`, the request
+    `AsyncSession`) are themselves dependencies FastAPI can inject; this seam's slug
+    comes from the **request body**, which the route reads and hands in by hand, so the
+    route opens it with ``async with`` rather than wiring it through the injector.
+
+    The body mirrors `get_tenant_db`'s leak-proof lifecycle: it defensively closes any
+    open read transaction, opens one request transaction with ``async with db.begin()``,
+    issues ``SET LOCAL ROLE`` + ``SET LOCAL search_path``, and yields the now-scoped
+    session. The ``schema_name`` and ``db_role`` identifiers are interpolated into the
+    ``SET LOCAL`` statements (SQL identifiers cannot be bound as parameters) — safe
+    because they come **verbatim from the registry**, never from the request. Commit on
+    normal exit discards both ``SET LOCAL``s (rollback on any exception), so neither
+    leaks onto a reused pooled connection.
+
+    This seam **owns the request transaction** — exactly as `app.leads.intake.create_lead`
+    documents: that shared create core never commits, so the public route (Epic 10) runs
+    it inside this ``async with`` and the commit here is what makes the lead and its
+    outbox events land (or roll back) together. Because the lookup is the whitelist guard
+    and an unknown slug already raises 404, Epic 10 need not pre-validate the slug.
+    """
+    try:
+        tenant = tenant_by_slug(tenant_slug)
+    except KeyError:
+        raise HTTPException(status_code=404)
+
+    schema_name = tenant.schema_name
+    db_role = tenant.db_role
+
+    # The session may carry an open read transaction (e.g. a prior read on it); close
+    # it out first so `db.begin()` below starts clean, the same reason `get_tenant_db`
+    # rolls back before opening its scoped transaction.
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        # `schema_name` / `db_role` come verbatim from the registry (`tenant_by_slug`),
+        # never from the request, so this identifier interpolation is safe — the slug
+        # is the only user input and it merely keyed a trusted lookup.
         await db.execute(text(f"SET LOCAL ROLE {db_role}"))
         await db.execute(text(f"SET LOCAL search_path TO {schema_name}"))
 

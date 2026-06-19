@@ -75,7 +75,9 @@ async def _exhaust(generator) -> None:
 
 
 @pytest.mark.asyncio
-async def test_scoped_session_reads_only_its_own_tenant_settings(database_engine):
+async def test_scoped_session_reads_only_its_own_tenant_settings(
+    container_keys_session_factory,
+):
     """A `get_tenant_db` session reads its own tenant's settings row.
 
     Drives the dependency for each tenant in turn and asserts the row it sees
@@ -83,7 +85,7 @@ async def test_scoped_session_reads_only_its_own_tenant_settings(database_engine
     ``SET LOCAL search_path`` resolves the schema-less `TenantSettings` to the
     caller's own schema, not another tenant's.
     """
-    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    session_factory = container_keys_session_factory
 
     for tenant in TENANTS:
         tenant_id = await _seed_and_get_tenant_id(session_factory, tenant.slug)
@@ -139,14 +141,16 @@ async def test_tenantless_caller_is_rejected_with_400(database_engine):
 
 
 @pytest.mark.asyncio
-async def test_role_and_search_path_reset_after_request(database_engine):
+async def test_role_and_search_path_reset_after_request(
+    container_keys_session_factory,
+):
     """After the scoped transaction commits, role and search_path are default.
 
     Proves the ``SET LOCAL``s are discarded at commit: a follow-up query on the
     same session shows `current_user` and `search_path` back to their defaults —
     the no-leak guarantee across reused pooled connections.
     """
-    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    session_factory = container_keys_session_factory
     tenant = TENANTS[0]
     tenant_id = await _seed_and_get_tenant_id(session_factory, tenant.slug)
     identity = _identity_for_tenant(tenant_id)

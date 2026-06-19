@@ -60,12 +60,12 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
 - **Depends on:** Epics 1, 2, 3, 4, 5, 6.
 - **Implementation notes:** Shared create core `app/leads/intake.py::create_lead(db, tenant_id, *, …, lead_source, status, owner_*, actor_*)` — Epic 10's public route calls it verbatim with `status=New`/`lead_source=public_form`/unowned/system-actor; it owns encrypt+fingerprint+age_band+insert+matcher+`lead.created`(+`lead.duplicate_detected`), does NOT commit (request transaction owns it), and writes NO audit record (the audit `EventType` enum has no lead member — don't add one). Product-line key-membership lives in the route, not the core, so Epic 10 must re-do its own key check; `app/tenancy/registry.py::tenant_by_schema` resolves the active schema's keys (agent route reads `SELECT current_schema()`). `CreateLeadRequest` carries only structural + ≥1-product-line validation — Epic 10 adds the public-route length caps/abuse controls.
 
-## Epic 8 — Public tenant scoping seam
+## Epic 8 — Public tenant scoping seam — **COMPLETED** (25m)
 - **Goal:** A `get_public_tenant_db(tenant_slug)` seam that resolves an unauthenticated request to a tenant by slug (whitelist-validated; unknown → 404) and runs under that tenant's existing role + schema, the sole sanctioned exception to "tenant context only from session."
 - **Rough scope:** A new scoping dependency in the tenancy layer plus tests covering the whitelist guard and the role/schema set. No endpoint consumes it yet.
-- **Open questions / decisions for stakeholders:** none expected — the seam and its carve-out are decided in the TDD (D3).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** Epic 10 consumes `get_public_tenant_db` (in `app/tenancy/scoping.py`) via `async with` around the shared `create_lead` core — it is an `@asynccontextmanager`, not a `Depends` (the slug comes from the request body, not an injectable). The seam owns the request transaction (the core doesn't commit), resolves schema/role from the registry via `tenant_by_slug` (no `platform.tenants` read — the lookup IS the whitelist), and returns **404** on an unknown slug, so Epic 10 needn't pre-validate the slug.
 
 ## Epic 9 — In-app per-IP rate limiter
 - **Goal:** A unit-testable fixed-window per-IP rate limiter in the core app, keyed on the first `X-Forwarded-For` hop and configurable via settings, ready for the public intake route to use.
