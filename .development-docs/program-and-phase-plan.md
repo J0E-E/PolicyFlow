@@ -362,7 +362,7 @@ ordered so the system stays runnable/deployable after each.
   `./p1.5/epic-plan-P1.5-event-bus-envelope-stub-consumers.md`. **Next move:** **P1.6
   (Demo shell)**.
 
-#### P1.6 — Demo shell `[UI]`
+#### P1.6 — Demo shell `[UI]` — **COMPLETE**
 
 - **Goal:** Real landing + tenant-selection, branding, **two-surface demo model
   (Shopper site ↔ Agent workspace) with a persistent surface toggle**, demo access
@@ -378,6 +378,37 @@ ordered so the system stays runnable/deployable after each.
   server-enforced per assumed role. The surface toggle changes *surface*, not identity
   — the Shopper site is unauthenticated and carries no RBAC role.
 - **Size:** L (split likely at epic-plan time; keep UI-bearing epics isolated).
+- **Status:** **COMPLETE** (2026-06-19). All 24 epics shipped behind a green gate
+  (full backend suite **369 passed** on the real Postgres + RabbitMQ substrate; full
+  frontend suite **179 passed** across 27 files; `tsc -b && vite build` clean). The
+  phase split into three layers as planned — access-model skeleton (1–5), design system
+  + app shell (6–13), demo surfaces (14–21) — plus the **2026-06-17** two-surface
+  refinement appended as Epics 23–24 (Shopper shell + persistent surface toggle) with a
+  brand-color seed cleanup (Epic 22) between. Acceptance met end-to-end: a visitor lands
+  and reads orientation (Epic 14), picks a tenant (`GET /api/tenants` Epic 1 → branded
+  select-tenant Epic 15), is dropped into the Agent workspace signed in as a seeded Agent
+  (passwordless `POST /api/demo/assume-persona` Epic 2 → guarded `/app` Epic 5 → branded
+  masthead Epic 10 → demo home Epic 16), can switch roles via the masthead switcher with
+  Platform-Admin inversion (Epic 11), and can toggle to the unauthenticated Shopper site
+  and back carrying the session + tenant (Epics 23–24); the guided-stepper docket
+  (Epic 17), scenario-reference panel (Epic 18), explainer popovers (Epic 19), "Simulated"
+  badge (Epic 20), and public "How it's built" page (Epic 21) all render. The
+  **tenant-isolation / PII invariant held throughout**: the role switcher changes
+  *identity* not enforcement (RBAC stays server-enforced per assumed real seeded user);
+  the surface toggle changes *surface* not identity (the Shopper site is unauthenticated
+  and carries no RBAC role); the seed password never reaches the browser and no PII
+  crosses the new surfaces. The design system was built first-principles to the UI/UX
+  Guide (tokens + IBM Plex Mono, Button/Card/StampTag/Popover primitives, the
+  branded persona-aware app shell). One dependency reversal recorded mid-phase
+  (`iconoir-react` adopted in Epic 11, superseding the TDD's "no icon system"). Epic plan:
+  `./p1.6/epic-plan-P1.6-demo-shell.md`. **Faked / deferred per plan:** the real public
+  intake form drops onto the Shopper buyer-home seam in **P1.7**; durable, session-aware
+  stepper progress in **P1.8** (in-memory for now); audit-viewer / dashboards in **M4**;
+  the live demo-session countdown in **P1.8** (static "DEMO SESSION" stamp for now). **Doc
+  debt (non-blocking):** the P1.6 TDD §5.2/§5.4 + Decision 7 + Work Breakdown still
+  describe only the single `/app` workspace — they predate the two-surface refinement and
+  need a sync pass (the program plan + requirements already reflect it). **Next move:**
+  **P1.7 (Lead intake, queue, qualification & duplicate detection `[UI]`)**.
 
 #### P1.7 — Lead intake, queue, qualification & duplicate detection `[UI]`
 
@@ -462,7 +493,7 @@ M0  P0.1 ✓ Walking Skeleton & Pipeline        (exit test PASSED 2026-06-12 —
         → P0.1a ✓ Test harness & commit gate   (tests + pre-commit gate live from here on)
         |
 M1  P1.1 ✓ Auth/RBAC → P1.2 ✓ Tenant schemas → P1.3 ✓ Encryption → P1.4 ✓ Audit
-        → P1.5 ✓ Event bus+stubs → P1.6 Demo shell [UI]
+        → P1.5 ✓ Event bus+stubs → P1.6 ✓ Demo shell [UI]
         → P1.7 Intake/queue/qualify/dup [UI] → P1.8 Seed+sessions → P1.9 Timeline [UI]
         |
 M2  P2.1 Conversion → P2.2 Pipeline [UI] → P2.3 Quote→App→Policy
@@ -710,3 +741,24 @@ demo-session-scoped; this layers a UX surface + narrative over the existing seam
 into the requirements (Demo Access Model, Lead Intake, Lead Assignment, Walkthrough 1–6,
 glossary) and the P1.6/P1.7 scope above. **Next move (unchanged):** **P1.6 (Demo shell
 `[UI]`)**, now including the surface toggle + Shopper surface shell.
+
+**2026-06-19** — **P1.6 COMPLETE — the demo shell + both surfaces are in; Milestone 1 is
+now feature-ready.** All 24 epics shipped behind a green gate (full backend suite **369
+passed** on the real Postgres + RabbitMQ substrate; full frontend suite **179 passed**
+across 27 files; production build clean). This was the program's first interactive
+frontend phase, built in three layers — access-model skeleton, design system + app shell,
+demo surfaces — with the **2026-06-17** two-surface refinement landed as the trailing
+Shopper-shell + surface-toggle epics. Acceptance met end-to-end: a cold visitor lands,
+reads orientation, picks a tenant, is dropped into the Agent workspace signed in as a
+seeded Agent (passwordless `assume-persona`), switches roles (with Platform-Admin
+inversion), and toggles to the unauthenticated Shopper site and back carrying the demo
+session + tenant; the guided stepper, scenario-reference panel, explainer popovers,
+"Simulated" badge, and public "How it's built" page all render. The isolation invariant
+held — the role switcher changes *identity*, the surface toggle changes *surface*, and
+the Shopper site carries no RBAC role. Deferred per plan: the real public intake form
+(P1.7 Shopper seam), durable stepper progress + live session countdown (P1.8), audit
+viewer / dashboards (M4). One doc-debt item recorded (non-blocking): the P1.6 TDD's
+routing/surfaces sections predate the two-surface refinement and need a sync pass.
+**Next move:** **P1.7 (Lead intake, queue, qualification & duplicate detection `[UI]`)** —
+the first feature phase, with two intake routes behind the identical `lead.created` event,
+wiring the real public form onto the P1.6 Shopper buyer-home seam.
