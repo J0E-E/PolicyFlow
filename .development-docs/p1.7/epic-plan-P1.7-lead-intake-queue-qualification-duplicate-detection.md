@@ -46,12 +46,12 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
 - **Depends on:** Epic 3.
 - **Implementation notes:** Single masked read shape lives in `app/leads/masking.py` (`build_masked_lead`, async) — Epics 7 & 11 return it verbatim and UI Epics 20/21 consume it; do **not** add a second list/detail shape. Owner + duplicate-linkage fields are in the shape (queue needs owner/status, detail needs the match); blind indexes / `correlation_id` / `demo_session_id` never reach the wire.
 
-## Epic 6 — Duplicate matcher
+## Epic 6 — Duplicate matcher — **COMPLETED**
 - **Goal:** A deterministic matcher that, given a new lead's normalized email/phone, finds a prior matching lead in the tenant via the blind index — without decrypting anything.
 - **Rough scope:** A `leads/matching.py`-style module (normalize → blind index → equality query over tenant leads) with a unit test and a DB-backed test proving the match works without decryption.
-- **Open questions / decisions for stakeholders:** match semantics — does an email match *or* a phone match flag a duplicate, or must both match? (And which match wins when both exist.)
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 3.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** `app/leads/matching.py` exposes `find_duplicate_lead(db, tenant_id, email, phone, exclude_lead_id=None) -> Lead | None` (pure; one OR equality query over the `*_blind_index` columns, no decryption); Epics 7 & 10 call it after INSERT (passing the new lead's id as `exclude_lead_id`) and set `duplicate_of_lead_id = match.id` on a hit. Match semantics are a cross-epic contract: **email OR phone** blind-index match, **oldest wins** (`created_at`, then `id`), **`Rejected` targets excluded** (`New`/`Working`/`Qualified` eligible). Epic 16's duplicate-bait must be a non-`Rejected` lead whose normalized email/phone equals the demo's duplicate-scenario intake, or it won't flag.
 
 ## Epic 7 — Agent intake (walking skeleton)
 - **Goal:** The first end-to-end intake slice: an authenticated `POST /api/leads` that creates a lead (born `Working`, owned by the entering agent, `agent_entered`), encrypts the PII fields, runs the matcher, publishes `lead.created` (plus `lead.duplicate_detected` on a match), and returns the masked lead.
