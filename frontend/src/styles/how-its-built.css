@@ -1,0 +1,223 @@
+/*
+ * "How it's built" public page (Epic 21, Guide §6.13 editorial + §6 ink console).
+ * The page composes existing primitives — PageLayout, the Epic 8 Card (via
+ * PatternCard), the Epic 20 SimulatedBadge — so this file only owns the page's own
+ * registers: the editorial hero/motivation, the responsive pattern grid, the
+ * pattern-card body + GitHub link, and the inverted ink-console panel + its
+ * real-vs-simulated legend. Plus the scoped on-ink Simulated-badge variant (the
+ * dashed warning stamp in --state-warning-on-ink, the variant Epic 20 deferred to
+ * the first ink-console usage). Tokens only; no raw hex (Guide §2). AA contrast on
+ * BOTH grounds — the cards on paper, the console legend on ink (Guide §7).
+ */
+
+/* ---- Page column + editorial hero ---- */
+
+.how-its-built-content {
+  /* A touch wider than the landing's 640px — the pattern grid needs room to pair
+     cards, while the editorial copy stays a comfortable measure. */
+  max-width: 900px;
+}
+
+/* The back-home link sits above the hero, a quiet text link (pages.css owns
+   .text-link); a little breathing room before the display title. */
+.how-its-built-back-link {
+  margin-bottom: var(--space-5);
+}
+
+.how-its-built-hero-title {
+  /* Display register — Besley 32/40/600 (Guide §3), matching the landing hero. */
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 32px;
+  line-height: 40px;
+  letter-spacing: 0.2px;
+  color: var(--on-surface);
+}
+
+.how-its-built-motivation {
+  margin: 0 0 var(--space-7);
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface);
+}
+
+/* ---- Section headings (the pattern index) ---- */
+
+.how-its-built-section-heading {
+  /* Headline register — Besley, a step below the display hero (Guide §3). */
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 28px;
+  color: var(--on-surface);
+}
+
+.how-its-built-patterns {
+  margin-bottom: var(--space-7);
+}
+
+/* ---- The responsive pattern grid ---- */
+
+.how-its-built-patterns-grid {
+  display: grid;
+  gap: var(--space-4);
+  /* Auto-fit responsive: cards pair up where there's room, single-column when
+     narrow — no breakpoints needed. */
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+/* ---- Pattern-card body + GitHub link (the Card chrome is card.css) ---- */
+
+.pattern-card-body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--on-surface);
+}
+
+/* Mechanism terms in the mono register (Guide §6.2/§6.3) — a faint paper-grey chip,
+   matching the explainer / simulated-notice mono treatment. */
+.pattern-card-mono {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-3);
+  color: var(--on-surface);
+}
+
+/* The card footer's one deep link — ink-toned, underlined, with a trailing arrow
+   (Guide §5 "Text" button register). The global :focus-visible ring (base.css)
+   covers focus; the arrow rides along on hover. */
+.pattern-card-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--on-surface);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pattern-card-link:hover {
+  color: var(--primary, var(--on-surface));
+}
+
+.pattern-card-link-arrow {
+  flex: none;
+}
+
+/* ---- The inverted ink-console panel (Guide §2.1, §6) ---- */
+
+.architecture-console {
+  /* Iron-gall ink ground, structure from a hairline rule not a shadow (Guide §2.1).
+     This is the demo's first ink console — the on-ink Simulated variant below is
+     scoped to it. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--outline-ink);
+  border-radius: var(--radius-md);
+  background-color: var(--surface-ink);
+  color: var(--on-ink);
+}
+
+/* The stamp overline titling the console — the StampTag overline recolored for ink
+   (its paper default --on-surface-variant is invisible here). */
+.architecture-console .stamp-tag-overline {
+  color: var(--on-ink-variant);
+}
+
+.architecture-console-note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--on-ink-variant);
+}
+
+/* ---- The real-vs-simulated legend (a description list on ink) ---- */
+
+.architecture-console-legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--outline-ink);
+}
+
+.architecture-console-legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+}
+
+.architecture-console-legend-term {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+/* The solid ink-token swatch standing in for "real engine" — a small filled square
+   (solid border = real, the Guide §6.3 law) in the on-ink success bright, paired
+   with its always-present text label so it never reads by color alone (Guide §7). */
+.architecture-console-swatch {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--state-success-on-ink);
+  background-color: var(--state-success-on-ink);
+}
+
+.architecture-console-legend-label {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--on-ink);
+}
+
+.architecture-console-legend-description {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-ink-variant);
+}
+
+/* ---- Scoped on-ink Simulated-badge variant (Epic 20 deferred this to here, the
+   first ink-console usage). An ADDITIVE override layered on the unchanged Epic 20
+   SimulatedBadge: the dashed warning stamp recolored to the on-ink warning bright
+   (--state-warning-on-ink, AA on ink — Guide §2.2/§7), scoped under the console so
+   no paper-ground Simulated badge is affected. The dashed "border law" and the
+   stamp geometry come from stamp-tag.css / simulated-badge.css unchanged. ---- */
+
+.architecture-console .simulated-badge-trigger .stamp-tag-warning {
+  background-color: transparent;
+  color: var(--state-warning-on-ink);
+  border-color: var(--state-warning-on-ink);
+}
+
+/* The interactive hover wash, recolored for ink (the paper variant's --surface-3 is
+   invisible here) — a quiet raised-ink fill; the hue itself never changes. */
+.architecture-console .simulated-badge-trigger:hover .stamp-tag-warning {
+  background-color: var(--surface-ink-raised);
+}
+
+/* The console always sits on --surface-ink, so the global ink-on-paper
+   :focus-visible ring (base.css, --focus-ring-color) is invisible here. Swap in
+   the paper-toned --focus-ring-on-ink for any focusable control on the console
+   (the Simulated-badge trigger), mirroring the masthead's inverted-ink focus
+   scope (app-shell.css). Guide §7: a visible focus ring on every interactive
+   element, on BOTH grounds. */
+.architecture-console :focus-visible {
+  outline-color: var(--focus-ring-on-ink);
+}

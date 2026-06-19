@@ -30,8 +30,9 @@ interface MastheadProperties {
 //   left  — the tenant seal mark, the "PolicyFlow" wordmark, the tenant name,
 //           and the role switcher (who you are, what tenant you're in).
 //   right — a static "DEMO SESSION" stamp (the live countdown is P1.8), an inert
-//           notification-bell placeholder (Guide §6.12, wired later), and an
-//           inert "How it's built" link (Epic 21 wires it to the real page).
+//           notification-bell placeholder (Guide §6.12, wired later), and a live
+//           "How it's built" link opening the public /how-its-built page in a new
+//           tab (Epic 21 — preserving the open workspace).
 //
 // The inert affordances are real disabled controls with accessible names and
 // aria-disabled, so they are announced as present-but-unavailable rather than
@@ -160,15 +161,19 @@ export default function Masthead({
               aria-hidden="true"
             />
           </button>
-          <span
+          {/* Live link to the public "How it's built" page (Epic 21). Opens in a
+              new tab (target="_blank" + rel) so the demo workspace stays put; same
+              id as Epic 10's inert placeholder. */}
+          <a
             id="app-masthead-how-its-built"
             className="masthead-how-its-built"
-            role="link"
-            aria-disabled="true"
-            title="How it's built — coming later"
+            href="/how-its-built"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="How it's built — opens in a new tab"
           >
             How it's built
-          </span>
+          </a>
         </div>
       </div>
       <div

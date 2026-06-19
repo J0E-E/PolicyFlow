@@ -17,6 +17,7 @@ import "./styles/left-nav.css";
 import "./styles/footer.css";
 import "./styles/guided-docket.css";
 import "./styles/scenario-reference.css";
+import "./styles/how-its-built.css";
 import "./styles/pages.css";
 
 const rootElement = document.getElementById("root");

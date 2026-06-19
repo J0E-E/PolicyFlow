@@ -122,17 +122,20 @@ describe("Masthead", () => {
     expect(bell).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("renders the inert How it's built affordance, not a live link", () => {
+  it("renders the How it's built link live, opening the page in a new tab (Epic 21)", () => {
     render(
       <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
     );
 
     const howItsBuilt = document.getElementById("app-masthead-how-its-built");
     expect(howItsBuilt).toHaveTextContent("How it's built");
-    expect(howItsBuilt).toHaveAttribute("aria-disabled", "true");
-    // Inert: it is not a real anchor with an href (Epic 21 wires it live).
-    expect(howItsBuilt?.tagName).not.toBe("A");
-    expect(howItsBuilt).not.toHaveAttribute("href");
+    // Now a real anchor to the public page, opened safely in a new tab so the demo
+    // workspace stays put (Guide §7); no longer inert/aria-disabled.
+    expect(howItsBuilt?.tagName).toBe("A");
+    expect(howItsBuilt).toHaveAttribute("href", "/how-its-built");
+    expect(howItsBuilt).toHaveAttribute("target", "_blank");
+    expect(howItsBuilt).toHaveAttribute("rel", "noopener noreferrer");
+    expect(howItsBuilt).not.toHaveAttribute("aria-disabled");
   });
 
   it("omits the tenant brand cluster for the tenantless Platform Admin", () => {

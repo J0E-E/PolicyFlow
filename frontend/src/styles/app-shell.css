@@ -233,8 +233,9 @@
   transform: translateX(-50%);
 }
 
-/* Inert "How it's built" link (Epic 21 wires it to the real page). Reads as a
-   link but is disabled — dimmed, not underlined, not focusable. */
+/* Live "How it's built" link to the public page (Epic 21 wired it live, opens in a
+   new tab). Ink-toned, underlined — muted at rest, full ink on hover; the global
+   :focus-visible ring (base.css) covers focus. */
 .masthead-how-its-built {
   font-size: 13px;
   font-weight: 500;
@@ -242,8 +243,10 @@
   text-decoration: underline;
   text-underline-offset: 2px;
   white-space: nowrap;
-  opacity: var(--disabled-content-opacity);
-  cursor: not-allowed;
+}
+
+.masthead-how-its-built:hover {
+  color: var(--on-surface);
 }
 
 /* ---- The 3px letterhead rule in the tenant brand (Guide §2.3, §6.8) ---- */
@@ -294,6 +297,11 @@
 
 [data-persona="platform_admin"] .masthead-how-its-built {
   color: var(--on-ink-variant);
+}
+
+/* On the inverted masthead the paper-toned hover is invisible — lift to full on-ink. */
+[data-persona="platform_admin"] .masthead-how-its-built:hover {
+  color: var(--on-ink);
 }
 
 /* The active persona chip is Platform Admin on the inverted ground: keep its
