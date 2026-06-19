@@ -16,6 +16,21 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class ProductLine:
+    """One insurance product line a tenant offers, as static registry data.
+
+    ``key`` is the snake_case stored vocabulary (matching the ``LeadSource``
+    naming): both intake forms validate a submitted lead's product line against
+    its tenant's keys, and the seed and reads carry the key verbatim. ``label``
+    is the human-facing display string the intake forms and lead views render.
+    Renaming a key is a cross-tenant contract change, so the keys are fixed here.
+    """
+
+    key: str
+    label: str
+
+
+@dataclass(frozen=True)
 class TenantConfig:
     """The full, immutable configuration of one tenant.
 
@@ -32,6 +47,7 @@ class TenantConfig:
     db_role: str
     email_domain: str
     brand_primary_color: str
+    product_lines: tuple[ProductLine, ...]
 
 
 # The two demo tenants. Slugs and display names match the seed's current demo
@@ -47,6 +63,12 @@ SUNSHINE = TenantConfig(
     db_role="tenant_sunshine",
     email_domain="sunshine.example",
     brand_primary_color="#9C4A1E",
+    product_lines=(
+        ProductLine(key="medicare_advantage", label="Medicare Advantage"),
+        ProductLine(key="medicare_supplement", label="Medicare Supplement"),
+        ProductLine(key="final_expense", label="Final Expense"),
+        ProductLine(key="dental_vision_hearing", label="Dental, Vision & Hearing"),
+    ),
 )
 
 FLORIDA = TenantConfig(
@@ -56,6 +78,12 @@ FLORIDA = TenantConfig(
     db_role="tenant_florida",
     email_domain="florida.example",
     brand_primary_color="#0F6A72",
+    product_lines=(
+        ProductLine(key="term_life", label="Term Life Insurance"),
+        ProductLine(key="whole_life", label="Whole Life Insurance"),
+        ProductLine(key="health", label="Health Insurance"),
+        ProductLine(key="critical_illness", label="Critical Illness"),
+    ),
 )
 
 # Every tenant, in seed and migration order.

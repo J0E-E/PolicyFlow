@@ -32,6 +32,31 @@ BARE_SQL_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$")
 # brand primary must take.
 HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
+# A snake_case product-line key: lowercase letters, digits, and underscores only,
+# starting with a letter. The keys are the stored vocabulary (matching the
+# `LeadSource` style), so each must satisfy this.
+SNAKE_CASE_KEY = re.compile(r"^[a-z][a-z0-9_]*$")
+
+# The exact product-line catalog each tenant must carry, keyed by slug, as
+# `(key, label)` pairs in registry order. Hand-built here on purpose — separate
+# from the registry — so a drift in either side is caught. Renaming a key is a
+# cross-epic contract change (Epics 7/10 validate against these keys, 18/19 render
+# the labels, 16's duplicate-bait seed uses them).
+EXPECTED_PRODUCT_LINES: dict[str, tuple[tuple[str, str], ...]] = {
+    "sunshine-senior-benefits": (
+        ("medicare_advantage", "Medicare Advantage"),
+        ("medicare_supplement", "Medicare Supplement"),
+        ("final_expense", "Final Expense"),
+        ("dental_vision_hearing", "Dental, Vision & Hearing"),
+    ),
+    "florida-family-planning": (
+        ("term_life", "Term Life Insurance"),
+        ("whole_life", "Whole Life Insurance"),
+        ("health", "Health Insurance"),
+        ("critical_illness", "Critical Illness"),
+    ),
+}
+
 
 def test_exactly_two_tenants_with_expected_slugs():
     """The registry defines exactly the two named demo tenants."""
@@ -95,6 +120,31 @@ def test_tenant_by_slug_raises_key_error_on_unknown_slug():
     """An unknown slug fails loudly with a KeyError, never a silent None."""
     with pytest.raises(KeyError):
         tenant_by_slug("does-not-exist")
+
+
+def test_every_tenant_offers_at_least_one_product_line():
+    """Each tenant carries a non-empty product-line catalog."""
+    for tenant in TENANTS:
+        assert len(tenant.product_lines) >= 1
+
+
+def test_product_line_keys_are_snake_case_and_unique_within_a_tenant():
+    """Within each tenant the keys are snake_case and distinct."""
+    for tenant in TENANTS:
+        keys = [product_line.key for product_line in tenant.product_lines]
+        for key in keys:
+            assert SNAKE_CASE_KEY.match(key)
+        assert len(keys) == len(set(keys))
+
+
+def test_product_line_catalogs_match_the_expected_constant():
+    """Each tenant's catalog matches its hand-written `(key, label)` expectation."""
+    for tenant in TENANTS:
+        actual = tuple(
+            (product_line.key, product_line.label)
+            for product_line in tenant.product_lines
+        )
+        assert actual == EXPECTED_PRODUCT_LINES[tenant.slug]
 
 
 def test_tenant_config_is_frozen():

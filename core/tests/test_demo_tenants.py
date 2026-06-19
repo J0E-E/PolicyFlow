@@ -9,7 +9,7 @@ production would.
 The cases prove the endpoint's contract: it returns 200 and the exact body —
 both registry tenants, in registry order (Sunshine, then Florida), each with its
 slug, display name, and Guide brand color; it succeeds with **no `pf_session`
-cookie** (it is public); the response carries exactly the three whitelisted keys
+cookie** (it is public); the response carries exactly the four whitelisted keys
 per tenant and nothing else (no ids, emails, schema names, db roles, or any
 person-level field — no PII); and it works with **no DB wiring at all**, proving
 it never reads the database.
@@ -22,25 +22,47 @@ from app.demo.router import router as demo_router
 
 # The exact body `GET /api/tenants` must return: both registry tenants in
 # registry order (Sunshine, then Florida), each carrying its slug, display name,
-# and the Guide §2.3 brand primary.
+# the Guide §2.3 brand primary, and its product-line catalog (each `{key, label}`
+# in registry order).
 EXPECTED_TENANTS_BODY = {
     "tenants": [
         {
             "slug": "sunshine-senior-benefits",
             "display_name": "Sunshine Senior Benefits",
             "brand_primary_color": "#9C4A1E",
+            "product_lines": [
+                {"key": "medicare_advantage", "label": "Medicare Advantage"},
+                {"key": "medicare_supplement", "label": "Medicare Supplement"},
+                {"key": "final_expense", "label": "Final Expense"},
+                {"key": "dental_vision_hearing", "label": "Dental, Vision & Hearing"},
+            ],
         },
         {
             "slug": "florida-family-planning",
             "display_name": "Florida Family Planning",
             "brand_primary_color": "#0F6A72",
+            "product_lines": [
+                {"key": "term_life", "label": "Term Life Insurance"},
+                {"key": "whole_life", "label": "Whole Life Insurance"},
+                {"key": "health", "label": "Health Insurance"},
+                {"key": "critical_illness", "label": "Critical Illness"},
+            ],
         },
     ]
 }
 
 # The only keys any tenant entry may carry — the public whitelist. Anything else
 # (ids, emails, schema names, db roles, person-level fields) would be a leak.
-ALLOWED_TENANT_KEYS = {"slug", "display_name", "brand_primary_color"}
+ALLOWED_TENANT_KEYS = {
+    "slug",
+    "display_name",
+    "brand_primary_color",
+    "product_lines",
+}
+
+# The only keys any product-line entry may carry — the public whitelist for the
+# nested `{key, label}` shape.
+ALLOWED_PRODUCT_LINE_KEYS = {"key", "label"}
 
 
 def build_app() -> FastAPI:
@@ -83,7 +105,7 @@ def test_list_tenants_is_public_with_no_session_cookie():
 
 
 def test_list_tenants_exposes_only_the_whitelisted_keys_and_no_pii():
-    """Each tenant entry carries exactly the three public keys and nothing else.
+    """Each tenant entry carries exactly the four public keys and nothing else.
 
     No ids, emails, schema names, db roles, or any person-level field — the
     response is PII-free.
@@ -97,6 +119,26 @@ def test_list_tenants_exposes_only_the_whitelisted_keys_and_no_pii():
     assert tenants  # non-empty, so the key check below is meaningful
     for tenant in tenants:
         assert set(tenant.keys()) == ALLOWED_TENANT_KEYS
+
+
+def test_list_tenants_product_lines_carry_only_key_and_label():
+    """Each tenant's `product_lines` is a non-empty list of `{key, label}` entries.
+
+    The nested shape is whitelisted just like the tenant entry: a product-line
+    entry carries exactly `key` and `label` and nothing else.
+    """
+    client = TestClient(build_app())
+
+    response = client.get("/api/tenants")
+
+    assert response.status_code == 200
+    tenants = response.json()["tenants"]
+    assert tenants  # non-empty, so the checks below are meaningful
+    for tenant in tenants:
+        product_lines = tenant["product_lines"]
+        assert product_lines  # every tenant offers at least one line
+        for product_line in product_lines:
+            assert set(product_line.keys()) == ALLOWED_PRODUCT_LINE_KEYS
 
 
 def test_list_tenants_works_with_no_database_wiring():

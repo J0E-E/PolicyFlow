@@ -3,10 +3,11 @@
 Two endpoints under `/api`, at different sub-paths:
 
 - `GET /tenants` returns the canonical tenant list (`slug`, `display_name`,
-  `brand_primary_color`) in registry order (Sunshine, then Florida). It is
-  **public** and **DB-free**: it has no auth dependency and no `get_db`
-  dependency, since it runs before anyone signs in and reads only the in-memory
-  registry.
+  `brand_primary_color`, `product_lines`) in registry order (Sunshine, then
+  Florida). It is **public** and **DB-free**: it has no auth dependency and no
+  `get_db` dependency, since it runs before anyone signs in and reads only the
+  in-memory registry. The `product_lines` array lets both intake forms offer the
+  per-tenant choices and the server validate submitted keys.
 - `POST /demo/assume-persona` is the passwordless front door **and** every later
   role switch. It takes `{tenant_slug, role}`, resolves a **seeded** demo user
   deterministically, re-mints the server session as that real user, sets the
@@ -66,11 +67,11 @@ async def list_tenants() -> dict:
     """Return the public tenant list straight from the registry.
 
     Loops the registry's `TENANTS` tuple — so the order is Sunshine, then
-    Florida — and returns exactly the three public fields per tenant under the
+    Florida — and returns exactly the four public fields per tenant under the
     `{"tenants": [...]}` envelope. Nothing here reads the database or exposes any
     person-level data: the registry is pure in-memory configuration, so the
-    response carries only each tenant's `slug`, `display_name`, and
-    `brand_primary_color`.
+    response carries only each tenant's `slug`, `display_name`,
+    `brand_primary_color`, and `product_lines` (each `{key, label}`).
     """
     return {
         "tenants": [
@@ -78,6 +79,10 @@ async def list_tenants() -> dict:
                 "slug": tenant.slug,
                 "display_name": tenant.display_name,
                 "brand_primary_color": tenant.brand_primary_color,
+                "product_lines": [
+                    {"key": product_line.key, "label": product_line.label}
+                    for product_line in tenant.product_lines
+                ],
             }
             for tenant in TENANTS
         ]

@@ -32,12 +32,12 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
 - **Depends on:** none.
 - **Implementation notes:** Shared schema-less `Lead` model (`app/models/lead.py`) + per-tenant `leads` table (`0009_leads`) are the substrate Epics 5–7 and 11–15 build on — don't re-create the model/table. Migration owns both blind-index indexes (`ix_leads_email_blind_index` / `ix_leads_phone_blind_index`); the model declares none (schema-less → excluded from `alembic check`). `demo_session_id` exists but stays null — P1.8 owns its lifecycle.
 
-## Epic 4 — Product-line registry config
+## Epic 4 — Product-line registry config — **COMPLETED**
 - **Goal:** Expose a per-tenant list of product lines (key + label) as static registry config, surfaced unauthenticated through the existing `GET /api/tenants`, so both intake forms can offer the choices and the server can validate submitted keys.
 - **Rough scope:** Add a keyed `product_lines` field to the tenant registry config, fold it into the tenants response, and cover it with catalog/registry tests.
-- **Open questions / decisions for stakeholders:** the actual product-line keys and labels each demo tenant offers (the registry content) — not enumerated in the TDD.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** The snake_case product-line keys are the stored vocabulary and a cross-epic contract — Epics 7/10 validate submitted lead keys against the per-tenant set, Epics 18/19 render the labels, Epic 16's duplicate-bait seed must use these keys; renaming one is a contract change. Sunshine: `medicare_advantage`, `medicare_supplement`, `final_expense`, `dental_vision_hearing`. Florida: `term_life`, `whole_life`, `health`, `critical_illness`. Surfaced as a `product_lines: [{key, label}, ...]` array on each `GET /api/tenants` entry — the wire source Epics 17/18 read for the choices.
 
 ## Epic 5 — Masked lead read builder
 - **Goal:** A reusable builder that turns a `Lead` row into the masked shape returned on every read, reusing the PII service and the existing maskers.
