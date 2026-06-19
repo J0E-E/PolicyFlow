@@ -39,12 +39,12 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
 - **Depends on:** none.
 - **Implementation notes:** The snake_case product-line keys are the stored vocabulary and a cross-epic contract — Epics 7/10 validate submitted lead keys against the per-tenant set, Epics 18/19 render the labels, Epic 16's duplicate-bait seed must use these keys; renaming one is a contract change. Sunshine: `medicare_advantage`, `medicare_supplement`, `final_expense`, `dental_vision_hearing`. Florida: `term_life`, `whole_life`, `health`, `critical_illness`. Surfaced as a `product_lines: [{key, label}, ...]` array on each `GET /api/tenants` entry — the wire source Epics 17/18 read for the choices.
 
-## Epic 5 — Masked lead read builder
+## Epic 5 — Masked lead read builder — **COMPLETED**
 - **Goal:** A reusable builder that turns a `Lead` row into the masked shape returned on every read, reusing the PII service and the existing maskers.
 - **Rough scope:** A `leads/masking.py`-style helper plus unit tests; no endpoint wiring yet.
-- **Open questions / decisions for stakeholders:** which fields appear (and how masked) in the list shape vs the detail shape, if they differ.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time. One shared masked shape serves both list and detail (no divergent shapes, mirroring `pii_demo`'s single builder); street address reuses `mask_generic` (`***` present / `null` absent, no decrypt, like dob); blind indexes, `correlation_id`, and the always-null `demo_session_id` are excluded from the read.
 - **Depends on:** Epic 3.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** Single masked read shape lives in `app/leads/masking.py` (`build_masked_lead`, async) — Epics 7 & 11 return it verbatim and UI Epics 20/21 consume it; do **not** add a second list/detail shape. Owner + duplicate-linkage fields are in the shape (queue needs owner/status, detail needs the match); blind indexes / `correlation_id` / `demo_session_id` never reach the wire.
 
 ## Epic 6 — Duplicate matcher
 - **Goal:** A deterministic matcher that, given a new lead's normalized email/phone, finds a prior matching lead in the tenant via the blind index — without decrypting anything.
