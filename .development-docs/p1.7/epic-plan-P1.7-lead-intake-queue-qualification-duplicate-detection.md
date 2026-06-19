@@ -25,12 +25,12 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
 - **Depends on:** none.
 - **Implementation notes:** Epics 12–14 catch the framework-free `InvalidLeadTransition` at the endpoint edge and map it to HTTP 409/422 — the core (`app/leads/state.py`) never imports the web framework. `Converted` and the `Qualified → Converted` transition are deferred to P2.1; do not add them in P1.7.
 
-## Epic 3 — Lead table migration + ORM model
+## Epic 3 — Lead table migration + ORM model — **COMPLETED**
 - **Goal:** Create the per-tenant `leads` table (columns, blind-index indexes, grants) via a new migration and a schema-less `Lead` ORM modeled on `pii_demo`, leaving the system migratable and round-trippable.
 - **Rough scope:** One new Alembic migration mirroring the `pii_demo` per-schema pattern, the ORM model, and a migration up/down round-trip test. No business logic on top.
 - **Open questions / decisions for stakeholders:** none expected — the column set is fixed in the TDD data-model table.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** Shared schema-less `Lead` model (`app/models/lead.py`) + per-tenant `leads` table (`0009_leads`) are the substrate Epics 5–7 and 11–15 build on — don't re-create the model/table. Migration owns both blind-index indexes (`ix_leads_email_blind_index` / `ix_leads_phone_blind_index`); the model declares none (schema-less → excluded from `alembic check`). `demo_session_id` exists but stays null — P1.8 owns its lifecycle.
 
 ## Epic 4 — Product-line registry config
 - **Goal:** Expose a per-tenant list of product lines (key + label) as static registry config, surfaced unauthenticated through the existing `GET /api/tenants`, so both intake forms can offer the choices and the server can validate submitted keys.
