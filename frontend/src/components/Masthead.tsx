@@ -5,6 +5,7 @@ import RoleSwitcher from "./RoleSwitcher.tsx";
 import StampTag from "./StampTag.tsx";
 import ViewOnlyTag from "./ViewOnlyTag.tsx";
 import ExplainerPopover from "./ExplainerPopover.tsx";
+import SurfaceToggle from "./SurfaceToggle.tsx";
 import {
   roleSwitcherExplainer,
   sessionModelExplainer,
@@ -116,6 +117,20 @@ export default function Masthead({
         </div>
 
         <div id="app-masthead-right" className="masthead-cluster masthead-right">
+          {/* Surface toggle (Epic 24) — leading the utility cluster. "View the
+              public site →" navigates to this tenant's Shopper storefront, the
+              pf_session cookie riding along so toggling back lands signed-in. Only
+              for a tenant-scoped identity: the tenantless Platform Admin has no
+              single storefront to preview, so it sees no toggle (consistent with
+              the masthead already dropping the seal + tenant name for it). */}
+          {hasTenantScope && (
+            <SurfaceToggle
+              id="app-masthead-surface-toggle"
+              to={`/site/${tenantSlug}`}
+              label="View the public site"
+              direction="forward"
+            />
+          )}
           {/* Persistent help affordance (Epic 18): a LIVE icon button opening the
               scenario-reference modal — the catalog of every demo scenario, its
               trigger, and its outcome. Reuses the icon-button geometry but overrides

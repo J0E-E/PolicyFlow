@@ -1,14 +1,16 @@
 // Tests for the public Shopper site shell and its robust states. jsdom has no
 // backend, so `../api` is mocked: `listTenants` is driven per test. The Shopper
-// zone is UNAUTHENTICATED — it renders purely from the route slug, with no
-// SessionProvider and no `/me` call — so these tests mount only the route under a
-// MemoryRouter and assert that no guard / redirect is involved.
+// zone is UNAUTHENTICATED — it renders purely from the route slug, with no guard
+// and no redirect. The page DOES read `useSession().status` (Epic 24) only to gate
+// the surface toggle, so the route is wrapped in a SessionProvider whose `/me`
+// (getCurrentIdentity) is driven per test: rejecting → signed-out (no toggle),
+// resolving → signed-in (toggle to /app). These still assert no guard / redirect.
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Tenant } from "../api";
+import type { Identity, Tenant } from "../api";
 import App from "../App.tsx";
 import ShopperSitePage from "./ShopperSitePage.tsx";
 import { SessionProvider } from "../session";
@@ -38,14 +40,32 @@ const sampleTenants: Tenant[] = [
   },
 ];
 
-/** Render the Shopper route at `/site/:slug` for the given slug. */
+// A signed-in agent identity — used to drive the SessionProvider's /me to
+// `signed-in` so the Epic 24 surface toggle gates on.
+const signedInIdentity: Identity = {
+  user: {
+    id: "11111111-1111-1111-1111-111111111111",
+    username: "agent.one@sunshine.example",
+    role: "agent",
+    tenant_id: "22222222-2222-2222-2222-222222222222",
+    tenant_slug: "sunshine-senior-benefits",
+    tenant_name: "Sunshine Senior Benefits",
+  },
+  capabilities: [],
+};
+
+/** Render the Shopper route at `/site/:slug` for the given slug. Wrapped in a
+ *  SessionProvider — the page reads session status to gate the Epic 24 toggle (the
+ *  surface stays public; status only decides whether the toggle shows). */
 function renderShopperSite(slug: string) {
   return render(
-    <MemoryRouter initialEntries={[`/site/${slug}`]}>
-      <Routes>
-        <Route path="/site/:slug" element={<ShopperSitePage />} />
-      </Routes>
-    </MemoryRouter>,
+    <SessionProvider>
+      <MemoryRouter initialEntries={[`/site/${slug}`]}>
+        <Routes>
+          <Route path="/site/:slug" element={<ShopperSitePage />} />
+        </Routes>
+      </MemoryRouter>
+    </SessionProvider>,
   );
 }
 
@@ -132,6 +152,43 @@ describe("Shopper site branded shell", () => {
     expect(
       document.getElementById("app-session-skeleton"),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("Shopper site surface toggle (Epic 24)", () => {
+  it("shows the toggle back to /app for a signed-in visitor", async () => {
+    listTenantsMock.mockResolvedValue(sampleTenants);
+    // /me resolves → the SessionProvider lands signed-in.
+    getCurrentIdentityMock.mockResolvedValue(signedInIdentity);
+
+    renderShopperSite("sunshine-senior-benefits");
+
+    // The branded shell renders, and the toggle to the workspace is present.
+    const toggleLink = await screen.findByRole("link", {
+      name: "Back to the agent workspace",
+    });
+    expect(toggleLink).toHaveAttribute("href", "/app");
+    // The surface stayed public — no redirect away from the storefront.
+    expect(
+      document.getElementById("shopper-masthead-wordmark"),
+    ).toHaveTextContent("Sunshine Senior Benefits");
+  });
+
+  it("shows no toggle for a signed-out shopper (the public default)", async () => {
+    listTenantsMock.mockResolvedValue(sampleTenants);
+    // /me rejects (the beforeEach default) → signed-out.
+
+    renderShopperSite("sunshine-senior-benefits");
+
+    await waitFor(() => {
+      expect(
+        document.getElementById("shopper-masthead-wordmark"),
+      ).toHaveTextContent("Sunshine Senior Benefits");
+    });
+    // A signed-out shopper browses freely with no workspace toggle.
+    expect(
+      document.getElementById("shopper-masthead-surface-toggle"),
+    ).toBeNull();
   });
 });
 

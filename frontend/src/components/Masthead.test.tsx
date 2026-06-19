@@ -1,12 +1,15 @@
 // Tests for the app-shell masthead. The masthead is pure given an identity and an
-// `assumePersona` (a stub here — AppShell threads the real one in), so it renders
-// directly (no provider/router). These assert the two clusters, the tenant brand
+// `assumePersona` (a stub here — AppShell threads the real one in); it renders with
+// only a MemoryRouter (the Epic 24 surface toggle is a <Link>). These assert the
+// two clusters, the surface toggle (Epic 24), the tenant brand
 // cluster, the role switcher (the active persona label now lives in a switcher
 // chip), the Platform-Admin "OUTSIDE TENANT SCOPE" label, and — per the Guide §7
 // accessibility checklist — that the inert affordances are disabled and properly
 // labelled, not silently absent.
 
+import type { ReactElement } from "react";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Identity } from "../api";
@@ -18,6 +21,13 @@ const assumePersonaStub = vi.fn().mockResolvedValue(undefined);
 // The masthead now also takes a scenario-reference opener (Epic 18); a no-op stub
 // here — the open behavior is covered separately and via the panel's own test.
 const openScenarioReferenceStub = vi.fn();
+
+// The masthead now mounts the Epic 24 surface toggle, a react-router <Link>, so the
+// renders are wrapped in a MemoryRouter; the masthead is otherwise still pure given
+// an identity + the two stubs.
+function withRouter(element: ReactElement): ReactElement {
+  return <MemoryRouter>{element}</MemoryRouter>;
+}
 
 const agentIdentity: Identity = {
   user: {
@@ -70,7 +80,7 @@ const readOnlyIdentity: Identity = {
 describe("Masthead", () => {
   it("renders the left brand cluster: seal, wordmark, tenant name, switcher", () => {
     render(
-      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
+      withRouter(<Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />),
     );
 
     expect(document.getElementById("app-masthead-wordmark")).toHaveTextContent(
@@ -99,7 +109,7 @@ describe("Masthead", () => {
 
   it("renders the static DEMO SESSION stamp placeholder", () => {
     render(
-      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
+      withRouter(<Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />),
     );
 
     expect(
@@ -113,7 +123,7 @@ describe("Masthead", () => {
 
   it("renders the notification bell as a disabled, labelled placeholder", () => {
     render(
-      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
+      withRouter(<Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />),
     );
 
     const bell = screen.getByRole("button", { name: /notifications/i });
@@ -124,7 +134,7 @@ describe("Masthead", () => {
 
   it("renders the How it's built link live, opening the page in a new tab (Epic 21)", () => {
     render(
-      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
+      withRouter(<Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />),
     );
 
     const howItsBuilt = document.getElementById("app-masthead-how-its-built");
@@ -140,11 +150,11 @@ describe("Masthead", () => {
 
   it("omits the tenant brand cluster for the tenantless Platform Admin", () => {
     render(
-      <Masthead
-        identity={platformAdminIdentity}
-        assumePersona={assumePersonaStub}
-        onOpenScenarioReference={openScenarioReferenceStub}
-      />,
+      withRouter(<Masthead
+          identity={platformAdminIdentity}
+          assumePersona={assumePersonaStub}
+          onOpenScenarioReference={openScenarioReferenceStub}
+        />),
     );
 
     // No tenant scope: no seal, no tenant name (the masthead inverts to ink).
@@ -162,17 +172,17 @@ describe("Masthead", () => {
 
   it("renders the OUTSIDE TENANT SCOPE label only for Platform Admin", () => {
     const { rerender } = render(
-      <Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
+      withRouter(<Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />),
     );
     // A tenant-scoped persona has no platform-ops label.
     expect(document.getElementById("app-masthead-platform-ops")).toBeNull();
 
     rerender(
-      <Masthead
-        identity={platformAdminIdentity}
-        assumePersona={assumePersonaStub}
-        onOpenScenarioReference={openScenarioReferenceStub}
-      />,
+      withRouter(<Masthead
+          identity={platformAdminIdentity}
+          assumePersona={assumePersonaStub}
+          onOpenScenarioReference={openScenarioReferenceStub}
+        />),
     );
     expect(
       document.getElementById("app-masthead-platform-ops-label"),
@@ -181,11 +191,11 @@ describe("Masthead", () => {
 
   it("seeds the RBAC and session-model explainer affordances (Epic 19)", () => {
     render(
-      <Masthead
-        identity={agentIdentity}
-        assumePersona={assumePersonaStub}
-        onOpenScenarioReference={openScenarioReferenceStub}
-      />,
+      withRouter(<Masthead
+          identity={agentIdentity}
+          assumePersona={assumePersonaStub}
+          onOpenScenarioReference={openScenarioReferenceStub}
+        />),
     );
 
     const rbacTrigger = document.getElementById("explainer-role-switcher-trigger");
@@ -202,11 +212,46 @@ describe("Masthead", () => {
     expect(sessionTrigger).toHaveAttribute("aria-label", "Explain: the demo session");
   });
 
+  it("mounts the surface toggle to this tenant's public site, leading the right cluster (Epic 24)", () => {
+    render(
+      withRouter(<Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />),
+    );
+
+    // "View the public site →" navigates to the tenant's Shopper storefront.
+    const toggleLink = screen.getByRole("link", { name: "View the public site" });
+    expect(toggleLink).toBe(
+      document.getElementById("app-masthead-surface-toggle-link"),
+    );
+    expect(toggleLink).toHaveAttribute(
+      "href",
+      "/site/sunshine-senior-benefits",
+    );
+    // It leads the utility cluster — the first child of #app-masthead-right.
+    expect(
+      document.getElementById("app-masthead-right")?.firstElementChild,
+    ).toBe(document.getElementById("app-masthead-surface-toggle"));
+  });
+
+  it("hides the surface toggle for the tenantless Platform Admin (Epic 24)", () => {
+    render(
+      withRouter(<Masthead
+          identity={platformAdminIdentity}
+          assumePersona={assumePersonaStub}
+          onOpenScenarioReference={openScenarioReferenceStub}
+        />),
+    );
+
+    // No tenant scope means no single storefront to preview — no toggle.
+    expect(
+      document.getElementById("app-masthead-surface-toggle"),
+    ).toBeNull();
+  });
+
   it("shows the VIEW ONLY tag only for the Read-Only persona", () => {
     // Read-Only: the posture tag renders with its natural-case label (CSS
     // uppercases it) and an aria-hidden glyph.
     const { rerender } = render(
-      <Masthead identity={readOnlyIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
+      withRouter(<Masthead identity={readOnlyIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />),
     );
     expect(
       document.getElementById("app-masthead-view-only-label"),
@@ -222,7 +267,7 @@ describe("Masthead", () => {
       platformAdminIdentity,
     ]) {
       rerender(
-        <Masthead identity={identity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />,
+        withRouter(<Masthead identity={identity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />),
       );
       expect(document.getElementById("app-masthead-view-only")).toBeNull();
     }

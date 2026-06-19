@@ -115,3 +115,29 @@ export const sessionModelExplainer: ExplainerContent = {
     " record overlays + one-click reset arrive in later phases (P1.7–P1.8).",
   ],
 };
+
+/** Surface toggle → the two-surface model (Epic 24). The "demo convenience" copy:
+ *  one app split into a public storefront and a staff-only workspace; the one-click
+ *  toggle changes surface, NOT identity / NOT a role. */
+export const surfaceToggleExplainer: ExplainerContent = {
+  pattern: [
+    "Two surfaces for two audiences: a public storefront where customers shop, and an internal workspace where staff work. In production these are genuinely separate front ends.",
+  ],
+  how: [
+    "Here both surfaces are one app split into two route zones — the public ",
+    { mono: "/site" },
+    " storefront and the staff-only ",
+    { mono: "/app" },
+    " workspace, guarded by a real server session. Toggling just navigates between them, and the ",
+    { mono: "pf_session" },
+    " cookie rides along so you stay signed in.",
+  ],
+  realVsSimulated: [
+    "The split between a public customer surface and a private staff surface is real architecture. The one-click toggle that carries you across — and the fact that flipping surface never changes who you are — is a demo convenience: a real deployment would be two separate front ends with their own sign-ins. It changes surface, not identity, and never a role.",
+  ],
+  crmParallel: [
+    "Salesforce ",
+    { mono: "Experience Cloud" },
+    " — a public community/storefront site — beside the internal CRM org: one platform and dataset, two distinct front ends for customers versus staff.",
+  ],
+};

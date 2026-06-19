@@ -7,6 +7,10 @@ interface ShopperLayoutProperties {
   tenantSlug: string;
   /** The tenant's display name — the consumer wordmark. */
   tenantName: string;
+  /** Whether the visitor has a signed-in workspace session — gates the surface
+   *  toggle in the consumer masthead (Epic 24). Threaded down so the layout and
+   *  masthead stay pure/props-only (the page reads `useSession`, not them). */
+  isSignedIn: boolean;
   /** The routed buyer-home content rendered into the `<main>`. */
   children: ReactNode;
 }
@@ -23,11 +27,16 @@ interface ShopperLayoutProperties {
 export default function ShopperLayout({
   tenantSlug,
   tenantName,
+  isSignedIn,
   children,
 }: ShopperLayoutProperties) {
   return (
     <div id="shopper-shell" className="shopper-shell">
-      <ShopperMasthead tenantSlug={tenantSlug} tenantName={tenantName} />
+      <ShopperMasthead
+        tenantSlug={tenantSlug}
+        tenantName={tenantName}
+        isSignedIn={isSignedIn}
+      />
       <main id="shopper-main" className="shopper-main">
         {children}
       </main>

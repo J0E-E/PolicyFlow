@@ -1,0 +1,35 @@
+/*
+ * Surface toggle (Epic 24) — the persistent demo control that flips between the
+ * Shopper storefront and the Agent workspace, mounted in both mastheads. Tokens
+ * only; no raw hex. The control itself is an Epic 7 "tonal" ButtonLink; this file
+ * only lays out the toggle + its Epic 19 explainer icon as one inline cluster, and
+ * styles the decorative arrow glyph.
+ */
+
+/* The flex wrapper sits the tonal ButtonLink and its explainer info-icon together
+   on one line (the explainer reads as an annotation of the control beside it). */
+.surface-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The decorative direction arrow (aria-hidden) — a small gap from the words so the
+   glyph reads as chrome on the control, not part of the label. */
+.surface-toggle-arrow {
+  display: inline-block;
+}
+
+.surface-toggle-arrow:first-child {
+  margin-right: var(--space-2);
+}
+
+.surface-toggle-arrow:last-child {
+  margin-left: var(--space-2);
+}
+
+/* On the consumer masthead the toggle is pushed to the right end of the bar. The
+   agent masthead places it inside its own right (utility) cluster, so no push there. */
+.shopper-masthead-toggle {
+  margin-left: auto;
+}

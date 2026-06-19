@@ -5,6 +5,7 @@ import PageLayout from "../components/PageLayout.tsx";
 import ShopperLayout from "../components/ShopperLayout.tsx";
 import ShopperHomePage from "./ShopperHomePage.tsx";
 import { useTenantTheming } from "../components/useTenantTheming.ts";
+import { useSession } from "../session";
 import { listTenants } from "../api";
 import type { Tenant } from "../api";
 
@@ -34,6 +35,13 @@ export default function ShopperSitePage() {
   // Theme from the slug alone (persona-free); cleaned up on unmount so toggling
   // back to /app re-themes cleanly (Epic 24).
   useTenantTheming(tenantSlug);
+
+  // The storefront stays public — there is no redirect (Epic 23's unauthenticated
+  // design is preserved). The session status only gates the surface toggle: a
+  // signed-in visitor came from the workspace and sees "← Back to the agent
+  // workspace"; a signed-out shopper browses freely with no toggle (Epic 24).
+  const { status } = useSession();
+  const isSignedIn = status === "signed-in";
 
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
 
@@ -147,6 +155,7 @@ export default function ShopperSitePage() {
     <ShopperLayout
       tenantSlug={tenant.slug}
       tenantName={tenant.display_name}
+      isSignedIn={isSignedIn}
     >
       <ShopperHomePage tenantSlug={tenant.slug} />
     </ShopperLayout>
