@@ -20,11 +20,12 @@ import type { Capability, Role } from "../api";
 // The rail components (LeftNav / NavItem) read this list, filter by each item's gate
 // against the session, and render the survivors.
 //
-// One section is LIVE — "Demo home" links to /app and carries the active marker;
-// every other section is shown INERT with a "coming in a later step" hint, so the
-// rail previews the app's real structure honestly without any dead links. As later
-// phases land a real surface, that item's `comingLater` flips to false and it gains
-// a real route (P1.7 does this for Leads when intake lands — see the epic plan).
+// Some sections are LIVE — "Demo home" links to /app and "Leads" links to
+// /app/leads (P1.7, Epic 20), each carrying the active marker when current; every
+// other section is shown INERT with a "coming in a later step" hint, so the rail
+// previews the app's real structure honestly without any dead links. As later
+// phases land a real surface, that item's `comingLater` flips to false and it
+// gains a real route (P1.7 did this for Leads when the list landed).
 //
 // "How it's built" is deliberately OMITTED from this list: the masthead already
 // carries that inert placeholder (Epic 21 wires it live), so listing it here too
@@ -91,7 +92,10 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Leads",
     icon: Strategy,
     gate: { capability: "view_tenant_records" },
-    comingLater: true,
+    // Live as of P1.7 (Epic 20) — the leads list + queue + claim surface landed,
+    // so this item links to /app/leads (the second live rail entry after Demo home).
+    comingLater: false,
+    to: "/app/leads",
   },
   {
     key: "contacts",

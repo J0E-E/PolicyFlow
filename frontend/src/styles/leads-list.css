@@ -1,0 +1,206 @@
+/*
+ * Leads list page (Epic 20) — the `/app/leads` all-leads + unassigned-queue view
+ * with one-click Claim. Lives INSIDE the AppShell chrome, so it carries its own
+ * Guide §5 page header (Besley headline + Oxford double rule) like the agent
+ * intake page. The table is the Guide §5 dense data table: Stamp-type column
+ * heads, hairline row dividers, no zebra, --row-height-dense rows. Tokens only;
+ * no raw hex or spacing (Guide §2, §4).
+ */
+
+/* ---- Page + Guide §5 page header ---- */
+
+.leads-list-page {
+  max-width: 960px;
+}
+
+.leads-list-header {
+  margin: 0 0 var(--space-4);
+}
+
+.leads-list-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.leads-list-title {
+  /* Headline register — Besley 24/32/600 (Guide §3). */
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 32px;
+  color: var(--on-surface);
+}
+
+/* ---- Status / loading / not-found lines ---- */
+
+.leads-list-status {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
+
+.leads-list-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+/* ---- Tabs: underlined ARIA tablist, --primary active marker (Guide §5) ---- */
+
+.leads-list-tablist {
+  display: flex;
+  gap: var(--space-5);
+  margin: 0 0 var(--space-4);
+  /* The shared underline the active marker rides over. */
+  border-bottom: 1px solid var(--outline);
+}
+
+.leads-list-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) 0;
+  background: none;
+  border: 0;
+  /* The active underline is a transparent bottom border that gains the brand
+     color when selected — no layout shift between states. */
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px; /* overlap the tablist hairline so the marker sits on it */
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+
+.leads-list-tab-active {
+  color: var(--on-surface);
+  border-bottom-color: var(--primary, var(--on-surface));
+}
+
+/* The per-tab count rides a quiet paper chip next to the active tab's label. */
+.leads-list-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--on-surface-variant);
+}
+
+.leads-list-tabpanel {
+  display: block;
+}
+
+/* ---- Empty states: tab-specific Guide §5 framed notes ---- */
+
+.leads-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background-color: var(--surface-1);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+}
+
+/* The leading empty-state glyph — a quiet variant-color mark above the message
+   (Guide §5 empty state: icon, one-line explanation, optional CTA). */
+.leads-list-empty-icon {
+  display: inline-flex;
+  color: var(--on-surface-variant);
+}
+
+.leads-list-empty-message {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
+
+/* ---- Claim error: non-destructive inline notice, list stays intact ---- */
+
+.leads-list-claim-error {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--state-error-container);
+  border: 1px solid var(--state-error);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--state-error);
+}
+
+/* ---- The dense data table (Guide §5) ---- */
+
+.leads-list-table {
+  width: 100%;
+  border-collapse: collapse;
+  /* Body M figures; the dense rows pair with this register (Guide §4). */
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface);
+}
+
+/* Column heads ride the Stamp type (Guide §3 — 11/16/700, uppercase, +0.8px)
+   over the same hairline the rows use; no fill, no zebra. */
+.leads-list-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  vertical-align: bottom;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+  /* A surface fill so scrolled-under rows don't show through the sticky head. */
+  background-color: var(--surface-1);
+  border-bottom: 1px solid var(--outline);
+  white-space: nowrap;
+}
+
+/* Rows: dense height, hairline divider, no zebra (Guide §5). */
+.leads-list-row {
+  height: var(--row-height-dense);
+  border-bottom: 1px solid var(--outline);
+}
+
+/* Row hover — a quiet surface lift to track the eye across a dense row (Guide §5). */
+.leads-list-row:hover {
+  background-color: var(--surface-3);
+}
+
+.leads-list-cell {
+  padding: var(--space-2) var(--space-3);
+  vertical-align: middle;
+}
+
+/* The name cell stacks a plain-text name over an optional duplicate stamp — it
+   is NOT a link (Epic 21 owns the row route). */
+.leads-list-row .leads-list-name {
+  display: block;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.leads-list-cell .stamp-tag {
+  margin-top: var(--space-1);
+}

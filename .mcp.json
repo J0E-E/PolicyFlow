@@ -1,0 +1,23 @@
+{
+    "mcpServers": {
+        "code-review-graph": {
+            "command": "cmd",
+            "args": [
+                "/c",
+                "code-review-graph",
+                "serve"
+            ]
+        },
+        "memory-vault": {
+            "command": "docker",
+            "args": [
+                "exec",
+                "-i",
+                "memory-vault-app-1",
+                "python",
+                "-m",
+                "src.mcp"
+            ]
+        }
+    }
+}

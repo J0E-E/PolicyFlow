@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import Button from "../components/Button.tsx";
 import StampTag from "../components/StampTag.tsx";
+import { leadStatusStamp } from "../components/leadStatusStamp.ts";
 import type { MaskedLead, ProductLine } from "../api";
 
 interface AgentLeadCreatedPanelProperties {
@@ -35,6 +36,11 @@ export default function AgentLeadCreatedPanel({
     (key) => labelForKey.get(key) ?? key,
   );
 
+  // The status stamp is driven off the lead's own status via the shared map
+  // (Epic 20). An agent-entered lead is born `Working`, so this renders the same
+  // `pending` "Working" stamp as before — now from the single source of truth.
+  const statusStamp = leadStatusStamp(lead.status);
+
   return (
     <div
       id="agent-intake-created"
@@ -52,8 +58,8 @@ export default function AgentLeadCreatedPanel({
         >
           Lead created
         </h2>
-        <StampTag id="agent-intake-created-status" status="pending">
-          Working
+        <StampTag id="agent-intake-created-status" status={statusStamp.status}>
+          {statusStamp.label}
         </StampTag>
       </div>
 

@@ -38,17 +38,27 @@ describe("isSectionVisible", () => {
 });
 
 describe("NAV_SECTIONS model", () => {
-  it("has exactly one live item — Demo home → /app", () => {
+  // The live items as of P1.7 (Epic 20): Demo home and Leads. Each carries a real
+  // route and false `comingLater`; every other section stays inert.
+  const LIVE_ROUTES: Record<string, string> = {
+    "demo-home": "/app",
+    leads: "/app/leads",
+  };
+
+  it("has exactly the live items Demo home → /app and Leads → /app/leads", () => {
     const live = NAV_SECTIONS.filter((section) => !section.comingLater);
-    expect(live).toHaveLength(1);
-    expect(live[0].key).toBe("demo-home");
-    expect(live[0].to).toBe("/app");
-    expect(live[0].gate).toEqual({ always: true });
+    expect(live.map((section) => section.key)).toEqual(["demo-home", "leads"]);
+    for (const section of live) {
+      expect(section.to).toBe(LIVE_ROUTES[section.key]);
+    }
+    // Demo home is the one always-shown item; Leads is capability-gated.
+    const demoHome = live.find((section) => section.key === "demo-home");
+    expect(demoHome?.gate).toEqual({ always: true });
   });
 
   it("marks every non-live item coming-later with no route", () => {
     for (const section of NAV_SECTIONS) {
-      if (section.key === "demo-home") continue;
+      if (section.key in LIVE_ROUTES) continue;
       expect(section.comingLater).toBe(true);
       expect(section.to).toBeUndefined();
     }

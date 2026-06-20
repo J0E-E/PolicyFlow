@@ -5,6 +5,7 @@ import HowItsBuiltPage from "./pages/HowItsBuiltPage.tsx";
 import ShopperSitePage from "./pages/ShopperSitePage.tsx";
 import DemoHomePage from "./pages/DemoHomePage.tsx";
 import AgentIntakePage from "./pages/AgentIntakePage.tsx";
+import LeadsListPage from "./pages/LeadsListPage.tsx";
 import RequireSession from "./components/RequireSession.tsx";
 
 // Route table for the SPA shell. `/`, `/select-tenant`, `/how-its-built`, and the
@@ -29,6 +30,7 @@ export default function App() {
       <Route path="/site/:slug" element={<ShopperSitePage />} />
       <Route path="/app" element={<RequireSession />}>
         <Route index element={<DemoHomePage />} />
+        <Route path="leads" element={<LeadsListPage />} />
         <Route path="leads/new" element={<AgentIntakePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

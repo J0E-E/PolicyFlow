@@ -154,12 +154,16 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
   - Reuse contract: the agent form imports Epic 18's `shopperIntakeValidation` unchanged and the prefill **identities** exported from `shopperIntakePrefills.ts` (a new `agentIntakePrefills.ts` supplies agent copy) — the surface-agnostic `shopper*` names are reused as-is (a future `leadIntake*` rename is deferred, not done here).
   - **id contract for Epics 20/21:** the agent form's field/panel ids are `agent-intake-*`, but the **reused `IntakeErrorSummary` keeps its `shopper-intake-error-summary-*` ids verbatim** — target those for the summary, `agent-intake-*` for everything else. The `Working` status renders as a `StampTag status="pending"` (no lead-status→stamp map exists yet; Epic 20/21 introducing one should fold this in).
 
-## Epic 20 — Leads list + queue tab + claim [UI]
+## Epic 20 — Leads list + queue tab + claim [UI] — **COMPLETED** (36m · 27.3M tok · 751k tok/min)
 - **Goal:** The `/app/leads` page with an all-leads list and an unassigned-queue tab plus one-click Claim, and flipping the "Leads" nav item live.
 - **Rough scope:** The leads list page (tabs + claim action) wired to the read + claim endpoints, and the nav flip; component tests.
-- **Open questions / decisions for stakeholders:** list columns, the masked fields shown, tab and empty-state presentation (design at plan time).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time. **Columns** = lean triage: Name · Status (`StampTag`) · Product-line labels · Age band · ZIP · Source (`Public`/`Agent`) · Owner (`owner_username` or `—`) · Created (fixed date) · Claim — **no raw/masked email/phone in the list** (contact + reveal live on the Epic 21 detail page); masked DOB is shown only as `age_band`. **Tabs** = an ARIA `role="tablist"` (All leads / Unassigned queue) with a `--primary` active underline marker + per-tab count, driving `listLeads(unassigned?)`. **Empty states** = tab-specific Guide §5 framed notes (All → "No leads yet." + a `create_edit_records`-gated New-lead CTA; Queue → calm "The queue is clear — every new lead has been claimed."). **Duplicate flag** = a "Possible duplicate" warning `StampTag` on flagged-unresolved rows (`duplicate_of_lead_id` set & `duplicate_resolution` null); resolution stays on the detail page. **Rows are non-navigating** (plain-text name, not a link — Epic 21 owns `/app/leads/:id`; a link now would be a dead 404). **New-lead affordance** = a `create_edit_records`-gated `ButtonLink` in the page header → `/app/leads/new`. **Lead-status → stamp** map (new shared `leadStatusStamp` helper, Epic 19's flagged fold-in): `New→neutral`, `Working→pending`, `Qualified→success`, `Rejected→error`.
 - **Depends on:** Epics 11, 12, 17.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Shared lead-status→stamp map `frontend/src/components/leadStatusStamp.ts` (`leadStatusStamp(status) → {status, label}`, total over `LeadStatus` — a new backend status is a compile error here until mapped). **Epic 21 reuses it verbatim** for the detail status stamp; Epic 19's `AgentLeadCreatedPanel` is now folded onto it.
+  - Rows are **non-navigating** on purpose — **Epic 21** owns `/app/leads/:id`, so make the row name a link to it when that route lands. The list carries **no contact PII** (name/status/triage only); contact + reveal are Epic 21's detail page.
+  - The rail now has **two** live items (Demo home + Leads). Any future nav flip must update **both** `navSections.test.tsx` **and** `LeftNav.test.tsx` (the latter's "one live link" assertions now admit Leads).
+  - Scope deviation: **pagination deferred** — Guide §5 wants it once the seed exceeds a page, but the demo seed is small; forward-looking for whoever grows the seed.
 
 ## Epic 21 — Lead detail + actions [UI]
 - **Goal:** The `/app/leads/:id` detail page showing masked PII with audited click-to-reveal, and the qualify / reject / resolve-duplicate actions.
