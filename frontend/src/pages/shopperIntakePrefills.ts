@@ -30,12 +30,15 @@ export interface ShopperIntakePrefill {
 
 // The Jordan Rivera duplicate bait — mirrors core/app/seed.py JORDAN_RIVERA_BAIT_*
 // so the submitted email + phone match a seeded lead and the matcher flags it.
-const JORDAN_RIVERA_BAIT_EMAIL = "jordan.rivera@example.com";
-const JORDAN_RIVERA_BAIT_PHONE = "(407) 555-0188";
+// Exported so the agent intake form's prefill row (Epic 19's agentIntakePrefills)
+// reuses the SAME identity rather than duplicating the bait constants.
+export const JORDAN_RIVERA_BAIT_EMAIL = "jordan.rivera@example.com";
+export const JORDAN_RIVERA_BAIT_PHONE = "(407) 555-0188";
 
 // The clean "Typical lead" identity per tenant. Emails/phones are distinct from
-// every seeded lead, so the submission stays a non-duplicate.
-const TYPICAL_LEADS: Record<string, ShopperIntakeFormValues> = {
+// every seeded lead, so the submission stays a non-duplicate. Exported so Epic
+// 19's agent prefills reuse the same identities (agent copy, same data).
+export const TYPICAL_LEADS: Record<string, ShopperIntakeFormValues> = {
   "sunshine-senior-benefits": {
     firstName: "Margaret",
     lastName: "Chen",
@@ -64,7 +67,8 @@ const TYPICAL_LEADS: Record<string, ShopperIntakeFormValues> = {
 
 // The duplicate-scenario identity shared by both tenants — only the product line
 // differs (the tenant's first registry key, matching the bait's seeded line).
-function buildDuplicateValues(tenant: Tenant): ShopperIntakeFormValues {
+// Exported so Epic 19's agent prefills build the same duplicate identity.
+export function buildDuplicateValues(tenant: Tenant): ShopperIntakeFormValues {
   const firstProductLineKey = tenant.product_lines[0]?.key;
   return {
     firstName: "Jordan",

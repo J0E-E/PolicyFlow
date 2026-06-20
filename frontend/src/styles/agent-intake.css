@@ -1,0 +1,245 @@
+/*
+ * Authenticated agent intake page + form (Epic 19) — the agent twin of the
+ * public Shopper intake. It mirrors the Shopper intake's layout (prefill row,
+ * three ACORD-numbered sections, top error summary, form-level error) but lives
+ * INSIDE the AppShell chrome, so it carries its own Guide §5 page header and a
+ * created-lead confirmation panel in place of the public success panel. Field
+ * anatomy lives in form-field.css; the shared error summary reuses
+ * shopper-intake.css. Tokens only; no raw hex or spacing (Guide §2, §4).
+ */
+
+/* ---- Page + Guide §5 page header (lives inside AppShell, not PageLayout) ---- */
+
+.agent-intake-page {
+  max-width: 640px;
+}
+
+.agent-intake-header {
+  margin: 0 0 var(--space-5);
+}
+
+.agent-intake-title {
+  /* Headline register — Besley 24/32/600 (Guide §3). */
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 32px;
+  color: var(--on-surface);
+}
+
+/* The Oxford double rule (.oxford-double-rule, pages.css) sits under the
+   headline; no extra rule styling needed here. */
+
+/* ---- Capability-denied / status lines ---- */
+
+.agent-intake-denied,
+.agent-intake-status {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
+
+.agent-intake-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+/* ---- The form ---- */
+
+.agent-intake-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* ---- Prefill row — the two backed demo scenarios (Guide §6.9) ---- */
+
+.agent-intake-prefill-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background-color: var(--surface-1);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+}
+
+.agent-intake-prefill-heading {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  /* Stamp-style overline: uppercase + tracking, the section-eyebrow register. */
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--on-surface-variant);
+}
+
+.agent-intake-prefill-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.agent-intake-prefill {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 220px;
+}
+
+.agent-intake-prefill-outcome {
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--on-surface-variant);
+}
+
+/* ---- Numbered sections (ACORD form vernacular — order carries meaning) ---- */
+
+.agent-intake-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.agent-intake-section-legend {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0 0 var(--space-2);
+  /* The section title rides the Title register (Public Sans 18/24/600, Guide §3)
+     over a hairline rule that separates each section. */
+  font-family: var(--font-ui);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--on-surface);
+  border-bottom: 1px solid var(--outline);
+}
+
+/* The 01 / 02 / 03 marker — mono ledger figures in the tenant brand, the
+   signature device tying the form to the ACORD-form heritage (Guide §3 mono). */
+.agent-intake-section-number {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+  color: var(--primary, var(--on-surface));
+}
+
+.agent-intake-section-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---- Form-level (validation / network) error — keeps the entered data ---- */
+
+.agent-intake-submit-error {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--state-error-container);
+  border: 1px solid var(--state-error);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--state-error);
+}
+
+/* ---- Actions ---- */
+
+.agent-intake-actions {
+  display: flex;
+}
+
+/* ---- Created-lead confirmation panel — replaces the form on success ---- */
+
+.agent-intake-created {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background-color: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-1);
+}
+
+.agent-intake-created-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.agent-intake-created-title {
+  /* Headline register — Besley 24/32/600 (Guide §3). */
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.agent-intake-created-name {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.agent-intake-created-ownership {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface-variant);
+}
+
+.agent-intake-created-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+}
+
+.agent-intake-created-row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.agent-intake-created-label {
+  flex: 0 0 140px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+}
+
+.agent-intake-created-value {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface);
+}
+
+.agent-intake-created-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
