@@ -40,6 +40,15 @@ single masked read builder (`app.leads.masking`). It carries three routes:
   linkage kept) and publishes `lead.rejected` with `reason_kind = "duplicate"`. It
   owns the `New → Rejected` move (Epic 13's `/reject` owns `Working → Rejected`), so
   a non-`New` lead is a 409.
+- **`POST /api/leads/{lead_id}/reveal`** — the guarded PII reveal (TDD §5.4),
+  mirroring `pii_demo`'s reveal: unmask **one** encrypted field of one lead. Every
+  encrypted column is revealable (`email`, `phone`, `date_of_birth`,
+  `street_address`); any other field name is a generic `422 "field is not
+  revealable"` refused **before** the DB read (leads have no never-revealable
+  deny-list). The one allow-listed field is decrypted, the `on_pii_revealed` audit
+  seam is awaited, and `{"field": …, "value": …}` is returned. It gates on
+  `REVEAL_PII` (the only route here that does), and an absent optional blob (no
+  street address) returns `value: null`.
 
 All ride `get_tenant_db`, so isolation is automatic — there is **no tenant
 parameter** — and the inherited 401 (no session) / 400 (tenantless Platform Admin)
@@ -67,11 +76,18 @@ from ..events.catalog import EventType as EventBusEventType
 from ..events.envelope import build_envelope
 from ..events.outbox import enqueue_event
 from ..models.lead import Lead
+from ..pii.reveal_seam import on_pii_revealed
+from ..pii.service import decrypt_field
 from ..tenancy.registry import tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
 from .intake import create_lead
 from .masking import build_masked_lead
-from .schemas import CreateLeadRequest, RejectLeadRequest, ResolveDuplicateRequest
+from .schemas import (
+    CreateLeadRequest,
+    RejectLeadRequest,
+    ResolveDuplicateRequest,
+    RevealLeadRequest,
+)
 from .state import InvalidLeadTransition, LeadSource, LeadStatus, assert_transition
 
 router = APIRouter(prefix="/api/leads")
@@ -81,6 +97,19 @@ router = APIRouter(prefix="/api/leads")
 # small demo seed (the two-tab UI shows one tenant's modest lead set), so this is a
 # named constant rather than a request-tunable page size.
 LEAD_LIST_LIMIT = 200
+
+# The reveal endpoint's single field allow-list — the one source of truth for what
+# `POST /{lead_id}/reveal` will unmask. It maps each accepted request field name to
+# the encrypted column attribute on `Lead` whose blob the handler decrypts. **Every**
+# encrypted field is revealable (no `pii_demo`-style never-revealable deny-list: a
+# lead has no `mock_medicare_id`-equivalent), so any name outside this map falls
+# through to a single generic 422.
+REVEALABLE_FIELDS: dict[str, str] = {
+    "email": "email_encrypted",
+    "phone": "phone_encrypted",
+    "date_of_birth": "date_of_birth_encrypted",
+    "street_address": "street_address_encrypted",
+}
 
 
 @router.post("", status_code=201)
@@ -590,3 +619,64 @@ async def resolve_duplicate_lead(
     )
 
     return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+
+
+@router.post("/{lead_id}/reveal")
+async def reveal_field(
+    lead_id: uuid.UUID,
+    reveal: RevealLeadRequest,
+    identity: Identity = Depends(require_capability(Capability.REVEAL_PII)),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Decrypt and return **one** unmasked field of one of the caller's leads.
+
+    The lead twin of `pii_demo`'s reveal — the only place plaintext lead PII crosses
+    the API boundary, so it is the most guarded route here. It composes only existing
+    pieces (no new crypto, masking, or scoping). Unlike `pii_demo`, a lead has **no**
+    never-revealable deny-list: **every** encrypted field is revealable, so there is a
+    single field check, not two. The flow is:
+
+    1. **Refuse any unknown field** with a generic `422 "field is not revealable"`.
+       The check runs **before** the database read, because the refusal is about the
+       field, not the lead — an unknown field is a 422 even for an id that does not
+       exist (mirroring `pii_demo`).
+    2. **Fetch the lead by id** within the caller's tenant schema; an id absent in
+       this tenant (missing or another tenant's) is a `404 "lead not found"`, reusing
+       the read endpoints' string.
+    3. **Decrypt** the requested field's stored blob with `decrypt_field`. An absent
+       optional field (a lead with no street address) is returned as `value: null`
+       with a 200 — the same uniform call site, matching the masked read's `null`
+       rendering of absent optionals.
+    4. **Await the reveal seam** (`on_pii_revealed`) *before* returning, with
+       `entity_type = "lead"`, so the audit and the `pii.revealed` event record the
+       reveal before the value leaves. The request session `db` is threaded in so the
+       event enqueue rides this request transaction.
+    5. Return `{"field": …, "value": …}`.
+
+    The guard hands the route an `Identity` only when the caller holds `REVEAL_PII`
+    (Read-Only and Platform Admin lack it → 403, the anonymous caller → 401);
+    `get_tenant_db` points the session's `search_path` at the caller's own schema, so
+    a caller can only ever reveal their own tenant's lead — all inherited, no tenant
+    parameter. `decrypt_field` additionally binds `tenant_id` as AES-GCM associated
+    data, so even a cross-tenant blob would fail to decrypt.
+    """
+    if reveal.field not in REVEALABLE_FIELDS:
+        raise HTTPException(status_code=422, detail="field is not revealable")
+
+    lead = (
+        await db.execute(select(Lead).where(Lead.id == lead_id))
+    ).scalar_one_or_none()
+
+    if lead is None:
+        raise HTTPException(status_code=404, detail="lead not found")
+
+    encrypted_blob = getattr(lead, REVEALABLE_FIELDS[reveal.field])
+    value = (
+        await decrypt_field(identity.tenant_id, encrypted_blob)
+        if encrypted_blob is not None
+        else None
+    )
+
+    await on_pii_revealed(db, identity, "lead", lead_id, reveal.field)
+
+    return {"field": reveal.field, "value": value}

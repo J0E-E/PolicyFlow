@@ -45,6 +45,7 @@ __all__ = [
     "PublicIntakeRequest",
     "RejectLeadRequest",
     "ResolveDuplicateRequest",
+    "RevealLeadRequest",
 ]
 
 # The light email shape the public route accepts: one or more non-`@`, non-space
@@ -253,3 +254,21 @@ class ResolveDuplicateRequest(BaseModel):
     """
 
     action: Literal["link", "new", "reject"]
+
+
+class RevealLeadRequest(BaseModel):
+    """The reveal request body: which one field to unmask for this lead.
+
+    A flat Pydantic model carrying a single `field` name (the request says which
+    field to reveal; the lead is identified by the `{lead_id}` path segment). It
+    mirrors `pii_demo`'s `RevealRequest` rather than importing it, so `leads` stays
+    free of any `pii_demo` dependency (as every other lead schema does).
+
+    `field` is deliberately a plain `str`, **not** a `Literal`/enum: the handler
+    must answer an unknown field with its own `422 "field is not revealable"`
+    message, and a schema-level enum would collapse that into an indistinguishable
+    Pydantic validation 422. The allow-list lives in the router (`REVEALABLE_FIELDS`),
+    where the field-specific message is raised — the same split `pii_demo` uses.
+    """
+
+    field: str

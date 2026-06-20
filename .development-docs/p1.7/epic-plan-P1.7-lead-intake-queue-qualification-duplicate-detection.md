@@ -109,12 +109,12 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
 - **Depends on:** Epics 2, 7.
 - **Implementation notes:** `app/leads/router.py::resolve_duplicate_lead` — wire contract for Epic 17 (`{"action": "link"|"new"|"reject"}` via strict `ResolveDuplicateRequest` `Literal`, 200 `{"lead": …}`) and Epic 21 (the detail page's three resolve controls). `reject` reuses `lead.rejected` with `reason_kind = "duplicate"`, sets no `rejection_reason`, and owns `New → Rejected` (Epic 13 owns `Working → Rejected`). Shared test seam Epics 16/22 build on: `tests/test_lead_reads.py::insert_lead` gained a `duplicate_of_lead_id` kwarg and `test_lead_intake.py::read_lead_row` now also selects `duplicate_resolution`.
 
-## Epic 15 — Lead PII reveal
+## Epic 15 — Lead PII reveal — **COMPLETED** (22m)
 - **Goal:** `POST /api/leads/{id}/reveal` reusing the `pii_demo` reveal shape — one field at a time, unknown fields refused (422), decrypt, await the `on_pii_revealed` audit seam, return the single value.
 - **Rough scope:** The reveal endpoint (capability-gated) wired to the existing reveal + audit seam, plus tests including the audit emission.
-- **Open questions / decisions for stakeholders:** none expected — the reveal contract is the proven `pii_demo` shape.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time. **Revealable set** = all four encrypted columns (`email`, `phone`, `date_of_birth`, `street_address`) — every encrypted field is revealable. **No deny-list** (leads have no `mock_medicare_id`-equivalent) → only `REVEALABLE_FIELDS` plus one generic `422 "field is not revealable"` for any other name. **`entity_type = "lead"`** on the audit record + `pii.revealed` event. **Schema** = a lead-local `RevealLeadRequest` (`field: str`, plain `str` not enum) in `app/leads/schemas.py`, mirroring `pii_demo.RevealRequest` rather than importing it (keeps `leads` free of any `pii_demo` dependency, as every other lead schema does).
 - **Depends on:** Epics 3, 7.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** Reveal contract for **Epic 21**'s detail page (one click-to-reveal control per field): `POST /api/leads/{id}/reveal`, body `{"field": str}`, 200 `{"field", "value"}`; revealable set `email` / `phone` / `date_of_birth` / `street_address`, any other field → 422 `"field is not revealable"`, absent `street_address` → `value: null`. No deviations.
 
 ## Epic 16 — Minimal lead seed
 - **Goal:** A small per-tenant lead seed (several unassigned `New` leads plus one duplicate-bait) so the queue is non-empty and the duplicate scenario lights up now; insert-if-absent so P1.8's full seed extends rather than collides.
