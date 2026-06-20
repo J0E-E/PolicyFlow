@@ -157,7 +157,7 @@ export default function ShopperSitePage() {
       tenantName={tenant.display_name}
       isSignedIn={isSignedIn}
     >
-      <ShopperHomePage tenantSlug={tenant.slug} />
+      <ShopperHomePage tenant={tenant} />
     </ShopperLayout>
   );
 }

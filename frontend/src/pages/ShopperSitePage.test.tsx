@@ -20,6 +20,17 @@ vi.mock("../api", () => ({
   listTenants: vi.fn(),
   assumePersona: vi.fn(),
   signOut: vi.fn(),
+  // The buyer home now renders the public intake form, which imports the client +
+  // ApiError. The form never calls submitPublicIntake on mount, so a bare mock is
+  // enough for these shell tests; the form's own tests drive it directly.
+  submitPublicIntake: vi.fn(),
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.status = status;
+    }
+  },
 }));
 
 import { getCurrentIdentity, listTenants } from "../api";
@@ -32,13 +43,15 @@ const sampleTenants: Tenant[] = [
     slug: "sunshine-senior-benefits",
     display_name: "Sunshine Senior Benefits",
     brand_primary_color: "#9C4A1E",
-    product_lines: [],
+    product_lines: [
+      { key: "medicare_advantage", label: "Medicare Advantage" },
+    ],
   },
   {
     slug: "florida-family-planning",
     display_name: "Florida Family Planning",
     brand_primary_color: "#0F6A72",
-    product_lines: [],
+    product_lines: [{ key: "term_life", label: "Term Life" }],
   },
 ];
 

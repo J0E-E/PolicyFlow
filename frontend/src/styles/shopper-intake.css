@@ -1,0 +1,227 @@
+/*
+ * Public Shopper intake form (Epic 18) — the form that replaced the
+ * "quote coming soon" placeholder inside the buyer-home Card. Three ACORD-style
+ * numbered sections, the prefill row (Guide §6.9), the top error summary +
+ * form-level error (Guide §5 "Form validation"), the honeypot, and the success
+ * panel (Guide §2.2 success register). Field anatomy lives in form-field.css;
+ * this file owns the form's own layout and the intake-specific surfaces. Tokens
+ * only; no raw hex or spacing (Guide §2, §4).
+ */
+
+.shopper-intake-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  /* The card body already padded; add a little air above the form. */
+  margin-top: var(--space-3);
+}
+
+/* ---- Prefill row — the two backed demo scenarios (Guide §6.9) ---- */
+
+.shopper-intake-prefill-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background-color: var(--surface-1);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+}
+
+.shopper-intake-prefill-heading {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  /* Stamp-style overline: uppercase + tracking, the section-eyebrow register. */
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--on-surface-variant);
+}
+
+.shopper-intake-prefill-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.shopper-intake-prefill {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  /* Each prefill (button + its outcome line) sizes to a comfortable column. */
+  flex: 1 1 220px;
+}
+
+.shopper-intake-prefill-outcome {
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--on-surface-variant);
+}
+
+/* ---- Numbered sections (ACORD form vernacular — order carries meaning) ---- */
+
+.shopper-intake-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.shopper-intake-section-legend {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0 0 var(--space-2);
+  /* The section title rides the Title register (Public Sans 18/24/600, Guide §3)
+     over a hairline rule that separates each section. */
+  font-family: var(--font-ui);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--on-surface);
+  border-bottom: 1px solid var(--outline);
+}
+
+/* The 01 / 02 / 03 marker — mono ledger figures in the tenant brand, the
+   signature device tying the form to the ACORD-form heritage (Guide §3 mono). */
+.shopper-intake-section-number {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
+  color: var(--primary, var(--on-surface));
+}
+
+.shopper-intake-section-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---- The honeypot: visually + assistively hidden, but still in the DOM and
+   focusable-by-bots. NOT display:none (a bot can detect that) — pulled off-screen
+   so a human never sees it and never fills it. ---- */
+
+.shopper-intake-honeypot {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- Top error summary on a failed submit (Guide §5 / §7) ---- */
+
+.shopper-intake-error-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background-color: var(--state-error-container);
+  /* Solid border — real error, never the dashed "Simulated" border (Guide §6.3). */
+  border: 1px solid var(--state-error);
+  border-radius: var(--radius-md);
+}
+
+.shopper-intake-error-summary:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.shopper-intake-error-summary-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--state-error);
+}
+
+.shopper-intake-error-summary-icon {
+  display: inline-flex;
+  color: var(--state-error);
+}
+
+.shopper-intake-error-summary-list {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.shopper-intake-error-summary-item {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--state-error);
+}
+
+.shopper-intake-error-summary-link {
+  color: var(--state-error);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---- Form-level (network / 429) error — keeps the entered data ---- */
+
+.shopper-intake-submit-error {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--state-error-container);
+  border: 1px solid var(--state-error);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--state-error);
+}
+
+/* ---- Actions ---- */
+
+.shopper-intake-actions {
+  display: flex;
+}
+
+/* ---- Success panel — replaces the form on a real submit (Guide §2.2) ---- */
+
+.shopper-intake-success {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background-color: var(--state-success-container);
+  border: 1px solid var(--state-success);
+  border-radius: var(--radius-md);
+  margin-top: var(--space-3);
+}
+
+.shopper-intake-success-icon {
+  display: inline-flex;
+  color: var(--state-success);
+}
+
+.shopper-intake-success-title {
+  /* Headline-adjacent confirmation — Besley display register reads as a
+     reassuring certificate stamp (Guide §3 headline). */
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.shopper-intake-success-body {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}

@@ -1,0 +1,147 @@
+/*
+ * Form field set — the reusable TextField / SelectField / CheckboxGroup anatomy
+ * (Guide §5 "Text field" + "Form validation"). Label above, control, helper/error
+ * below; the error register switches to --state-error. Built so Epic 19's agent
+ * intake form reuses these classes verbatim. Tokens only; no raw hex or spacing
+ * (Guide §2, §4). The global :focus-visible ring (base.css) covers focus.
+ */
+
+/* ---- The field wrapper: label-above / control / helper-below column ---- */
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  /* A fieldset (CheckboxGroup) carries default UA chrome — neutralise it so the
+     group lays out like any other field. */
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+/* Label register — Label type, Public Sans 13/16/500 (Guide §3). The
+   on-surface-variant ink keeps labels calm; the input ink is the darker
+   --on-surface. */
+.form-field-label {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+}
+
+/* The required marker — the error ink draws the eye to the obligation without a
+   second hue. */
+.form-field-required-marker {
+  color: var(--state-error);
+}
+
+/* The control row holds the input plus optional trailing content side by side. */
+.form-field-control {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+/* ---- The input / select (Guide §5 "Text field") ---- */
+
+.form-field-input {
+  width: 100%;
+  min-width: 0;
+  /* --surface-2 fill, 1px --outline border → --outline-strong on focus. */
+  background-color: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm); /* inputs are near-square (Guide §4) */
+  padding: var(--space-2) var(--space-3);
+  /* Body L — 16/24/400 — so typed text reads at full size on the consumer form. */
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface);
+  transition: border-color var(--motion-fast) var(--easing-standard);
+}
+
+.form-field-input::placeholder {
+  /* Placeholders use --on-surface-variant, never --on-surface-muted (Guide §2.5). */
+  color: var(--on-surface-variant);
+}
+
+.form-field-input:hover:not(:disabled) {
+  border-color: var(--outline-strong);
+}
+
+/* The border strengthens on focus; the global focus ring (base.css) draws the
+   ring itself, so this only deepens the border. */
+.form-field-input:focus-visible {
+  border-color: var(--outline-strong);
+}
+
+/* The native select keeps room for its disclosure arrow. */
+.form-field-select {
+  appearance: auto;
+  cursor: pointer;
+}
+
+/* ---- Helper / error text below the control ---- */
+
+.form-field-helper-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--on-surface-variant);
+}
+
+/* Error text — Body M weight in --state-error (Guide §5 inline errors). */
+.form-field-error-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--state-error);
+}
+
+/* ---- Error state: the field repaints to the error register (Guide §5) ---- */
+
+.form-field-error .form-field-label {
+  color: var(--state-error);
+}
+
+.form-field-error .form-field-input {
+  border-color: var(--state-error);
+}
+
+/* ---- Checkbox group (Guide §5 grouped control) ---- */
+
+.checkbox-group-legend {
+  /* A legend carries UA padding; clear it so it aligns with the other labels. */
+  padding: 0;
+  margin-bottom: var(--space-2);
+}
+
+.checkbox-group-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.checkbox-group-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.checkbox-group-input {
+  /* Near-square, brand-agnostic check; accent-color tints the native control to
+     the tenant primary where the browser honors it (falls back to the UA hue). */
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary, var(--on-surface));
+  cursor: pointer;
+}
+
+.checkbox-group-option-text {
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface);
+}
