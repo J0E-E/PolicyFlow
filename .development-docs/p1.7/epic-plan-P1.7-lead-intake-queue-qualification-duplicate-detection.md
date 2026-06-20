@@ -123,12 +123,14 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
 - **Depends on:** Epics 3, 6.
 - **Implementation notes:** P1.8's fuller seed **extends `app.seed.DEMO_LEADS`** (adds rows) — it must reuse `seed_demo_leads`' per-lead insert-if-absent (keyed on `email_blind_index`), never the `pii_demo` count-skip, or it collides. Bait constants `JORDAN_RIVERA_BAIT_EMAIL` / `JORDAN_RIVERA_BAIT_PHONE` are exported from `app.seed` — Epic 18's "Try a duplicate scenario" prefill submits exactly these.
 
-## Epic 17 — Frontend API client + lead types
+## Epic 17 — Frontend API client + lead types — **COMPLETED** (22m · 12.3M tok · 561k tok/min)
 - **Goal:** Typed frontend client calls and Lead/ProductLine types mirroring the wire, so the UI epics have a ready data layer. Renders nothing.
 - **Rough scope:** Add the lead calls to the API client and the snake-case mirror types. No components.
-- **Open questions / decisions for stakeholders:** none expected — the types mirror the settled wire shapes.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epics 7, 10, 11, 12, 13, 14, 15.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** Data-layer contract for Epics 18–21, in `frontend/src/api` (types.ts + client.ts, re-exported from `../api`): 9 calls (`createLead`, `submitPublicIntake`, `listLeads(unassigned?)`, `getLead`, `claimLead`, `qualifyLead`, `rejectLead`, `resolveDuplicate`, `revealLeadField`) over snake_case wire-shaped request types passed straight through, unwrapped envelopes returning the bare `MaskedLead`, narrow unions (`LeadStatus`/`LeadSource`/`DuplicateResolution`/`RevealableField`/`ResolveDuplicateAction`). Epic 18 calls `submitPublicIntake` + reads `Tenant.product_lines`; Epic 19 `createLead`; Epic 20 `listLeads(true)` (the queue filter — appends `?unassigned=true` only when true) + `claimLead`; Epic 21 `getLead`/`qualifyLead`/`rejectLead`/`resolveDuplicate`/`revealLeadField`.
+  - Scope deviation: extending `Tenant` with a required `product_lines: ProductLine[]` forced `product_lines: []` onto two existing tenant fixtures (`SelectTenantPage.test.tsx`, `ShopperSitePage.test.tsx`) — any new `Tenant` literal must carry it.
+  - This project has no `npm run lint` script / no eslint config — the frontend gate is tsc (`npm run build`) + vitest (`npm run test`).
 
 ## Epic 18 — Public Shopper intake form [UI]
 - **Goal:** Replace the `shopper-home-quote-card` seam with the public intake form — fields, honeypot, client-side validation, prefill buttons ("Typical lead", "Try a duplicate scenario"), and a success state — submitting to the public intake endpoint.

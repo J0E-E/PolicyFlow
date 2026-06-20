@@ -8,11 +8,27 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ApiError,
   assumePersona,
+  claimLead,
+  createLead,
   getCurrentIdentity,
+  getLead,
+  listLeads,
   listTenants,
+  qualifyLead,
+  rejectLead,
+  resolveDuplicate,
+  revealLeadField,
   signOut,
+  submitPublicIntake,
 } from "./client";
-import type { Identity, Tenant } from "./types";
+import type {
+  CreateLeadRequest,
+  Identity,
+  MaskedLead,
+  PublicIntakeRequest,
+  RevealLeadResponse,
+  Tenant,
+} from "./types";
 
 const sampleIdentity: Identity = {
   user: {
@@ -37,13 +53,67 @@ const sampleTenants: Tenant[] = [
     slug: "sunshine",
     display_name: "Sunshine Insurance",
     brand_primary_color: "#9C4A1E",
+    product_lines: [
+      { key: "medicare_advantage", label: "Medicare Advantage" },
+      { key: "final_expense", label: "Final Expense" },
+    ],
   },
   {
     slug: "florida",
     display_name: "Florida Mutual",
     brand_primary_color: "#0F6A72",
+    product_lines: [{ key: "term_life", label: "Term Life" }],
   },
 ];
+
+const sampleMaskedLead: MaskedLead = {
+  id: "33333333-3333-3333-3333-333333333333",
+  first_name: "Jordan",
+  last_name: "Rivera",
+  email: "j****@example.com",
+  phone: "***-***-0188",
+  date_of_birth: "****-**-**",
+  age_band: "65-74",
+  zip_code: "32801",
+  street_address: "***",
+  product_lines_of_interest: ["medicare_advantage"],
+  preferred_contact_method: "email",
+  notes: null,
+  rejection_reason: null,
+  lead_source: "public_form",
+  status: "New",
+  owner_user_id: null,
+  owner_username: null,
+  duplicate_of_lead_id: null,
+  duplicate_resolution: null,
+  created_at: "2026-06-20T12:00:00Z",
+  updated_at: "2026-06-20T12:00:00Z",
+};
+
+const sampleCreateLeadRequest: CreateLeadRequest = {
+  first_name: "Jordan",
+  last_name: "Rivera",
+  email: "jordan.rivera@example.com",
+  phone: "(407) 555-0188",
+  date_of_birth: "1958-06-15",
+  zip_code: "32801",
+  product_lines_of_interest: ["medicare_advantage"],
+  street_address: "742 Marina Bay Drive",
+  preferred_contact_method: "email",
+  notes: null,
+};
+
+const samplePublicIntakeRequest: PublicIntakeRequest = {
+  tenant_slug: "sunshine",
+  website: "",
+  first_name: "Jordan",
+  last_name: "Rivera",
+  email: "jordan.rivera@example.com",
+  phone: "(407) 555-0188",
+  date_of_birth: "1958-06-15",
+  zip_code: "32801",
+  product_lines_of_interest: ["medicare_advantage"],
+};
 
 /** Build a stub `fetch` that resolves to a 2xx JSON response carrying `body`. */
 function mockJsonResponse(body: unknown): typeof fetch {
@@ -134,6 +204,151 @@ describe("happy-path requests", () => {
     expect(options.method).toBe("POST");
     expect(options.credentials).toBe("include");
     expect(result).toBeUndefined();
+  });
+});
+
+describe("lead client calls", () => {
+  it("createLead POSTs /api/leads with the body and unwraps { lead }", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ lead: sampleMaskedLead }));
+
+    const lead = await createLead(sampleCreateLeadRequest);
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe("/api/leads");
+    expect(options.method).toBe("POST");
+    expect(options.credentials).toBe("include");
+    expect(options.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(options.body as string)).toEqual(sampleCreateLeadRequest);
+    expect(lead).toEqual(sampleMaskedLead);
+  });
+
+  it("submitPublicIntake POSTs /api/public/intake with the body and returns { ok }", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ ok: true }));
+
+    const result = await submitPublicIntake(samplePublicIntakeRequest);
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe("/api/public/intake");
+    expect(options.method).toBe("POST");
+    expect(options.credentials).toBe("include");
+    expect(JSON.parse(options.body as string)).toEqual(
+      samplePublicIntakeRequest,
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("listLeads GETs /api/leads (no query) and unwraps { leads } by default", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ leads: [sampleMaskedLead] }));
+
+    const leads = await listLeads();
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe("/api/leads");
+    expect(options.method).toBe("GET");
+    expect(options.credentials).toBe("include");
+    expect(leads).toEqual([sampleMaskedLead]);
+  });
+
+  it("listLeads appends ?unassigned=true only when unassigned is true", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ leads: [sampleMaskedLead] }));
+
+    await listLeads(true);
+
+    const [url] = lastFetchCall();
+    expect(url).toBe("/api/leads?unassigned=true");
+  });
+
+  it("listLeads omits the query when unassigned is false", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ leads: [] }));
+
+    await listLeads(false);
+
+    const [url] = lastFetchCall();
+    expect(url).toBe("/api/leads");
+  });
+
+  it("getLead GETs /api/leads/{id} and unwraps { lead }", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ lead: sampleMaskedLead }));
+
+    const lead = await getLead(sampleMaskedLead.id);
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe(`/api/leads/${sampleMaskedLead.id}`);
+    expect(options.method).toBe("GET");
+    expect(options.credentials).toBe("include");
+    expect(options.body).toBeUndefined();
+    expect(lead).toEqual(sampleMaskedLead);
+  });
+
+  it("claimLead POSTs /api/leads/{id}/claim and unwraps { lead }", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ lead: sampleMaskedLead }));
+
+    const lead = await claimLead(sampleMaskedLead.id);
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe(`/api/leads/${sampleMaskedLead.id}/claim`);
+    expect(options.method).toBe("POST");
+    expect(options.credentials).toBe("include");
+    expect(options.body).toBeUndefined();
+    expect(lead).toEqual(sampleMaskedLead);
+  });
+
+  it("qualifyLead POSTs /api/leads/{id}/qualify and unwraps { lead }", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ lead: sampleMaskedLead }));
+
+    const lead = await qualifyLead(sampleMaskedLead.id);
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe(`/api/leads/${sampleMaskedLead.id}/qualify`);
+    expect(options.method).toBe("POST");
+    expect(options.credentials).toBe("include");
+    expect(options.body).toBeUndefined();
+    expect(lead).toEqual(sampleMaskedLead);
+  });
+
+  it("rejectLead POSTs /api/leads/{id}/reject with the reason body and unwraps { lead }", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ lead: sampleMaskedLead }));
+
+    const lead = await rejectLead(sampleMaskedLead.id, { reason: "not a fit" });
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe(`/api/leads/${sampleMaskedLead.id}/reject`);
+    expect(options.method).toBe("POST");
+    expect(options.credentials).toBe("include");
+    expect(JSON.parse(options.body as string)).toEqual({ reason: "not a fit" });
+    expect(lead).toEqual(sampleMaskedLead);
+  });
+
+  it("resolveDuplicate POSTs /api/leads/{id}/resolve-duplicate with the action and unwraps { lead }", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ lead: sampleMaskedLead }));
+
+    const lead = await resolveDuplicate(sampleMaskedLead.id, { action: "link" });
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe(`/api/leads/${sampleMaskedLead.id}/resolve-duplicate`);
+    expect(options.method).toBe("POST");
+    expect(options.credentials).toBe("include");
+    expect(JSON.parse(options.body as string)).toEqual({ action: "link" });
+    expect(lead).toEqual(sampleMaskedLead);
+  });
+
+  it("revealLeadField POSTs /api/leads/{id}/reveal and returns the { field, value } body", async () => {
+    const revealed: RevealLeadResponse = {
+      field: "email",
+      value: "jordan.rivera@example.com",
+    };
+    vi.stubGlobal("fetch", mockJsonResponse(revealed));
+
+    const result = await revealLeadField(sampleMaskedLead.id, {
+      field: "email",
+    });
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe(`/api/leads/${sampleMaskedLead.id}/reveal`);
+    expect(options.method).toBe("POST");
+    expect(options.credentials).toBe("include");
+    expect(JSON.parse(options.body as string)).toEqual({ field: "email" });
+    expect(result).toEqual(revealed);
   });
 });
 

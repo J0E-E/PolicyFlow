@@ -8,7 +8,19 @@
 // use try/catch; Epic 4 will branch on `error.status === 401` to tell "signed
 // out" from a real failure.
 
-import type { Identity, Role, Tenant } from "./types";
+import type {
+  CreateLeadRequest,
+  Identity,
+  MaskedLead,
+  PublicIntakeRequest,
+  PublicIntakeResult,
+  RejectLeadRequest,
+  ResolveDuplicateRequest,
+  RevealLeadRequest,
+  RevealLeadResponse,
+  Role,
+  Tenant,
+} from "./types";
 
 /**
  * A failed API call, thrown by the client. `status` is the HTTP status code, or
@@ -126,4 +138,132 @@ export function assumePersona(
 /** Sign out via `POST /api/auth/logout`; the response body is ignored. */
 export async function signOut(): Promise<void> {
   await request<{ detail: string }>("POST", "/api/auth/logout");
+}
+
+/**
+ * Create a lead as the signed-in agent via `POST /api/leads`, unwrapping the
+ * `{ lead }` envelope into the masked lead. The request is the snake_case wire body
+ * passed straight through.
+ */
+export async function createLead(
+  createLeadRequest: CreateLeadRequest,
+): Promise<MaskedLead> {
+  const responseBody = await request<{ lead: MaskedLead }>(
+    "POST",
+    "/api/leads",
+    createLeadRequest,
+  );
+  return responseBody.lead;
+}
+
+/**
+ * Submit a public intake via the unauthenticated `POST /api/public/intake`,
+ * returning the sanitized `{ ok: true }` result (never the lead — identical on the
+ * real-create and honeypot-drop paths).
+ */
+export function submitPublicIntake(
+  publicIntakeRequest: PublicIntakeRequest,
+): Promise<PublicIntakeResult> {
+  return request<PublicIntakeResult>(
+    "POST",
+    "/api/public/intake",
+    publicIntakeRequest,
+  );
+}
+
+/**
+ * List leads from `GET /api/leads`, unwrapping the `{ leads }` envelope. Pass
+ * `unassigned` `true` to restrict to the queue (unowned `New` leads); the
+ * `?unassigned=true` query is appended **only** when `true`, matching the queue
+ * tab's absent/`true` convention.
+ */
+export async function listLeads(unassigned?: boolean): Promise<MaskedLead[]> {
+  const path = unassigned ? "/api/leads?unassigned=true" : "/api/leads";
+  const responseBody = await request<{ leads: MaskedLead[] }>("GET", path);
+  return responseBody.leads;
+}
+
+/**
+ * Get one lead from `GET /api/leads/{id}`, unwrapping the `{ lead }` envelope.
+ * Throws an `ApiError` with `status` `404` for a missing or cross-tenant id.
+ */
+export async function getLead(leadId: string): Promise<MaskedLead> {
+  const responseBody = await request<{ lead: MaskedLead }>(
+    "GET",
+    `/api/leads/${leadId}`,
+  );
+  return responseBody.lead;
+}
+
+/**
+ * Claim a lead via `POST /api/leads/{id}/claim` (moves `New → Working`, owned by
+ * the caller), unwrapping the `{ lead }` envelope into the updated masked lead.
+ */
+export async function claimLead(leadId: string): Promise<MaskedLead> {
+  const responseBody = await request<{ lead: MaskedLead }>(
+    "POST",
+    `/api/leads/${leadId}/claim`,
+  );
+  return responseBody.lead;
+}
+
+/**
+ * Qualify a lead via `POST /api/leads/{id}/qualify` (moves `Working → Qualified`),
+ * unwrapping the `{ lead }` envelope into the updated masked lead.
+ */
+export async function qualifyLead(leadId: string): Promise<MaskedLead> {
+  const responseBody = await request<{ lead: MaskedLead }>(
+    "POST",
+    `/api/leads/${leadId}/qualify`,
+  );
+  return responseBody.lead;
+}
+
+/**
+ * Reject a lead via `POST /api/leads/{id}/reject` (moves `Working → Rejected`),
+ * unwrapping the `{ lead }` envelope. The optional free-text reason rides the body.
+ */
+export async function rejectLead(
+  leadId: string,
+  rejectLeadRequest: RejectLeadRequest,
+): Promise<MaskedLead> {
+  const responseBody = await request<{ lead: MaskedLead }>(
+    "POST",
+    `/api/leads/${leadId}/reject`,
+    rejectLeadRequest,
+  );
+  return responseBody.lead;
+}
+
+/**
+ * Resolve a flagged duplicate via `POST /api/leads/{id}/resolve-duplicate`,
+ * unwrapping the `{ lead }` envelope. The body names the `link` / `new` / `reject`
+ * action.
+ */
+export async function resolveDuplicate(
+  leadId: string,
+  resolveDuplicateRequest: ResolveDuplicateRequest,
+): Promise<MaskedLead> {
+  const responseBody = await request<{ lead: MaskedLead }>(
+    "POST",
+    `/api/leads/${leadId}/resolve-duplicate`,
+    resolveDuplicateRequest,
+  );
+  return responseBody.lead;
+}
+
+/**
+ * Unmask one field of a lead via `POST /api/leads/{id}/reveal`, returning the
+ * `{ field, value }` body (the audited reveal seam runs server-side). The body
+ * names which field to reveal; `value` is `null` when the field has no stored value.
+ */
+export function revealLeadField(
+  leadId: string,
+  revealLeadRequest: RevealLeadRequest,
+): Promise<RevealLeadResponse> {
+  return request<RevealLeadResponse>(
+    "POST",
+    `/api/leads/${leadId}/reveal`,
+    revealLeadRequest,
+  );
 }

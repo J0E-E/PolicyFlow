@@ -32,11 +32,13 @@ const sampleTenants: Tenant[] = [
     slug: "sunshine-senior-benefits",
     display_name: "Sunshine Senior Benefits",
     brand_primary_color: "#9C4A1E",
+    product_lines: [],
   },
   {
     slug: "florida-family-planning",
     display_name: "Florida Family Planning",
     brand_primary_color: "#0F6A72",
+    product_lines: [],
   },
 ];
 
