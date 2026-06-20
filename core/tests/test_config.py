@@ -80,6 +80,16 @@ def test_outbox_poll_interval_default_is_one_second():
     assert settings.outbox_poll_interval_seconds == 1.0
 
 
+def test_public_intake_rate_limit_default_is_five():
+    """The live setting defaults to 5 requests per window as an int."""
+    assert settings.public_intake_rate_limit == 5
+
+
+def test_public_intake_rate_limit_window_default_is_sixty_seconds():
+    """The live setting defaults to a 60-second window as a float."""
+    assert settings.public_intake_rate_limit_window_seconds == 60.0
+
+
 def test_event_exchange_honors_environment_override(monkeypatch):
     """A fresh `Settings()` reads a custom exchange name from the environment."""
     monkeypatch.setenv("EVENT_EXCHANGE", "custom.events")
@@ -96,6 +106,24 @@ def test_outbox_poll_interval_honors_environment_override(monkeypatch):
     fresh_settings = Settings()
 
     assert fresh_settings.outbox_poll_interval_seconds == 2.5
+
+
+def test_public_intake_rate_limit_honors_environment_override(monkeypatch):
+    """A fresh `Settings()` reads a non-default request limit as an int."""
+    monkeypatch.setenv("PUBLIC_INTAKE_RATE_LIMIT", "20")
+
+    fresh_settings = Settings()
+
+    assert fresh_settings.public_intake_rate_limit == 20
+
+
+def test_public_intake_rate_limit_window_honors_environment_override(monkeypatch):
+    """A fresh `Settings()` reads a non-default window length as a float."""
+    monkeypatch.setenv("PUBLIC_INTAKE_RATE_LIMIT_WINDOW_SECONDS", "30.0")
+
+    fresh_settings = Settings()
+
+    assert fresh_settings.public_intake_rate_limit_window_seconds == 30.0
 
 
 def test_demo_login_enabled_defaults_on(monkeypatch):

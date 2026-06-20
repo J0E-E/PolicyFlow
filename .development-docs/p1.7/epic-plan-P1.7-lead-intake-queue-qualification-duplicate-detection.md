@@ -67,12 +67,12 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
 - **Depends on:** none.
 - **Implementation notes:** Epic 10 consumes `get_public_tenant_db` (in `app/tenancy/scoping.py`) via `async with` around the shared `create_lead` core — it is an `@asynccontextmanager`, not a `Depends` (the slug comes from the request body, not an injectable). The seam owns the request transaction (the core doesn't commit), resolves schema/role from the registry via `tenant_by_slug` (no `platform.tenants` read — the lookup IS the whitelist), and returns **404** on an unknown slug, so Epic 10 needn't pre-validate the slug.
 
-## Epic 9 — In-app per-IP rate limiter
+## Epic 9 — In-app per-IP rate limiter — **COMPLETED** (19m)
 - **Goal:** A unit-testable fixed-window per-IP rate limiter in the core app, keyed on the first `X-Forwarded-For` hop and configurable via settings, ready for the public intake route to use.
 - **Rough scope:** A `leads/rate_limit.py`-style limiter plus the config knobs and unit tests. Not yet attached to any endpoint.
-- **Open questions / decisions for stakeholders:** the default limit and window values (the TDD names the knobs but not the numbers).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time. Default **5 requests / 60s** per IP (knobs `PUBLIC_INTAKE_RATE_LIMIT`=5, `PUBLIC_INTAKE_RATE_LIMIT_WINDOW_SECONDS`=60.0 in `config.py`). Limiter is a stateful `RateLimiter` with `is_allowed(client_ip) -> bool` (True=proceed; soft control flow, not a raise — so Epic 10 picks 429 vs silent drop); fixed-window via `floor(now/window)`, injected `now` defaulting to `time.monotonic` for sleep-free tests; first `limit` hits per window allowed, then blocked, count resets on rollover; no active eviction (in-memory, reset-on-restart per D7). IP keying via a pure `client_ip_from_forwarded_for(header) -> str | None` (first hop stripped, `None` when absent/empty) — Epic 10 owns the missing-header fallback.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** `app/leads/rate_limit.py` is framework-free (no endpoint wiring). Epic 10 consumes it directly — `client_ip_from_forwarded_for(header)` for the IP key and the module-level `public_intake_rate_limiter.is_allowed(client_ip)` for the gate (True=proceed) — and owns both the no-header fallback (helper returns `None`) and the over-limit response (429 vs silent drop), since `is_allowed` is a soft bool, not a raise.
 
 ## Epic 10 — Public intake endpoint
 - **Goal:** The unauthenticated `POST /api/public/intake`: rate-limit and honeypot checks (honeypot filled → silent success-shaped drop), strict validation, tenant-by-slug scoping, lead creation (`New`, unowned, `public_form`), matcher, `lead.created` (plus `lead.duplicate_detected`), and a sanitized response that never leaks matched-lead data.

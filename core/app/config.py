@@ -72,6 +72,20 @@ class Settings:
             os.environ.get("SESSION_LIFETIME_SECONDS", "28800")
         )
 
+        # Public-intake rate limit: how many requests one IP may make per window
+        # before the limiter blocks it. Defaults to 5; override via
+        # PUBLIC_INTAKE_RATE_LIMIT. Read by app/leads/rate_limit.py.
+        self.public_intake_rate_limit: int = int(
+            os.environ.get("PUBLIC_INTAKE_RATE_LIMIT", "5")
+        )
+
+        # The public-intake rate-limit window length, in seconds. Defaults to 60.0;
+        # override via PUBLIC_INTAKE_RATE_LIMIT_WINDOW_SECONDS. Read by
+        # app/leads/rate_limit.py.
+        self.public_intake_rate_limit_window_seconds: float = float(
+            os.environ.get("PUBLIC_INTAKE_RATE_LIMIT_WINDOW_SECONDS", "60.0")
+        )
+
         # Whether the session cookie carries the Secure flag (HTTPS-only).
         # Default off for local HTTP; prod sets SESSION_COOKIE_SECURE=true.
         self.session_cookie_secure: bool = os.environ.get(
