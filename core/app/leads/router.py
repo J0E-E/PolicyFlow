@@ -30,10 +30,20 @@ single masked read builder (`app.leads.masking`). It carries three routes:
   `Working` lead to `Rejected`, store an **optional** free-text reason on the row's
   `rejection_reason` column (surfaced in the masked read, never in the event), and
   publish `lead.rejected` with `{entity_id, reason_kind: "qualify_reject"}`.
+- **`POST /api/leads/{lead_id}/resolve-duplicate`** — the duplicate-resolution
+  action (TDD §5.4): resolve a lead the matcher flagged. The body's `action` picks
+  one of three moves on a **flagged** lead (`duplicate_of_lead_id` set, else a 409
+  `"lead is not flagged as a duplicate"`): `link` records the linkage
+  (`duplicate_resolution = "linked"`, no event), `new` clears the flag
+  (`duplicate_resolution = "new"`, `duplicate_of_lead_id` nulled, no event), and
+  `reject` moves a `New` lead to `Rejected` (`duplicate_resolution = "rejected"`,
+  linkage kept) and publishes `lead.rejected` with `reason_kind = "duplicate"`. It
+  owns the `New → Rejected` move (Epic 13's `/reject` owns `Working → Rejected`), so
+  a non-`New` lead is a 409.
 
 All ride `get_tenant_db`, so isolation is automatic — there is **no tenant
 parameter** — and the inherited 401 (no session) / 400 (tenantless Platform Admin)
-come for free; `POST /api/leads` and the qualify / reject actions require
+come for free; `POST /api/leads` and the qualify / reject / resolve-duplicate actions require
 `CREATE_EDIT_RECORDS`, the claim action requires `CLAIM_LEADS_MANAGE_TASKS` (else
 403), while the two reads only require an authenticated tenant user (Read-Only
 included). Every
@@ -61,7 +71,7 @@ from ..tenancy.registry import tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
 from .intake import create_lead
 from .masking import build_masked_lead
-from .schemas import CreateLeadRequest, RejectLeadRequest
+from .schemas import CreateLeadRequest, RejectLeadRequest, ResolveDuplicateRequest
 from .state import InvalidLeadTransition, LeadSource, LeadStatus, assert_transition
 
 router = APIRouter(prefix="/api/leads")
@@ -458,6 +468,122 @@ async def reject_lead(
             payload={
                 "entity_id": str(lead.id),
                 "reason_kind": "qualify_reject",
+            },
+            correlation_id=lead.correlation_id,
+        ),
+    )
+
+    return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+
+
+@router.post("/{lead_id}/resolve-duplicate")
+async def resolve_duplicate_lead(
+    lead_id: uuid.UUID,
+    resolution: ResolveDuplicateRequest,
+    identity: Identity = Depends(
+        require_capability(Capability.CREATE_EDIT_RECORDS)
+    ),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Resolve a lead the matcher flagged as a possible duplicate; return it masked.
+
+    When intake found a prior matching lead, the new lead carries a
+    `duplicate_of_lead_id` linkage and an unresolved flag. This endpoint is the agent's
+    one way to clear that flag — and it exists **only** to resolve a flag: a lead that
+    is not flagged (`duplicate_of_lead_id IS NULL`) is a `409 "lead is not flagged as a
+    duplicate"` for every action. The body's `action` (a strict `Literal`; an unknown
+    value is a 422 before this runs) picks one of three moves. No new resource is
+    created, so this returns a `200`.
+
+    The gate and scoping mirror qualify / reject: `CREATE_EDIT_RECORDS` (403 / 401
+    otherwise), `get_tenant_db` scoping (400 tenantless, 404 on a missing or
+    cross-tenant id). The three actions are:
+
+    - **`link`** — confirm the match is the same person: set
+      `duplicate_resolution = "linked"`, **keep** the `duplicate_of_lead_id`. No event.
+    - **`new`** — it is genuinely a different person: set `duplicate_resolution = "new"`
+      and clear `duplicate_of_lead_id` to null. No event.
+    - **`reject`** — discard the lead as a duplicate. This owns the `New → Rejected`
+      move (Epic 13's `/reject` owns `Working → Rejected`), so the current status is
+      guarded as `New` explicitly — a non-`New` lead (a flagged `Working` lead is
+      rejected via `/reject` instead) is a `409`. On a `New` lead it runs the formal
+      `assert_transition(New, Rejected)`, sets `status = Rejected` **and**
+      `duplicate_resolution = "rejected"` (the linkage is **kept**), and publishes
+      `lead.rejected` with `{entity_id, reason_kind: "duplicate"}` reusing the row's
+      `correlation_id`. It sets **no** `rejection_reason` — that free-text column is the
+      qualify/reject path's, not this one's.
+
+    Nothing is committed here — `get_tenant_db` owns the request transaction, so the row
+    change and any outbox event land or roll back together. The resolved lead is
+    returned through the shared `build_masked_lead` builder under the `{"lead": …}`
+    envelope.
+    """
+    lead = (
+        await db.execute(select(Lead).where(Lead.id == lead_id))
+    ).scalar_one_or_none()
+
+    if lead is None:
+        raise HTTPException(status_code=404, detail="lead not found")
+
+    # The endpoint exists only to resolve a flag: every action requires the lead to be
+    # flagged. An unflagged lead has nothing to resolve, so it is a 409 before any
+    # action-specific logic runs.
+    if lead.duplicate_of_lead_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="lead is not flagged as a duplicate",
+        )
+
+    if resolution.action == "link":
+        # Confirm the match is the same person: record the resolution, keep the linkage.
+        lead.duplicate_resolution = "linked"
+        await db.flush()
+        return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+
+    if resolution.action == "new":
+        # A genuinely different person: clear the flag (drop the linkage too).
+        lead.duplicate_resolution = "new"
+        lead.duplicate_of_lead_id = None
+        await db.flush()
+        return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+
+    # action == "reject": discard the lead as a duplicate. This path owns the
+    # `New → Rejected` move; the qualify/reject path owns `Working → Rejected`. Guard
+    # the current status as `New` explicitly so the start-state partition holds — a
+    # non-`New` lead (e.g. a flagged `Working` lead, rejected via `/reject` instead) is
+    # a 409 before the formal `assert_transition`.
+    if LeadStatus(lead.status) is not LeadStatus.NEW:
+        raise HTTPException(
+            status_code=409,
+            detail=f"lead cannot be duplicate-rejected (status: {lead.status})",
+        )
+
+    try:
+        assert_transition(LeadStatus(lead.status), LeadStatus.REJECTED)
+    except InvalidLeadTransition:
+        raise HTTPException(
+            status_code=409,
+            detail=f"lead cannot be duplicate-rejected (status: {lead.status})",
+        )
+
+    lead.status = LeadStatus.REJECTED.value
+    lead.duplicate_resolution = "rejected"
+    await db.flush()
+
+    # Reuse the row's `correlation_id` so this `lead.rejected` event shares the lead's
+    # trace id. The payload carries the entity reference and `reason_kind = "duplicate"`
+    # (this is the duplicate-reject path; the qualify/reject path emits
+    # `"qualify_reject"`). No `rejection_reason` is set on this path.
+    await enqueue_event(
+        db,
+        build_envelope(
+            event_type=EventBusEventType.LEAD_REJECTED,
+            tenant_id=identity.tenant_id,
+            actor_user_id=identity.user_id,
+            actor_role=identity.role,
+            payload={
+                "entity_id": str(lead.id),
+                "reason_kind": "duplicate",
             },
             correlation_id=lead.correlation_id,
         ),

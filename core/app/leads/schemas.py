@@ -34,12 +34,18 @@ the handler runs — the automatic-validation style the `pii_demo` create relies
 
 import re
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..pii.crypto import normalize_phone
 
-__all__ = ["CreateLeadRequest", "PublicIntakeRequest", "RejectLeadRequest"]
+__all__ = [
+    "CreateLeadRequest",
+    "PublicIntakeRequest",
+    "RejectLeadRequest",
+    "ResolveDuplicateRequest",
+]
 
 # The light email shape the public route accepts: one or more non-`@`, non-space
 # characters, an `@`, the same again, a dot, and a final run. Deliberately loose —
@@ -228,3 +234,22 @@ class RejectLeadRequest(BaseModel):
     """
 
     reason: str | None = Field(default=None, max_length=1000)
+
+
+class ResolveDuplicateRequest(BaseModel):
+    """The request body for the resolve-duplicate action.
+
+    A single required field, `action`, naming how the agent resolves a lead the
+    matcher flagged as a possible duplicate (`POST /api/leads/{id}/resolve-duplicate`):
+
+    - `"link"` — confirm it is the same person: keep the `duplicate_of_lead_id`
+      linkage and mark it `linked`.
+    - `"new"` — it is genuinely a different person: clear the flag.
+    - `"reject"` — discard it as a duplicate: move the `New` lead to `Rejected`.
+
+    `action` is typed as a `Literal` of exactly those three strings, so any other
+    value (a typo, an unknown action) is rejected by FastAPI as a 422 before the
+    handler runs — the same automatic-validation style the other lead bodies rely on.
+    """
+
+    action: Literal["link", "new", "reject"]

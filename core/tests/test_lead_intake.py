@@ -109,7 +109,8 @@ async def read_lead_row(database_engine, schema_name, lead_id):
             await connection.execute(
                 text(
                     "SELECT id, status, lead_source, owner_user_id, owner_username, "
-                    "correlation_id, duplicate_of_lead_id, demo_session_id "
+                    "correlation_id, duplicate_of_lead_id, duplicate_resolution, "
+                    "demo_session_id "
                     f"FROM {schema_name}.leads WHERE id = :id"
                 ),
                 {"id": lead_id},

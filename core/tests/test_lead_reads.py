@@ -106,17 +106,19 @@ async def insert_lead(
     owner_user_id: uuid.UUID | None = None,
     owner_username: str | None = None,
     product_lines_of_interest: list[str] | None = None,
+    duplicate_of_lead_id: uuid.UUID | None = None,
     created_at: datetime = BASE_CREATED_AT,
 ) -> uuid.UUID:
     """Insert one lead into `<schema_name>.leads` via the normal encryption path.
 
-    The controllable setup seam: it sets `status`, `owner_user_id`, and `created_at`
-    directly — combinations the create endpoint cannot produce (a `New`/unowned queue
-    lead, an unowned `Rejected` lead, an explicitly-timestamped row for deterministic
-    ordering). The PII fields are encrypted with `encrypt_field` and each blind index
-    is computed over the normalized value, exactly the seed / Epic 6 insert path, so a
-    masked read decrypts it cleanly. The schema name comes only from the registry;
-    every value is a bound parameter. Returns the new lead's id.
+    The controllable setup seam: it sets `status`, `owner_user_id`,
+    `duplicate_of_lead_id`, and `created_at` directly — combinations the create endpoint
+    cannot produce (a `New`/unowned queue lead, an unowned `Rejected` lead, a
+    duplicate-flagged lead for the resolve-duplicate tests, an explicitly-timestamped
+    row for deterministic ordering). The PII fields are encrypted with `encrypt_field`
+    and each blind index is computed over the normalized value, exactly the seed / Epic
+    6 insert path, so a masked read decrypts it cleanly. The schema name comes only from
+    the registry; every value is a bound parameter. Returns the new lead's id.
     """
     lead_id = uuid.uuid4()
     async with database_engine.begin() as connection:
@@ -126,13 +128,14 @@ async def insert_lead(
                 "(id, first_name, last_name, email_encrypted, email_blind_index, "
                 "phone_encrypted, phone_blind_index, date_of_birth_encrypted, "
                 "age_band, zip_code, product_lines_of_interest, lead_source, status, "
-                "owner_user_id, owner_username, correlation_id, created_at, "
-                "updated_at) "
+                "owner_user_id, owner_username, duplicate_of_lead_id, correlation_id, "
+                "created_at, updated_at) "
                 "VALUES (:id, :first_name, :last_name, :email_encrypted, "
                 ":email_blind_index, :phone_encrypted, :phone_blind_index, "
                 ":date_of_birth_encrypted, :age_band, :zip_code, "
                 ":product_lines_of_interest, :lead_source, :status, :owner_user_id, "
-                ":owner_username, :correlation_id, :created_at, :updated_at)"
+                ":owner_username, :duplicate_of_lead_id, :correlation_id, :created_at, "
+                ":updated_at)"
             ),
             {
                 "id": lead_id,
@@ -156,6 +159,7 @@ async def insert_lead(
                 "status": status.value,
                 "owner_user_id": owner_user_id,
                 "owner_username": owner_username,
+                "duplicate_of_lead_id": duplicate_of_lead_id,
                 "correlation_id": uuid.uuid4(),
                 "created_at": created_at,
                 "updated_at": created_at,
