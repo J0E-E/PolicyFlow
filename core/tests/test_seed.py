@@ -12,6 +12,8 @@ insert-if-absent logic is exercised with no database.
 `@pytest.mark.asyncio` decorator.
 """
 
+import pytest
+
 from app.auth.passwords import verify_password
 from app.models import Role, Tenant, User
 from app.seed import (
@@ -30,9 +32,11 @@ class FakeResult:
     Most `seed` queries read through `.scalars().all()`: scalar columns
     (`select(Tenant.slug)`, `select(User.username)`) and the present-tenant
     lookup, which loads full `Tenant` ORM objects (`select(Tenant)`). The
-    per-tenant `pii_demo` count reads through `.scalar_one()`. This fake serves
+    per-tenant `pii_demo` count reads through `.scalar_one()`. The per-lead
+    presence check (`seed_demo_leads`) reads through `.first()`. This fake serves
     all of them — `scalars()` returns self, `.all()` returns the preset rows
-    unchanged, and `.scalar_one()` returns the single preset row.
+    unchanged, `.scalar_one()` returns the single preset row, and `.first()`
+    returns the first preset row or `None` when there are none.
     """
 
     def __init__(self, rows, rowcount=0):
@@ -47,6 +51,9 @@ class FakeResult:
 
     def scalar_one(self):
         return self._rows[0]
+
+    def first(self):
+        return self._rows[0] if self._rows else None
 
 
 class FakeAsyncSession:
@@ -67,6 +74,15 @@ class FakeAsyncSession:
     SELECT row, recording each one in `settings_inserts`. `add` appends to
     `added`, and `commit` increments `commit_count` (and sets `did_commit`), so a
     test can assert exactly which rows were inserted and that the seed committed.
+
+    The demo-lead seed (`seed_demo_leads`) also runs parametrised statements: a
+    per-lead presence check (`SELECT 1 ... WHERE email_blind_index = ...`) and the
+    lead `INSERT`. The fake distinguishes them by statement text — the presence
+    check returns a non-empty `first()` row so every demo lead reads as
+    *already present*, skipping its `INSERT` and keeping this a pure no-DB unit
+    test (the same intent as the preset non-zero `pii_demo` count). Lead reads /
+    inserts are kept out of `settings_inserts` so the brand-colour assertions stay
+    clean.
     """
 
     def __init__(self, result_rows):
@@ -79,6 +95,15 @@ class FakeAsyncSession:
 
     async def execute(self, statement, parameters=None):
         if parameters is not None:
+            statement_text = str(statement)
+            if "FROM" in statement_text and ".leads" in statement_text:
+                # The per-lead presence check: report the lead as already present
+                # so `seed_demo_leads` skips its encryption + INSERT path.
+                return FakeResult([(1,)])
+            if "INSERT INTO" in statement_text and ".leads" in statement_text:
+                # A demo-lead INSERT — never reached when presence reads present,
+                # but ignored (not a settings insert) if it ever is.
+                return FakeResult([], rowcount=1)
             # A parametrised settings INSERT — record it and report one row
             # affected so the seed's insert counter advances.
             self.settings_inserts.append(parameters)
@@ -93,6 +118,25 @@ class FakeAsyncSession:
     async def commit(self):
         self.did_commit = True
         self.commit_count += 1
+
+
+@pytest.fixture(autouse=True)
+def stub_lead_blind_index(monkeypatch):
+    """Stub `seed.compute_blind_index` so the pure seed tests touch no DB / keys.
+
+    `seed_demo_leads` computes each lead's `email_blind_index` (the presence-check
+    key) before its skip decision, and `compute_blind_index` would otherwise resolve
+    the tenant's keys through a real DB session. These no-DB tests drive `seed` via
+    `FakeAsyncSession`, whose lead presence check always reads *already present*, so
+    the blind-index value is never actually used — this replaces it with a pure
+    deterministic stand-in so no key load is attempted. The real `compute_blind_index`
+    is exercised end-to-end by the DB-backed `test_seed_leads.py`.
+    """
+
+    async def fake_blind_index(tenant_id, normalized_value):
+        return normalized_value.encode("utf-8")
+
+    monkeypatch.setattr("app.seed.compute_blind_index", fake_blind_index)
 
 
 # --- Phase 2: the persona spec is correct (pure data, no session) ------------

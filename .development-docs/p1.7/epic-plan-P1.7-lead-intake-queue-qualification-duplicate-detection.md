@@ -116,12 +116,12 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
 - **Depends on:** Epics 3, 7.
 - **Implementation notes:** Reveal contract for **Epic 21**'s detail page (one click-to-reveal control per field): `POST /api/leads/{id}/reveal`, body `{"field": str}`, 200 `{"field", "value"}`; revealable set `email` / `phone` / `date_of_birth` / `street_address`, any other field → 422 `"field is not revealable"`, absent `street_address` → `value: null`. No deviations.
 
-## Epic 16 — Minimal lead seed
+## Epic 16 — Minimal lead seed — **COMPLETED** (31m · 22.3M tok · 707k tok/min)
 - **Goal:** A small per-tenant lead seed (several unassigned `New` leads plus one duplicate-bait) so the queue is non-empty and the duplicate scenario lights up now; insert-if-absent so P1.8's full seed extends rather than collides.
 - **Rough scope:** Add the lead rows to the existing idempotent seed, routing PII through the same normalize + blind-index path so the bait reliably flags.
-- **Open questions / decisions for stakeholders:** the seed content — how many leads, and the bait lead's identity (which must match an intake the demo will submit).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time. **Count:** 3 ordinary unassigned-`New` leads + 1 duplicate-bait per tenant (8 total), all `lead_source = public_form`, unowned (`owner_user_id` null) — i.e. queue leads. **Bait (both tenants, same identity so Epic 18 ships one prefill):** Jordan Rivera / `jordan.rivera@example.com` / `(407) 555-0188` / dob `1958-06-15` / zip `32801` / `742 Marina Bay Drive` / preferred contact `email`; product lines Sunshine `medicare_advantage`, Florida `term_life`. The normalized **email + phone are the cross-epic contract** Epic 18's "Try a duplicate scenario" prefill must submit so the match flags. **Idempotency:** per-lead insert-if-absent keyed on `email_blind_index` (so P1.8 extends `DEMO_LEADS` rather than colliding) — **not** the `pii_demo` count-based skip. **Filler leads:** clearly synthetic (`example.com` emails, `555-01xx` phones), distinct **all-decimal** phones + distinct emails (the matcher-collision gotcha), tenant-valid product-line keys, dobs spread across age bands, a mix of present/absent `street_address`. Routed through the live `encrypt_field` + `normalize_*` + `compute_blind_index` + `age_band_for` path; fresh `correlation_id`, `demo_session_id` null. **No migration, no schema/masking change.**
 - **Depends on:** Epics 3, 6.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** P1.8's fuller seed **extends `app.seed.DEMO_LEADS`** (adds rows) — it must reuse `seed_demo_leads`' per-lead insert-if-absent (keyed on `email_blind_index`), never the `pii_demo` count-skip, or it collides. Bait constants `JORDAN_RIVERA_BAIT_EMAIL` / `JORDAN_RIVERA_BAIT_PHONE` are exported from `app.seed` — Epic 18's "Try a duplicate scenario" prefill submits exactly these.
 
 ## Epic 17 — Frontend API client + lead types
 - **Goal:** Typed frontend client calls and Lead/ProductLine types mirroring the wire, so the UI epics have a ready data layer. Renders nothing.
