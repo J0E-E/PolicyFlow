@@ -18,11 +18,17 @@ single masked read builder (`app.leads.masking`). It carries three routes:
   `unassigned` filter backing the two-tab queue UI (unowned **and** still `New`).
 - **`GET /api/leads/{lead_id}`** — the masked detail read; a missing or cross-tenant
   id is a `404 "lead not found"`, mirroring `pii_demo`'s get.
+- **`POST /api/leads/{lead_id}/claim`** — the claim action (TDD §5.4): move a `New`
+  lead to `Working`, set its owner to the caller, and publish `lead.assigned`. It
+  guards the move through the shared state machine — an illegal move (the lead is not
+  `New`) is a `409` — and reuses the row's `correlation_id` so all of one lead's
+  events share one trace id. No new resource is created, so it returns `200`.
 
-All three ride `get_tenant_db`, so isolation is automatic — there is **no tenant
+All four ride `get_tenant_db`, so isolation is automatic — there is **no tenant
 parameter** — and the inherited 401 (no session) / 400 (tenantless Platform Admin)
-come for free; `POST` additionally requires `CREATE_EDIT_RECORDS` (else 403) while
-the two reads only require an authenticated tenant user (Read-Only included). Every
+come for free; `POST /api/leads` requires `CREATE_EDIT_RECORDS` and the claim action
+requires `CLAIM_LEADS_MANAGE_TASKS` (else 403), while the two reads only require an
+authenticated tenant user (Read-Only included). Every
 response uses the named-envelope style the other routers use (`{"lead": …}` /
 `{"leads": […]}`), built through `build_masked_lead` so the masked-by-default
 contract lives in one place. No audit record is written on create — the audit enum
@@ -39,13 +45,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.dependencies import require_authenticated, require_capability
 from ..auth.provider import Identity
 from ..auth.rbac import Capability
+from ..events.catalog import EventType as EventBusEventType
+from ..events.envelope import build_envelope
+from ..events.outbox import enqueue_event
 from ..models.lead import Lead
 from ..tenancy.registry import tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
 from .intake import create_lead
 from .masking import build_masked_lead
 from .schemas import CreateLeadRequest
-from .state import LeadSource, LeadStatus
+from .state import InvalidLeadTransition, LeadSource, LeadStatus, assert_transition
 
 router = APIRouter(prefix="/api/leads")
 
@@ -192,5 +201,89 @@ async def get_lead(
 
     if lead is None:
         raise HTTPException(status_code=404, detail="lead not found")
+
+    return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+
+
+@router.post("/{lead_id}/claim")
+async def claim_lead(
+    lead_id: uuid.UUID,
+    identity: Identity = Depends(
+        require_capability(Capability.CLAIM_LEADS_MANAGE_TASKS)
+    ),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Claim one `New` lead for the caller, moving it to `Working`; return it masked.
+
+    The first lead action endpoint. An agent picks an unclaimed lead off the queue
+    and takes ownership: the lead moves `New → Working`, its owner is set to the
+    calling agent, and a `lead.assigned` event is published. No new resource is
+    created — the lead already exists — so this returns a `200`, not a `201`.
+
+    The guard hands the route an `Identity` only when the caller holds
+    `CLAIM_LEADS_MANAGE_TASKS` (every other role gets a 403, the anonymous caller a
+    401); `get_tenant_db` scopes the lookup and write to the caller's own schema and
+    rejects a tenantless Platform Admin with a 400 — all inherited, no tenant
+    parameter. The handler then runs four steps:
+
+    1. **Load the lead** by id within the caller's schema. An id absent in this tenant
+       (whether it does not exist or belongs to another tenant) yields a
+       `404 "lead not found"`, mirroring `get_lead` — schema scoping makes another
+       tenant's row physically out of reach, so the cross-tenant case is covered here
+       too.
+    2. **Guard the move** through the shared state machine: `assert_transition` allows
+       only `New → Working`. A lead in any other status (already `Working`,
+       `Qualified`, or `Rejected`) raises the framework-free `InvalidLeadTransition`,
+       which is mapped to a `409` naming the current status. The 409 is a cross-epic
+       contract — Epics 13/14 catch the same exception and map it the same way.
+    3. **Apply the claim** — the lead's `status` becomes `Working`, its `owner_user_id`
+       / `owner_username` become the calling agent's, and the change is flushed. The
+       handler does **not** commit; `get_tenant_db` owns the request transaction, so
+       the row change and the outbox event all land or all roll back together.
+    4. **Publish `lead.assigned`** onto this tenant's outbox (a non-PII payload: the
+       entity reference plus the new owner's id), reusing the row's own
+       `correlation_id` so every event for this lead shares one trace id.
+
+    The claimed lead is returned through the shared `build_masked_lead` builder under
+    the `{"lead": …}` envelope.
+    """
+    lead = (
+        await db.execute(select(Lead).where(Lead.id == lead_id))
+    ).scalar_one_or_none()
+
+    if lead is None:
+        raise HTTPException(status_code=404, detail="lead not found")
+
+    try:
+        assert_transition(LeadStatus(lead.status), LeadStatus.WORKING)
+    except InvalidLeadTransition:
+        raise HTTPException(
+            status_code=409,
+            detail=f"lead cannot be claimed (status: {lead.status})",
+        )
+
+    lead.status = LeadStatus.WORKING.value
+    lead.owner_user_id = identity.user_id
+    lead.owner_username = identity.username
+    await db.flush()
+
+    # Reuse the row's `correlation_id` so this `lead.assigned` event shares the trace
+    # id of the lead's `lead.created` (and any later) events — read it back off the
+    # row (TDD §5.4). Published on the same request transaction as the status change
+    # (the transactional outbox: the claim and its event land or roll back together).
+    await enqueue_event(
+        db,
+        build_envelope(
+            event_type=EventBusEventType.LEAD_ASSIGNED,
+            tenant_id=identity.tenant_id,
+            actor_user_id=identity.user_id,
+            actor_role=identity.role,
+            payload={
+                "entity_id": str(lead.id),
+                "owner_user_id": str(identity.user_id),
+            },
+            correlation_id=lead.correlation_id,
+        ),
+    )
 
     return {"lead": await build_masked_lead(identity.tenant_id, lead)}

@@ -88,12 +88,12 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
 - **Depends on:** Epics 3, 5.
 - **Implementation notes:** Read-side wire contract Epic 17 types and Epic 20's queue tab builds on: `{"leads": […]}` (list) / `{"lead": …}` (detail) of the masked shape, list is newest-first capped at 200, and `unassigned=true` is the queue filter `owner_user_id IS NULL AND status == 'New'`. Test seam for Epics 13–15/20–21: lead states the create endpoint can't make (unowned `New`, unowned `Rejected`, explicit `created_at`) are inserted via a schema-qualified superuser `INSERT` through the encryption path (`tests/test_lead_reads.py::insert_lead`); `login_agent_for_slug` logs in a *specific* tenant's seeded Agent where `login_as` only ever picks the first persona for a role.
 
-## Epic 12 — Claim
+## Epic 12 — Claim — **COMPLETED** (17m)
 - **Goal:** `POST /api/leads/{id}/claim` moves a lead `New → Working`, sets the owner to the caller, and publishes `lead.assigned`.
 - **Rough scope:** The claim action endpoint (capability-gated) using the state machine, plus tests for the transition and the event.
 - **Open questions / decisions for stakeholders:** none expected.
 - **Depends on:** Epics 2, 7.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** Claim's `New → Working` + `lead.assigned` lives inline in `app/leads/router.py` (`claim_lead`, returns **200** — no resource created), reusing the row's `correlation_id` for the event. Epics 13/14 follow the same load→guard(`assert_transition`)→transition→publish→masked shape and map `InvalidLeadTransition` → **409** exactly as claim does (cross-epic contract).
 
 ## Epic 13 — Qualify / reject
 - **Goal:** `POST /api/leads/{id}/qualify` (`Working → Qualified`) and `POST /api/leads/{id}/reject` (`Working → Rejected`), each publishing its event with the right `reason_kind`.
