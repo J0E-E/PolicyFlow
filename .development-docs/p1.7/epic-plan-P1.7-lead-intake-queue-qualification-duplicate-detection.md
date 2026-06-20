@@ -95,12 +95,12 @@ from its UI throughout; UI-bearing epics carry ` [UI]`.
 - **Depends on:** Epics 2, 7.
 - **Implementation notes:** Claim's `New → Working` + `lead.assigned` lives inline in `app/leads/router.py` (`claim_lead`, returns **200** — no resource created), reusing the row's `correlation_id` for the event. Epics 13/14 follow the same load→guard(`assert_transition`)→transition→publish→masked shape and map `InvalidLeadTransition` → **409** exactly as claim does (cross-epic contract).
 
-## Epic 13 — Qualify / reject
+## Epic 13 — Qualify / reject — **COMPLETED** (30m)
 - **Goal:** `POST /api/leads/{id}/qualify` (`Working → Qualified`) and `POST /api/leads/{id}/reject` (`Working → Rejected`), each publishing its event with the right `reason_kind`.
 - **Rough scope:** The two terminal-transition endpoints using the state machine, plus tests for the transitions and events.
-- **Open questions / decisions for stakeholders:** whether reject captures a human reason/notes beyond the event's `reason_kind`.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time. Reject **captures an optional free-text reason** (≤1000 chars) stored in a new `rejection_reason text` column (migration `0010`), kept separate from intake `notes`; surfaced in the masked read like `notes` but **never** in the `lead.rejected` event (payload stays `entity_id` + `reason_kind`). A reason-less reject is allowed — `reason_kind = qualify_reject` always categorizes it. Both endpoints gate on `CREATE_EDIT_RECORDS` (**not** claim's `CLAIM_LEADS_MANAGE_TASKS`); `lead.qualified` payload is `entity_id` only. Both follow claim's load→`assert_transition`→transition→publish→masked inline pattern, mapping `InvalidLeadTransition` → 409.
 - **Depends on:** Epics 2, 7.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** New `rejection_reason` column (migration `0010`) + masked-read field are a cross-epic surface — Epic 17 mirrors the field, Epic 21 shows it on the detail page. `lead.rejected` payload is `entity_id` + `reason_kind`: this path emits `qualify_reject`; Epic 14's duplicate-reject reuses the event with `reason_kind = duplicate` and sets **no** `rejection_reason`. Reject **guards `current is Working` explicitly** (the machine legally allows `New → Rejected`) so the `New → Rejected` move stays Epic 14's — Epic 14 must not route it here.
 
 ## Epic 14 — Duplicate resolution
 - **Goal:** `POST /api/leads/{id}/resolve-duplicate` with `link` / `new` / `reject` — `link` records the linkage, `new` clears the flag, `reject` moves `New → Rejected` and publishes `lead.rejected` with `reason_kind = duplicate`.

@@ -23,12 +23,20 @@ single masked read builder (`app.leads.masking`). It carries three routes:
   guards the move through the shared state machine — an illegal move (the lead is not
   `New`) is a `409` — and reuses the row's `correlation_id` so all of one lead's
   events share one trace id. No new resource is created, so it returns `200`.
+- **`POST /api/leads/{lead_id}/qualify`** — the qualify action (TDD §5.4): move a
+  `Working` lead to `Qualified` and publish `lead.qualified` (an `entity_id`-only
+  payload). Same load→guard→transition→publish→masked shape and 409 mapping as claim.
+- **`POST /api/leads/{lead_id}/reject`** — the reject action (TDD §5.4): move a
+  `Working` lead to `Rejected`, store an **optional** free-text reason on the row's
+  `rejection_reason` column (surfaced in the masked read, never in the event), and
+  publish `lead.rejected` with `{entity_id, reason_kind: "qualify_reject"}`.
 
-All four ride `get_tenant_db`, so isolation is automatic — there is **no tenant
+All ride `get_tenant_db`, so isolation is automatic — there is **no tenant
 parameter** — and the inherited 401 (no session) / 400 (tenantless Platform Admin)
-come for free; `POST /api/leads` requires `CREATE_EDIT_RECORDS` and the claim action
-requires `CLAIM_LEADS_MANAGE_TASKS` (else 403), while the two reads only require an
-authenticated tenant user (Read-Only included). Every
+come for free; `POST /api/leads` and the qualify / reject actions require
+`CREATE_EDIT_RECORDS`, the claim action requires `CLAIM_LEADS_MANAGE_TASKS` (else
+403), while the two reads only require an authenticated tenant user (Read-Only
+included). Every
 response uses the named-envelope style the other routers use (`{"lead": …}` /
 `{"leads": […]}`), built through `build_masked_lead` so the masked-by-default
 contract lives in one place. No audit record is written on create — the audit enum
@@ -53,7 +61,7 @@ from ..tenancy.registry import tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
 from .intake import create_lead
 from .masking import build_masked_lead
-from .schemas import CreateLeadRequest
+from .schemas import CreateLeadRequest, RejectLeadRequest
 from .state import InvalidLeadTransition, LeadSource, LeadStatus, assert_transition
 
 router = APIRouter(prefix="/api/leads")
@@ -281,6 +289,175 @@ async def claim_lead(
             payload={
                 "entity_id": str(lead.id),
                 "owner_user_id": str(identity.user_id),
+            },
+            correlation_id=lead.correlation_id,
+        ),
+    )
+
+    return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+
+
+@router.post("/{lead_id}/qualify")
+async def qualify_lead(
+    lead_id: uuid.UUID,
+    identity: Identity = Depends(
+        require_capability(Capability.CREATE_EDIT_RECORDS)
+    ),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Qualify one `Working` lead, moving it to `Qualified`; return it masked.
+
+    A terminal-transition action that mirrors `claim_lead`'s shape exactly: load →
+    guard → transition → publish → masked. An agent marks a lead they have been
+    working as qualified — the lead moves `Working → Qualified` and a `lead.qualified`
+    event is published. No new resource is created, so this returns a `200`.
+
+    The guard hands the route an `Identity` only when the caller holds
+    `CREATE_EDIT_RECORDS` (every other role gets a 403, the anonymous caller a 401) —
+    the create/edit capability, **not** claim's `CLAIM_LEADS_MANAGE_TASKS`.
+    `get_tenant_db` scopes the lookup and write to the caller's own schema and rejects
+    a tenantless Platform Admin with a 400 — all inherited, no tenant parameter. The
+    handler then runs four steps:
+
+    1. **Load the lead** by id within the caller's schema. An id absent in this tenant
+       (whether it does not exist or belongs to another tenant) yields a
+       `404 "lead not found"`, mirroring `get_lead` — schema scoping makes another
+       tenant's row physically out of reach, so the cross-tenant case is covered here
+       too.
+    2. **Guard the move** through the shared state machine: `assert_transition` allows
+       only `Working → Qualified`. A lead in any other status raises the framework-free
+       `InvalidLeadTransition`, mapped to a `409` naming the current status (the same
+       409 contract `claim_lead` set).
+    3. **Apply the transition** — the lead's `status` becomes `Qualified` and the change
+       is flushed. The handler does **not** commit; `get_tenant_db` owns the request
+       transaction, so the row change and the outbox event all land or all roll back
+       together.
+    4. **Publish `lead.qualified`** onto this tenant's outbox (an `entity_id`-only
+       payload — no other field), reusing the row's own `correlation_id` so every event
+       for this lead shares one trace id.
+
+    The qualified lead is returned through the shared `build_masked_lead` builder under
+    the `{"lead": …}` envelope.
+    """
+    lead = (
+        await db.execute(select(Lead).where(Lead.id == lead_id))
+    ).scalar_one_or_none()
+
+    if lead is None:
+        raise HTTPException(status_code=404, detail="lead not found")
+
+    try:
+        assert_transition(LeadStatus(lead.status), LeadStatus.QUALIFIED)
+    except InvalidLeadTransition:
+        raise HTTPException(
+            status_code=409,
+            detail=f"lead cannot be qualified (status: {lead.status})",
+        )
+
+    lead.status = LeadStatus.QUALIFIED.value
+    await db.flush()
+
+    # Reuse the row's `correlation_id` so this `lead.qualified` event shares the lead's
+    # trace id. The payload is `entity_id` only (no owner or reason). On the same
+    # request transaction as the status change (the transactional outbox).
+    await enqueue_event(
+        db,
+        build_envelope(
+            event_type=EventBusEventType.LEAD_QUALIFIED,
+            tenant_id=identity.tenant_id,
+            actor_user_id=identity.user_id,
+            actor_role=identity.role,
+            payload={"entity_id": str(lead.id)},
+            correlation_id=lead.correlation_id,
+        ),
+    )
+
+    return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+
+
+@router.post("/{lead_id}/reject")
+async def reject_lead(
+    lead_id: uuid.UUID,
+    rejection: RejectLeadRequest,
+    identity: Identity = Depends(
+        require_capability(Capability.CREATE_EDIT_RECORDS)
+    ),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Reject one `Working` lead, moving it to `Rejected`; return it masked.
+
+    The qualify endpoint's twin, with one extra: an **optional** free-text reason. An
+    agent marks a lead they have been working as rejected — the lead moves
+    `Working → Rejected`, the optional reason is stored on the row's `rejection_reason`
+    column (kept separate from intake `notes`), and a `lead.rejected` event is
+    published. No new resource is created, so this returns a `200`.
+
+    The gate and error mapping are identical to qualify: `CREATE_EDIT_RECORDS` (403 /
+    401 otherwise), `get_tenant_db` scoping (400 tenantless), `404 "lead not found"` on
+    a missing or cross-tenant id, and an illegal move (the lead is not `Working`) mapped
+    to a `409`. The handler runs four steps:
+
+    1. **Load the lead** by id within the caller's schema (404 on missing /
+       cross-tenant, exactly as qualify).
+    2. **Guard the move** through `assert_transition` (`Working → Rejected` only); any
+       other status raises `InvalidLeadTransition`, mapped to a `409`.
+    3. **Apply the transition and store the reason** — the lead's `status` becomes
+       `Rejected` and `rejection_reason` is set to the supplied reason (or left `None`
+       when none was given — a reason-less reject is allowed). The change is flushed; no
+       commit here (`get_tenant_db` owns the transaction).
+    4. **Publish `lead.rejected`** with payload `{entity_id, reason_kind: "qualify_reject"}`,
+       reusing the row's `correlation_id`. The free-text reason is **never** in the
+       event — it stays on the row, surfaced only in the masked read. `reason_kind`
+       categorizes this path; Epic 14's duplicate-reject reuses the same event with
+       `reason_kind = "duplicate"`.
+
+    The rejected lead is returned through the shared `build_masked_lead` builder under
+    the `{"lead": …}` envelope.
+    """
+    lead = (
+        await db.execute(select(Lead).where(Lead.id == lead_id))
+    ).scalar_one_or_none()
+
+    if lead is None:
+        raise HTTPException(status_code=404, detail="lead not found")
+
+    # This qualify/reject path rejects only a `Working` lead. The state machine
+    # legally allows `New → Rejected` too, but that path belongs to Epic 14's
+    # duplicate-resolution reject (same event, `reason_kind = "duplicate"`), so a
+    # `New` lead here is an illegal move for *this* endpoint — guard the current
+    # status explicitly before the formal `assert_transition`, mapping anything but
+    # `Working` to the same 409.
+    if LeadStatus(lead.status) is not LeadStatus.WORKING:
+        raise HTTPException(
+            status_code=409,
+            detail=f"lead cannot be rejected (status: {lead.status})",
+        )
+
+    try:
+        assert_transition(LeadStatus(lead.status), LeadStatus.REJECTED)
+    except InvalidLeadTransition:
+        raise HTTPException(
+            status_code=409,
+            detail=f"lead cannot be rejected (status: {lead.status})",
+        )
+
+    lead.status = LeadStatus.REJECTED.value
+    lead.rejection_reason = rejection.reason
+    await db.flush()
+
+    # Reuse the row's `correlation_id` so this `lead.rejected` event shares the lead's
+    # trace id. The payload carries the entity reference and the `reason_kind` that
+    # categorizes the rejection — never the free-text reason, which stays on the row.
+    await enqueue_event(
+        db,
+        build_envelope(
+            event_type=EventBusEventType.LEAD_REJECTED,
+            tenant_id=identity.tenant_id,
+            actor_user_id=identity.user_id,
+            actor_role=identity.role,
+            payload={
+                "entity_id": str(lead.id),
+                "reason_kind": "qualify_reject",
             },
             correlation_id=lead.correlation_id,
         ),

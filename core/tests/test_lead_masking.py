@@ -99,6 +99,7 @@ def build_lead(**overrides) -> Lead:
         "product_lines_of_interest": ["term_life", "whole_life"],
         "preferred_contact_method": "email",
         "notes": "Prefers morning calls.",
+        "rejection_reason": "Not a fit.",
         "lead_source": "agent_entered",
         "status": "Working",
         "owner_user_id": uuid.uuid4(),
@@ -154,6 +155,7 @@ async def test_happy_path_passes_plaintext_columns_through_unchanged():
     assert masked["product_lines_of_interest"] == lead.product_lines_of_interest
     assert masked["preferred_contact_method"] == lead.preferred_contact_method
     assert masked["notes"] == lead.notes
+    assert masked["rejection_reason"] == lead.rejection_reason
     assert masked["lead_source"] == lead.lead_source
     assert masked["status"] == lead.status
     assert masked["owner_user_id"] == lead.owner_user_id
@@ -181,6 +183,7 @@ async def test_happy_path_emits_the_full_expected_field_set():
         "product_lines_of_interest",
         "preferred_contact_method",
         "notes",
+        "rejection_reason",
         "lead_source",
         "status",
         "owner_user_id",
@@ -217,13 +220,15 @@ async def test_street_address_absent_renders_null():
 async def test_optional_fields_render_null_when_unset():
     """Each unset optional renders `null` — never a masked-of-nothing string.
 
-    Covers the street-address blob, the two free-text optionals, the owner fields
-    (an unowned lead), and the duplicate-linkage fields (a lead with no flag).
+    Covers the street-address blob, the free-text optionals (including the
+    reject-only `rejection_reason`), the owner fields (an unowned lead), and the
+    duplicate-linkage fields (a lead with no flag).
     """
     lead = build_lead(
         street_address_encrypted=None,
         preferred_contact_method=None,
         notes=None,
+        rejection_reason=None,
         owner_user_id=None,
         owner_username=None,
         duplicate_of_lead_id=None,
@@ -234,6 +239,7 @@ async def test_optional_fields_render_null_when_unset():
     assert masked["street_address"] is None
     assert masked["preferred_contact_method"] is None
     assert masked["notes"] is None
+    assert masked["rejection_reason"] is None
     assert masked["owner_user_id"] is None
     assert masked["owner_username"] is None
     assert masked["duplicate_of_lead_id"] is None

@@ -15,8 +15,9 @@ into plaintext just long enough to mask it, and the pure render-layer maskers
 Three rules govern the shape (all locked at the gate):
 
 - **Plaintext as-is** — the non-sensitive columns (`id`, names, `age_band`,
-  `zip_code`, the product-line keys, `lead_source`, `status`, the owner and
-  duplicate-linkage bookkeeping, the timestamps) are returned unchanged. The
+  `zip_code`, the product-line keys, `notes`, `rejection_reason`, `lead_source`,
+  `status`, the owner and duplicate-linkage bookkeeping, the timestamps) are
+  returned unchanged. The
   stored plaintext `age_band` is shown directly — it is **not** recomputed from
   the (never-decrypted-here) date of birth.
 - **Masked** — `email` and `phone` are decrypted in-process and then masked, so
@@ -87,6 +88,7 @@ async def build_masked_lead(tenant_id: uuid.UUID, lead: Lead) -> dict:
         "product_lines_of_interest": lead.product_lines_of_interest,
         "preferred_contact_method": lead.preferred_contact_method,
         "notes": lead.notes,
+        "rejection_reason": lead.rejection_reason,
         "lead_source": lead.lead_source,
         "status": lead.status,
         "owner_user_id": lead.owner_user_id,

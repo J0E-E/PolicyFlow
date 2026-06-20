@@ -39,7 +39,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..pii.crypto import normalize_phone
 
-__all__ = ["CreateLeadRequest", "PublicIntakeRequest"]
+__all__ = ["CreateLeadRequest", "PublicIntakeRequest", "RejectLeadRequest"]
 
 # The light email shape the public route accepts: one or more non-`@`, non-space
 # characters, an `@`, the same again, a dot, and a final run. Deliberately loose —
@@ -213,3 +213,18 @@ class PublicIntakeRequest(BaseModel):
         if not (1 <= len(self.product_lines_of_interest) <= 10):
             raise ValueError("supply between 1 and 10 product lines of interest")
         return self
+
+
+class RejectLeadRequest(BaseModel):
+    """The request body for the reject action (`POST /api/leads/{id}/reject`).
+
+    A single optional field: the free-text `reason` an agent may supply when
+    rejecting a `Working` lead. It is **optional** — a reason-less reject is allowed
+    (the `reason_kind = "qualify_reject"` on the `lead.rejected` event always
+    categorizes the rejection) — and capped at 1000 characters, surfaced by FastAPI
+    as a 422 before the handler runs. The reason is stored on the lead's
+    `rejection_reason` column and shown in the masked read, but never carried on the
+    event.
+    """
+
+    reason: str | None = Field(default=None, max_length=1000)

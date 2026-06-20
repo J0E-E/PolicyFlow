@@ -15,8 +15,9 @@ two blind-index (``bytea``) columns used for exact-match duplicate detection
 without decryption; the derived plaintext ``age_band``; the ``product_lines_of_interest``
 key array; the ``lead_source`` / ``status`` text columns (plain text, validated
 app-side by ``StrEnum`` — **not** PG enums, the P1.1 lesson); the owner and
-duplicate-linkage bookkeeping; and the ``correlation_id`` / ``demo_session_id``
-event-trace columns.
+duplicate-linkage bookkeeping; the optional free-text ``rejection_reason`` captured
+at reject (added by migration ``0010``, kept separate from intake ``notes``); and
+the ``correlation_id`` / ``demo_session_id`` event-trace columns.
 
 The two blind-index indexes (``ix_leads_email_blind_index`` /
 ``ix_leads_phone_blind_index``) are **owned by migration 0009**, not declared on
@@ -77,6 +78,7 @@ class Lead(Base):
         sa.Text, nullable=True
     )
     notes: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     lead_source: Mapped[str] = mapped_column(sa.Text, nullable=False)
     status: Mapped[str] = mapped_column(sa.Text, nullable=False)
     owner_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
