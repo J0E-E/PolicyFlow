@@ -193,12 +193,17 @@
   vertical-align: middle;
 }
 
-/* The name cell stacks a plain-text name over an optional duplicate stamp — it
-   is NOT a link (Epic 21 owns the row route). */
+/* The name cell stacks the name (a link to the lead detail page, Epic 21) over an
+   optional duplicate stamp. */
 .leads-list-row .leads-list-name {
   display: block;
   font-weight: 600;
   color: var(--on-surface);
+  text-decoration: none;
+}
+
+.leads-list-row .leads-list-name:hover {
+  text-decoration: underline;
 }
 
 .leads-list-cell .stamp-tag {

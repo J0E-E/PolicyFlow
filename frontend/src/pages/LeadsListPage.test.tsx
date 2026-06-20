@@ -202,14 +202,14 @@ describe("LeadsListPage loaded table", () => {
       expect(document.getElementById("leads-list-row-lead-a")).toBeInTheDocument();
     });
 
-    // Row A: a New public unowned lead. The name rides its own id-bearing span
-    // (every rendered element gets a unique id — the hard CLAUDE.md rule).
+    // Row A: a New public unowned lead. The name is a link to the lead detail
+    // page (Epic 21) — its own id-bearing element (the hard CLAUDE.md id rule).
     expect(document.getElementById("leads-list-row-lead-a-name")).toHaveTextContent(
       "Maria Lopez",
     );
-    expect(
-      document.getElementById("leads-list-row-lead-a-name-text"),
-    ).toHaveTextContent("Maria Lopez");
+    const nameLink = document.getElementById("leads-list-row-lead-a-name-link");
+    expect(nameLink).toHaveTextContent("Maria Lopez");
+    expect(nameLink).toHaveAttribute("href", "/app/leads/lead-a");
     expect(
       document.getElementById("leads-list-row-lead-a-status-stamp-label"),
     ).toHaveTextContent("New");

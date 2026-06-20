@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import Button from "../components/Button.tsx";
+import ButtonLink from "../components/ButtonLink.tsx";
 import StampTag from "../components/StampTag.tsx";
 import { leadStatusStamp } from "../components/leadStatusStamp.ts";
 import type { MaskedLead, ProductLine } from "../api";
@@ -168,9 +169,16 @@ export default function AgentLeadCreatedPanel({
         id="agent-intake-created-actions"
         className="agent-intake-created-actions"
       >
+        <ButtonLink
+          id="agent-intake-created-detail-link"
+          variant="filled"
+          to={`/app/leads/${lead.id}`}
+        >
+          Open lead detail
+        </ButtonLink>
         <Button
           id="agent-intake-created-create-another"
-          variant="filled"
+          variant="tonal"
           onClick={onCreateAnother}
         >
           Create another lead

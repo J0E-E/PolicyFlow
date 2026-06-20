@@ -207,6 +207,10 @@ describe("AgentIntakeForm submission", () => {
     expect(
       document.getElementById("agent-intake-created-home-link"),
     ).toHaveAttribute("href", "/app");
+    // The "Open lead detail" link (Epic 21) points at the new lead's detail page.
+    expect(
+      document.getElementById("agent-intake-created-detail-link"),
+    ).toHaveAttribute("href", "/app/leads/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
   });
 
   it("returns to a blank form from 'Create another lead'", async () => {

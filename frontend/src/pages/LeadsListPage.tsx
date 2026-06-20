@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
+import { Link } from "react-router-dom";
 import { CheckCircle, EmptyPage } from "iconoir-react";
 import Button from "../components/Button.tsx";
 import ButtonLink from "../components/ButtonLink.tsx";
@@ -589,13 +590,14 @@ function LeadRow({
   return (
     <tr id={`leads-list-row-${lead.id}`} className="leads-list-row">
       <td id={`leads-list-row-${lead.id}-name`} className="leads-list-cell">
-        {/* Plain text, NOT a link — the Epic 21 detail page owns the row route. */}
-        <span
-          id={`leads-list-row-${lead.id}-name-text`}
+        {/* The name links to the lead detail page (Epic 21 now owns the route). */}
+        <Link
+          id={`leads-list-row-${lead.id}-name-link`}
           className="leads-list-name"
+          to={`/app/leads/${lead.id}`}
         >
           {lead.first_name} {lead.last_name}
-        </span>
+        </Link>
         {isUnresolvedDuplicate(lead) && (
           <StampTag
             id={`leads-list-row-${lead.id}-duplicate`}
