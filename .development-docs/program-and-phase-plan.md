@@ -410,7 +410,7 @@ ordered so the system stays runnable/deployable after each.
   need a sync pass (the program plan + requirements already reflect it). **Next move:**
   **P1.7 (Lead intake, queue, qualification & duplicate detection `[UI]`)**.
 
-#### P1.7 — Lead intake, queue, qualification & duplicate detection `[UI]`
+#### P1.7 — Lead intake, queue, qualification & duplicate detection `[UI]` — **COMPLETE**
 
 - **Goal:** **Two intake routes behind the same `lead.created` event** — self-service
   on the public Shopper surface (validation + abuse controls; lands unassigned) and
@@ -426,6 +426,31 @@ ordered so the system stays runnable/deployable after each.
   rate-limited, honeypot, schema-validated; the agent-entered route is behind session +
   RBAC; every submission tied to a demo session and tenant.
 - **Size:** L.
+- **Status:** **COMPLETE** (2026-06-20). All 22 epics shipped behind a green gate (full
+  backend suite **512 passed** on the real Postgres + RabbitMQ substrate; full frontend
+  suite **270 passed** across 38 files; `tsc -b && vite build` clean). Built simplest-first:
+  pure vocabulary + unit-testable building blocks (Epics 1–6), the first end-to-end
+  agent-intake slice (7), the public-route stack (8–10), reads + actions (11–15), the minimal
+  seed (16), the frontend data layer + four UI surfaces (17–21), and the named acceptance
+  suite (22). Acceptance met end-to-end: both intake routes ride the identical `lead.created`
+  event through one shared `create_lead` core — self-service `POST /api/public/intake` lands a
+  lead `New`/unowned/`public_form` (rate-limited, honeypot, strict validation, sanitized
+  `{"ok": true}` response) and agent-entered `POST /api/leads` is born `Working`/owned/
+  `agent_entered`; the unassigned queue + one-click claim (`New → Working`, `lead.assigned`),
+  qualify/reject (`Working → Qualified|Rejected` + events), deterministic duplicate detection
+  via the P1.3 blind index (email-OR-phone, oldest-wins, no decryption) with agent resolution
+  (link / new / reject), and audited click-to-reveal over masked-by-default reads all work; a
+  minimal per-tenant seed keeps the queue non-empty and makes the Jordan-Rivera duplicate-bait
+  flag and resolve. The named acceptance suite (`test_lead_intake_acceptance.py`) proves the
+  genuinely-missing end-to-end lifecycle on the real substrate plus the one physical proof the
+  lead path lacked — under a switched per-tenant role, a cross-tenant `leads`
+  SELECT/UPDATE/INSERT is `permission denied` while own-schema reads succeed — and that the
+  live intake endpoint flags a duplicate on the blind index alone (decrypt patched to fail).
+  **Tenant-isolation / PII invariant held throughout.** Epic plan:
+  `./p1.7/epic-plan-P1.7-lead-intake-queue-qualification-duplicate-detection.md`. **Faked /
+  deferred per plan:** the full per-tenant seed + demo-session lifecycle/purge (**P1.8**); the
+  per-record event timeline (**P1.9**). **Next move:** **P1.8 (Seed data, demo-session
+  lifecycle & reset)**.
 
 #### P1.8 — Seed data, demo-session lifecycle & reset
 
@@ -494,7 +519,7 @@ M0  P0.1 ✓ Walking Skeleton & Pipeline        (exit test PASSED 2026-06-12 —
         |
 M1  P1.1 ✓ Auth/RBAC → P1.2 ✓ Tenant schemas → P1.3 ✓ Encryption → P1.4 ✓ Audit
         → P1.5 ✓ Event bus+stubs → P1.6 ✓ Demo shell [UI]
-        → P1.7 Intake/queue/qualify/dup [UI] → P1.8 Seed+sessions → P1.9 Timeline [UI]
+        → P1.7 ✓ Intake/queue/qualify/dup [UI] → P1.8 Seed+sessions → P1.9 Timeline [UI]
         |
 M2  P2.1 Conversion → P2.2 Pipeline [UI] → P2.3 Quote→App→Policy
         → P2.4 Renewals+cross-sell → P2.5 Timeline/trace [UI]
@@ -762,3 +787,27 @@ routing/surfaces sections predate the two-surface refinement and need a sync pas
 **Next move:** **P1.7 (Lead intake, queue, qualification & duplicate detection `[UI]`)** —
 the first feature phase, with two intake routes behind the identical `lead.created` event,
 wiring the real public form onto the P1.6 Shopper buyer-home seam.
+
+**2026-06-20** — **P1.7 COMPLETE — the first feature phase is in; leads exist end-to-end.**
+All 22 epics shipped behind a green gate (full backend suite **512 passed** on the real
+Postgres + RabbitMQ substrate; full frontend suite **270 passed** across 38 files;
+`tsc -b && vite build` clean). Two intake routes now ride the identical `lead.created` event
+through one shared `create_lead` core: self-service `POST /api/public/intake` (rate-limited +
+honeypot + strict validation; lands `New`/unowned/`public_form`; sanitized `{"ok": true}`)
+and agent-entered `POST /api/leads` (born `Working`/owned/`agent_entered`). On top sit the
+unassigned queue + one-click claim (`lead.assigned`), qualify/reject (+ events), deterministic
+duplicate detection via the P1.3 blind index (email-OR-phone, oldest-wins, no decryption) with
+agent resolution (link / new / reject), masked-by-default reads with audited click-to-reveal,
+and a minimal per-tenant seed (queue non-empty + the Jordan-Rivera duplicate-bait). The four
+Shopper/Agent UI surfaces (public form, agent form, leads list + queue tab, lead detail +
+actions) and the typed frontend client landed behind their own component tests; the "Leads"
+nav is live. The named acceptance suite (`test_lead_intake_acceptance.py`) proves the
+end-to-end lifecycle on the real substrate plus the one physical proof the lead path lacked —
+a switched per-tenant role is `permission denied` on the other tenant's `leads` while reading
+its own — and that the live intake endpoint flags a duplicate on the blind index alone.
+Tenant-isolation / PII invariant held throughout. Epic plan:
+`./p1.7/epic-plan-P1.7-lead-intake-queue-qualification-duplicate-detection.md`. **Faked /
+deferred per plan:** the full per-tenant seed + demo-session lifecycle/purge (**P1.8**); the
+per-record event timeline (**P1.9**). **Not yet committed** — Epic 22's test file + these doc
+edits are staged in the working tree; the manual `9-document-code-changes` → `commit-epic`
+step lands them. **Next move:** **P1.8 (Seed data, demo-session lifecycle & reset)**.
