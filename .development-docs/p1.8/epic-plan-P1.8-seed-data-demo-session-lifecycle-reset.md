@@ -14,12 +14,14 @@ session reset), graceful expiry, deploy-config alignment, and finally the accept
 go vertical — every UI-bearing epic ships its backend and carries ` [UI]`. The `demo_session_id`
 column + the always-`None` event-envelope field already exist as P1.7 seams; this phase fills them.
 
-## Epic 1 — Tracer bullet: mint, carry, tag, observe
+## Epic 1 — Tracer bullet: mint, carry, tag, observe — **COMPLETED** (50m · 34.8M tok · 694k tok/min)
 - **Goal:** Prove the demo-session identity end-to-end — a visit mints a server-side session carried in its own cookie, and an agent-created lead plus its `lead.created` event both carry that session's id.
 - **Rough scope:** The `platform.demo_sessions` table (migration) + a session lifecycle module (`ensure_demo_session` reuse-or-mint, `current_demo_session` read-only resolve) + the `pf_demo_session` cookie; `assume-persona` mints/reuses on each call; thread `demo_session_id` through `create_lead` and `build_envelope` so the agent-intake path tags the row and the event. Introduces the `DEMO_SESSION_LIFETIME_SECONDS` knob (default 86400) that sets `expires_at`.
-- **Open questions / decisions for stakeholders:** cookie attributes (`Secure`/`SameSite`/`max_age`) confirmation; what to log on mint (a structured line — session id, expiry — for observability of the new state transition).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time. (1) `pf_demo_session` cookie mirrors `pf_session` (HttpOnly, SameSite=Lax, Secure per `session_cookie_secure`, path=/), value = the **raw** session UUID, `max_age=DEMO_SESSION_LIFETIME_SECONDS` (86400) set **once at mint** and not refreshed on reuse (fixed 24h, no sliding). (2) Log one `INFO` line **on mint only** — `session id` + `expires_at`; reuse is silent (hot path).
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Plan deviation / cross-epic fact:** `0011` also grants each tenant role (+ `platform_reader`) `USAGE ON SCHEMA platform` + `SELECT ON platform.demo_sessions`, beyond the "table only" plan. The tag path runs under `SET LOCAL ROLE tenant_<x>` (via `get_tenant_db`), which otherwise can't read the `platform` schema — without the grant the tracer fails with "permission denied for schema platform". Epic 3 (public-intake tag, runs under `get_public_tenant_db`) and Epic 4 (scoped reads) inherit this grant; Epic 9 still owns the separate `demo_purge` DELETE role + per-tenant index.
+  - **Cross-epic fact:** `current_demo_session(request, db)` takes `db` (not the bare `(request)` the TDD §5.1 sketched) — it must query `platform.demo_sessions`. Epic 2's `GET /api/demo/session` and Epic 6's masked-read marker must pass a session in. It is a plain async helper, not a FastAPI `Depends` dependency.
 
 ## Epic 2 — Session-state endpoint + live masthead countdown [UI]
 - **Goal:** A public read of the current demo session feeds a live `DEMO SESSION · HH:MM REMAINING` mono countdown on the workspace masthead, ticking locally from `expires_at` — replacing the static P1.6 stamp.

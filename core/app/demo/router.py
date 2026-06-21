@@ -46,6 +46,7 @@ from ..db import get_db
 from ..models.tenant import Tenant
 from ..models.user import Role, User
 from ..tenancy.registry import TENANTS, tenant_by_slug
+from .session import ensure_demo_session
 
 router = APIRouter(prefix="/api")
 
@@ -160,6 +161,19 @@ async def assume_persona(
         event_type=EventType.AUTH_LOGIN,
         outcome=Outcome.SUCCESS,
     )
+
+    # Reuse-or-mint the demo-visit session that spans this whole visit (every role
+    # and tenant switch). A tenant-scoped persona refreshes `last_tenant_slug`; the
+    # tenantless Platform Admin passes `None` so the remembered tenant is unchanged.
+    visit_tenant_slug = (
+        persona_request.tenant_slug
+        if persona_identity.tenant_id is not None
+        else None
+    )
+    await ensure_demo_session(
+        db, request, response, tenant_slug=visit_tenant_slug
+    )
+
     return await build_identity_response(db, persona_identity)
 
 

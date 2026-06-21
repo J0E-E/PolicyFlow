@@ -29,6 +29,24 @@ def test_three_platform_tables_are_registered():
     assert get_table("platform.auth_sessions") is not None
 
 
+def test_demo_sessions_table_is_registered_in_platform_schema():
+    """The `demo_sessions` table is registered in the `platform` schema (P1.8)."""
+    assert get_table("platform.demo_sessions") is not None
+
+
+def test_demo_sessions_columns_and_nullability():
+    """`demo_sessions` carries id (pk), created_at, expires_at, last_tenant_slug.
+
+    `expires_at` is required (the window must be bounded); `last_tenant_slug` is
+    nullable (informational — a tenantless Platform-Admin visit may carry none).
+    """
+    demo_sessions = get_table("platform.demo_sessions")
+
+    assert demo_sessions.c.id.primary_key is True
+    assert demo_sessions.c.expires_at.nullable is False
+    assert demo_sessions.c.last_tenant_slug.nullable is True
+
+
 def test_role_enum_has_exactly_four_members_with_lowercase_values():
     """`Role` defines the four roles with their lowercase string values."""
     role_values = {member.name: member.value for member in Role}
@@ -117,3 +135,11 @@ def test_migration_0002_follows_the_empty_baseline():
 
     assert migration.revision == "0002_platform_identity"
     assert migration.down_revision == "0001_empty_baseline"
+
+
+def test_migration_0011_follows_0010():
+    """The `0011` demo-sessions migration chains onto `0010_lead_rejection_reason`."""
+    migration = load_migration_module("0011_demo_sessions.py")
+
+    assert migration.revision == "0011_demo_sessions"
+    assert migration.down_revision == "0010_lead_rejection_reason"

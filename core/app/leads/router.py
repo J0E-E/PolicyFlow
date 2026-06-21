@@ -65,13 +65,14 @@ has no lead member; the create is observed only through the `lead.created` (+
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.dependencies import require_authenticated, require_capability
 from ..auth.provider import Identity
 from ..auth.rbac import Capability
+from ..demo.session import current_demo_session
 from ..events.catalog import EventType as EventBusEventType
 from ..events.envelope import build_envelope
 from ..events.outbox import enqueue_event
@@ -115,6 +116,7 @@ REVEALABLE_FIELDS: dict[str, str] = {
 @router.post("", status_code=201)
 async def create_lead_endpoint(
     new_lead: CreateLeadRequest,
+    request: Request,
     identity: Identity = Depends(
         require_capability(Capability.CREATE_EDIT_RECORDS)
     ),
@@ -158,6 +160,14 @@ async def create_lead_endpoint(
             detail=f"unknown product line(s): {', '.join(unknown_keys)}",
         )
 
+    # Resolve the caller's demo-visit session from the `pf_demo_session` cookie so
+    # the new lead (and its events) carry the session id — read-only, no mint here
+    # (`assume-persona` is the mint point). Outside the demo the cookie is absent and
+    # this is `None`, leaving the lead untagged. The `demo_sessions` table is in the
+    # `platform` schema, so the tenant-scoped session resolves it fine.
+    demo_session = await current_demo_session(request, db)
+    demo_session_id = demo_session.id if demo_session is not None else None
+
     lead = await create_lead(
         db,
         identity.tenant_id,
@@ -177,6 +187,7 @@ async def create_lead_endpoint(
         owner_username=identity.username,
         actor_user_id=identity.user_id,
         actor_role=identity.role,
+        demo_session_id=demo_session_id,
     )
 
     return {"lead": await build_masked_lead(identity.tenant_id, lead)}

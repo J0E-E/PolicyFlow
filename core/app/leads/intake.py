@@ -75,6 +75,7 @@ async def create_lead(
     owner_username: str | None,
     actor_user_id: uuid.UUID | None,
     actor_role: Role | None,
+    demo_session_id: uuid.UUID | None = None,
 ) -> Lead:
     """Create one lead for `tenant_id`, run the matcher, publish the events; return it.
 
@@ -89,8 +90,9 @@ async def create_lead(
     3. **Derive `age_band`** — from the required `date_of_birth` with `age_band_for`;
        it is never accepted from the caller.
     4. **Build + insert the row** — a fresh `correlation_id` is minted (every later
-       event for this lead reuses it) and `demo_session_id` is `None` (P1.8 owns the
-       session lifecycle). The born `status` / `lead_source` are set directly from
+       event for this lead reuses it) and `demo_session_id` (the caller's demo-visit
+       session, or `None` outside the demo) tags the row. The born `status` /
+       `lead_source` are set directly from
        the passed enum values — creation is a birth, **not** a transition, so
        `assert_transition` is deliberately not called. The row is added, flushed, and
        refreshed so the server-default timestamps are populated.
@@ -145,7 +147,7 @@ async def create_lead(
         owner_user_id=owner_user_id,
         owner_username=owner_username,
         correlation_id=correlation_id,
-        demo_session_id=None,
+        demo_session_id=demo_session_id,
     )
     db.add(lead)
     await db.flush()
@@ -183,6 +185,7 @@ async def create_lead(
                 "age_band": age_band,
             },
             correlation_id=correlation_id,
+            demo_session_id=demo_session_id,
         ),
     )
 
@@ -202,6 +205,7 @@ async def create_lead(
                     "duplicate_of_lead_id": str(duplicate.id),
                 },
                 correlation_id=correlation_id,
+                demo_session_id=demo_session_id,
             ),
         )
 

@@ -72,6 +72,14 @@ class Settings:
             os.environ.get("SESSION_LIFETIME_SECONDS", "28800")
         )
 
+        # How long a demo *visit* session stays valid, in seconds — the 24-hour
+        # window the masthead counts down and the purge sweeps once expired.
+        # Defaults to 86400 (24h); override via DEMO_SESSION_LIFETIME_SECONDS.
+        # Set once at mint onto `expires_at` and the cookie's max_age; not slid.
+        self.demo_session_lifetime_seconds: int = int(
+            os.environ.get("DEMO_SESSION_LIFETIME_SECONDS", "86400")
+        )
+
         # Public-intake rate limit: how many requests one IP may make per window
         # before the limiter blocks it. Defaults to 5; override via
         # PUBLIC_INTAKE_RATE_LIMIT. Read by app/leads/rate_limit.py.

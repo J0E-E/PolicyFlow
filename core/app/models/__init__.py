@@ -8,6 +8,7 @@ The models are also re-exported here for convenient direct import.
 
 from .audit_record import AuditRecord, PlatformAuditRecord
 from .auth_session import AuthSession
+from .demo_session import DemoSession
 from .lead import Lead
 from .outbox_event import OutboxEvent
 from .pii_demo import PiiDemoRecord
@@ -20,6 +21,7 @@ from .user import Role, User
 __all__ = [
     "AuditRecord",
     "AuthSession",
+    "DemoSession",
     "Lead",
     "OutboxEvent",
     "PiiDemoRecord",

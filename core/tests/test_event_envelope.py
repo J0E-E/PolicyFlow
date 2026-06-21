@@ -77,8 +77,22 @@ def test_build_envelope_stamps_a_timezone_aware_utc_occurred_at():
 
 
 def test_build_envelope_defaults_demo_session_id_to_none():
-    """`demo_session_id` is always `None` in P1.5 (P1.8 owns it)."""
+    """`demo_session_id` defaults to `None` when no session is supplied (P1.8)."""
     assert _build_actor_envelope().demo_session_id is None
+
+
+def test_build_envelope_carries_a_supplied_demo_session_id():
+    """A supplied `demo_session_id` is threaded onto the envelope (P1.8 Epic 1)."""
+    demo_session_id = uuid.uuid4()
+    envelope = build_envelope(
+        event_type="lead.created",
+        tenant_id=uuid.uuid4(),
+        actor_user_id=uuid.uuid4(),
+        actor_role="agent",
+        payload={},
+        demo_session_id=demo_session_id,
+    )
+    assert envelope.demo_session_id == demo_session_id
 
 
 def test_build_envelope_defaults_causation_id_to_none():

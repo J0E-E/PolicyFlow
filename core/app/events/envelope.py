@@ -67,14 +67,16 @@ def build_envelope(
     payload: dict,
     correlation_id: uuid.UUID | None = None,
     causation_id: uuid.UUID | None = None,
+    demo_session_id: uuid.UUID | None = None,
 ) -> EventEnvelope:
     """Build a fresh envelope, minting the identity and timestamp fields.
 
     Mints a new `event_id`; stamps the frozen `schema_version` and a
     timezone-aware UTC `occurred_at`; mints a **fresh** `correlation_id` when none
     is passed (a new flow) and preserves one that is supplied (so a flow's events
-    share it). `causation_id` defaults to `None`, and `demo_session_id` is always
-    `None` in P1.5 (P1.8 owns it, Decision 11).
+    share it). `causation_id` defaults to `None`. `demo_session_id` defaults to
+    `None` and carries the demo-visit session id when the caller is on a tagged
+    path (P1.8 owns it, Decision 11).
     """
     return EventEnvelope(
         event_id=uuid.uuid4(),
@@ -86,7 +88,7 @@ def build_envelope(
         causation_id=causation_id,
         actor_user_id=actor_user_id,
         actor_role=actor_role,
-        demo_session_id=None,
+        demo_session_id=demo_session_id,
         payload=payload,
     )
 
