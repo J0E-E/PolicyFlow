@@ -25,11 +25,12 @@ because the slug it scopes by comes from the body, which the route reads and han
 `get_public_tenant_db` by hand.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
+from ..demo.session import ensure_demo_session
 from ..models.tenant import Tenant
 from ..tenancy.registry import tenant_by_slug
 from ..tenancy.scoping import get_public_tenant_db
@@ -45,6 +46,7 @@ router = APIRouter(prefix="/api/public")
 async def public_intake_endpoint(
     body: PublicIntakeRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Create one public-form lead for the named tenant; return the sanitized body.
@@ -66,12 +68,17 @@ async def public_intake_endpoint(
        key is checked against that tenant's offered set (unknown key → 422), and the
        tenant's UUID is read from `platform.tenants` on the login-role session
        **before** scoping (the tenant role cannot see `platform`); a missing row → 404.
-    4. **Scope + create.** `get_public_tenant_db` scopes the session to the tenant's
+    4. **Auto-mint the demo session.** On the success path (after the honeypot and the
+       tenant resolution), `ensure_demo_session` reuses the cookie's live session or
+       mints a fresh one on the login-role `db`, sets the `pf_demo_session` cookie on
+       the response, and commits its own transaction — so a visitor's public-form lead
+       carries the same session as their agent-route work.
+    5. **Scope + create.** `get_public_tenant_db` scopes the session to the tenant's
        schema and owns the request transaction; the shared `create_lead` core runs
-       inside it, born `New` / unowned / `public_form` / system-actor. The core does
-       not commit — the seam's commit on normal exit lands the lead and its outbox
-       events together (the transactional outbox).
-    5. **Return** the sanitized `{"ok": True}` — **identical** to the honeypot drop,
+       inside it, born `New` / unowned / `public_form` / system-actor and tagged with
+       the session id. The core does not commit — the seam's commit on normal exit
+       lands the lead and its outbox events together (the transactional outbox).
+    6. **Return** the sanitized `{"ok": True}` — **identical** to the honeypot drop,
        never the masked lead or any matched-lead data, even on a duplicate hit.
     """
     client_ip = client_ip_from_forwarded_for(request.headers.get("x-forwarded-for"))
@@ -117,6 +124,15 @@ async def public_intake_endpoint(
     if tenant_id is None:
         raise HTTPException(status_code=404, detail="unknown tenant")
 
+    # Reuse-or-mint the visitor's demo session on the login-role `db` *before* scoping:
+    # this sets the `pf_demo_session` cookie on the response and commits its own txn, so
+    # a public-form lead carries the same session as the visitor's agent-route work
+    # (`assume-persona` and the agent intake both already mint/resolve on this seam).
+    # `state.id` is a plain UUID on a frozen dataclass — no ORM row survives into the
+    # scoped block, and `get_public_tenant_db` rolls back any open txn before scoping,
+    # so this ordering is safe.
+    state = await ensure_demo_session(db, request, response, tenant_slug=body.tenant_slug)
+
     # Scope to the tenant's schema and let the seam own the request transaction; the
     # shared create core runs inside it, born `New` / unowned / `public_form`, with no
     # actor (a system actor — there is no logged-in caller on this path). `tenant_id`
@@ -143,6 +159,7 @@ async def public_intake_endpoint(
             owner_username=None,
             actor_user_id=None,
             actor_role=None,
+            demo_session_id=state.id,
         )
 
     # The sanitized success body — identical to the honeypot drop above. The masked

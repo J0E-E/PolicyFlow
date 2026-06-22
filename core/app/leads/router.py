@@ -266,6 +266,7 @@ async def get_lead(
 @router.post("/{lead_id}/claim")
 async def claim_lead(
     lead_id: uuid.UUID,
+    request: Request,
     identity: Identity = Depends(
         require_capability(Capability.CLAIM_LEADS_MANAGE_TASKS)
     ),
@@ -325,6 +326,13 @@ async def claim_lead(
     lead.owner_username = identity.username
     await db.flush()
 
+    # Resolve the caller's demo-visit session from the `pf_demo_session` cookie so this
+    # event carries the session id — read-only, no mint here (the intake paths are the
+    # mint points). Outside the demo the cookie is absent and this is `None`. The
+    # `demo_sessions` table is in `platform`, which the tenant-scoped session can read.
+    demo_session = await current_demo_session(request, db)
+    demo_session_id = demo_session.id if demo_session is not None else None
+
     # Reuse the row's `correlation_id` so this `lead.assigned` event shares the trace
     # id of the lead's `lead.created` (and any later) events — read it back off the
     # row (TDD §5.4). Published on the same request transaction as the status change
@@ -341,6 +349,7 @@ async def claim_lead(
                 "owner_user_id": str(identity.user_id),
             },
             correlation_id=lead.correlation_id,
+            demo_session_id=demo_session_id,
         ),
     )
 
@@ -350,6 +359,7 @@ async def claim_lead(
 @router.post("/{lead_id}/qualify")
 async def qualify_lead(
     lead_id: uuid.UUID,
+    request: Request,
     identity: Identity = Depends(
         require_capability(Capability.CREATE_EDIT_RECORDS)
     ),
@@ -407,6 +417,13 @@ async def qualify_lead(
     lead.status = LeadStatus.QUALIFIED.value
     await db.flush()
 
+    # Resolve the caller's demo-visit session from the `pf_demo_session` cookie so this
+    # event carries the session id — read-only, no mint here (the intake paths are the
+    # mint points). Outside the demo the cookie is absent and this is `None`. The
+    # `demo_sessions` table is in `platform`, which the tenant-scoped session can read.
+    demo_session = await current_demo_session(request, db)
+    demo_session_id = demo_session.id if demo_session is not None else None
+
     # Reuse the row's `correlation_id` so this `lead.qualified` event shares the lead's
     # trace id. The payload is `entity_id` only (no owner or reason). On the same
     # request transaction as the status change (the transactional outbox).
@@ -419,6 +436,7 @@ async def qualify_lead(
             actor_role=identity.role,
             payload={"entity_id": str(lead.id)},
             correlation_id=lead.correlation_id,
+            demo_session_id=demo_session_id,
         ),
     )
 
@@ -429,6 +447,7 @@ async def qualify_lead(
 async def reject_lead(
     lead_id: uuid.UUID,
     rejection: RejectLeadRequest,
+    request: Request,
     identity: Identity = Depends(
         require_capability(Capability.CREATE_EDIT_RECORDS)
     ),
@@ -495,6 +514,13 @@ async def reject_lead(
     lead.rejection_reason = rejection.reason
     await db.flush()
 
+    # Resolve the caller's demo-visit session from the `pf_demo_session` cookie so this
+    # event carries the session id — read-only, no mint here (the intake paths are the
+    # mint points). Outside the demo the cookie is absent and this is `None`. The
+    # `demo_sessions` table is in `platform`, which the tenant-scoped session can read.
+    demo_session = await current_demo_session(request, db)
+    demo_session_id = demo_session.id if demo_session is not None else None
+
     # Reuse the row's `correlation_id` so this `lead.rejected` event shares the lead's
     # trace id. The payload carries the entity reference and the `reason_kind` that
     # categorizes the rejection — never the free-text reason, which stays on the row.
@@ -510,6 +536,7 @@ async def reject_lead(
                 "reason_kind": "qualify_reject",
             },
             correlation_id=lead.correlation_id,
+            demo_session_id=demo_session_id,
         ),
     )
 
@@ -520,6 +547,7 @@ async def reject_lead(
 async def resolve_duplicate_lead(
     lead_id: uuid.UUID,
     resolution: ResolveDuplicateRequest,
+    request: Request,
     identity: Identity = Depends(
         require_capability(Capability.CREATE_EDIT_RECORDS)
     ),
@@ -610,6 +638,15 @@ async def resolve_duplicate_lead(
     lead.duplicate_resolution = "rejected"
     await db.flush()
 
+    # Resolve the caller's demo-visit session from the `pf_demo_session` cookie so this
+    # event carries the session id — read-only, no mint here (the intake paths are the
+    # mint points). Resolved lazily, in this `reject` branch only: the `link` / `new`
+    # branches emit no event, so they must not do the `platform` read. Outside the demo
+    # the cookie is absent and this is `None`; the tenant-scoped session reads
+    # `platform.demo_sessions` fine.
+    demo_session = await current_demo_session(request, db)
+    demo_session_id = demo_session.id if demo_session is not None else None
+
     # Reuse the row's `correlation_id` so this `lead.rejected` event shares the lead's
     # trace id. The payload carries the entity reference and `reason_kind = "duplicate"`
     # (this is the duplicate-reject path; the qualify/reject path emits
@@ -626,6 +663,7 @@ async def resolve_duplicate_lead(
                 "reason_kind": "duplicate",
             },
             correlation_id=lead.correlation_id,
+            demo_session_id=demo_session_id,
         ),
     )
 

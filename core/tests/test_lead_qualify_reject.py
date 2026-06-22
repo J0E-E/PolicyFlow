@@ -33,11 +33,13 @@ files: `insert_lead` / `login_agent_for_slug` / `tenant_id_for_slug` /
 
 import uuid
 
+from app.demo.session import DEMO_SESSION_COOKIE_NAME
 from app.events.catalog import EventType
 from app.leads.state import LeadStatus
 from app.models.user import Role
 from app.tenancy.registry import FLORIDA, SUNSHINE
 
+from tests.test_demo_assume_persona import assume  # noqa: F401 — used by name
 from tests.test_endpoints_db import login_as, seeded  # noqa: F401
 from tests.test_lead_intake import read_lead_row, read_outbox_rows_for_entity
 from tests.test_lead_reads import (
@@ -214,6 +216,93 @@ async def test_reject_enqueues_one_lead_rejected_event(
 
     row = await read_lead_row(database_engine, SUNSHINE.schema_name, lead_id)
     assert rejected.correlation_id == row.correlation_id
+
+
+# --- Phase 2b: qualify / reject events carry the demo session (Epic 3) --------
+
+
+async def test_qualify_event_carries_the_cookie_demo_session(
+    seeded, db_client, database_engine
+):
+    """A qualify under a demo cookie tags its `lead.qualified` event with the session id.
+
+    `assume` mints the demo session (setting `pf_demo_session`) and logs the Agent in;
+    the qualify resolves that cookie read-only and stamps the event's `demo_session_id`.
+    """
+    _, lead_id = await insert_working_lead(database_engine)
+
+    assert (
+        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    ).status_code == 200
+    minted_id = uuid.UUID(db_client.cookies[DEMO_SESSION_COOKIE_NAME])
+
+    response = await db_client.post(f"/api/leads/{lead_id}/qualify")
+    assert response.status_code == 200
+
+    rows = await read_outbox_rows_for_entity(
+        database_engine, SUNSHINE.schema_name, EventType.LEAD_QUALIFIED, lead_id
+    )
+    assert len(rows) == 1
+    assert rows[0].demo_session_id == minted_id
+
+
+async def test_qualify_event_demo_session_is_none_without_a_cookie(
+    seeded, db_client, database_engine
+):
+    """A qualify with no demo cookie leaves the `lead.qualified` event's session NULL."""
+    _, lead_id = await insert_working_lead(database_engine)
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    assert DEMO_SESSION_COOKIE_NAME not in db_client.cookies
+
+    response = await db_client.post(f"/api/leads/{lead_id}/qualify")
+    assert response.status_code == 200
+
+    rows = await read_outbox_rows_for_entity(
+        database_engine, SUNSHINE.schema_name, EventType.LEAD_QUALIFIED, lead_id
+    )
+    assert len(rows) == 1
+    assert rows[0].demo_session_id is None
+
+
+async def test_reject_event_carries_the_cookie_demo_session(
+    seeded, db_client, database_engine
+):
+    """A reject under a demo cookie tags its `lead.rejected` event with the session id."""
+    _, lead_id = await insert_working_lead(database_engine)
+
+    assert (
+        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    ).status_code == 200
+    minted_id = uuid.UUID(db_client.cookies[DEMO_SESSION_COOKIE_NAME])
+
+    response = await db_client.post(f"/api/leads/{lead_id}/reject", json={})
+    assert response.status_code == 200
+
+    rows = await read_outbox_rows_for_entity(
+        database_engine, SUNSHINE.schema_name, EventType.LEAD_REJECTED, lead_id
+    )
+    assert len(rows) == 1
+    assert rows[0].demo_session_id == minted_id
+
+
+async def test_reject_event_demo_session_is_none_without_a_cookie(
+    seeded, db_client, database_engine
+):
+    """A reject with no demo cookie leaves the `lead.rejected` event's session NULL."""
+    _, lead_id = await insert_working_lead(database_engine)
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    assert DEMO_SESSION_COOKIE_NAME not in db_client.cookies
+
+    response = await db_client.post(f"/api/leads/{lead_id}/reject", json={})
+    assert response.status_code == 200
+
+    rows = await read_outbox_rows_for_entity(
+        database_engine, SUNSHINE.schema_name, EventType.LEAD_REJECTED, lead_id
+    )
+    assert len(rows) == 1
+    assert rows[0].demo_session_id is None
 
 
 # --- Phase 3: illegal transition → 409 ---------------------------------------

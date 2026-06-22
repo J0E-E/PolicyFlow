@@ -101,12 +101,13 @@ def public_body_with(**overrides) -> dict:
 async def test_public_intake_returns_ok_and_persists_new_public_lead(
     seeded, db_client, database_engine
 ):
-    """A valid public post → 200 `{"ok": true}` and a born-`New` unowned public row.
+    """A valid public post → 200 `{"ok": true}`, a born-`New` row, and an auto-mint.
 
-    The route is unauthenticated, so the post carries no session. The response body
-    is **exactly** `{"ok": true}` — never the masked lead. The stored row is born
-    `New` / `public_form` / unowned (`owner_user_id` and `owner_username` both NULL)
-    with a non-null `correlation_id` and a null `demo_session_id`.
+    The post carries no `pf_demo_session` cookie, so the route auto-mints a demo
+    session (Epic 3): the response sets the cookie and the stored row is tagged with
+    the minted session id. The body is still **exactly** `{"ok": true}` — never the
+    masked lead. The stored row is born `New` / `public_form` / unowned
+    (`owner_user_id` and `owner_username` both NULL) with a non-null `correlation_id`.
     """
     email, phone = unique_contact()
     response = await db_client.post(
@@ -115,6 +116,11 @@ async def test_public_intake_returns_ok_and_persists_new_public_lead(
 
     assert response.status_code == 200
     assert response.json() == {"ok": True}
+
+    # The no-cookie post auto-minted a session: the response set the cookie to the
+    # raw id, and that id names a real `platform.demo_sessions` row.
+    minted_id = uuid.UUID(response.cookies["pf_demo_session"])
+    assert await _demo_session_exists(database_engine, minted_id)
 
     # The sanitized response carries no id, so find the new row by its unique blind
     # index via the email — read the single Sunshine lead matching this test's email.
@@ -125,7 +131,49 @@ async def test_public_intake_returns_ok_and_persists_new_public_lead(
     assert row.owner_user_id is None
     assert row.owner_username is None
     assert row.correlation_id is not None
-    assert row.demo_session_id is None
+    # The lead carries the session the response just minted.
+    assert row.demo_session_id == minted_id
+
+
+async def test_second_public_post_carrying_the_cookie_reuses_the_session(
+    seeded, db_client, database_engine
+):
+    """A second post carrying the first's cookie reuses the session — no new mint.
+
+    `db_client`'s cookie jar persists the `pf_demo_session` the first post set, so the
+    second post arrives with it. The route reuses that live session: no new
+    `platform.demo_sessions` row is minted and the second lead carries the **same**
+    `demo_session_id` as the first.
+    """
+    first_email, first_phone = unique_contact()
+    first = await db_client.post(
+        "/api/public/intake",
+        json=public_body_with(email=first_email, phone=first_phone),
+    )
+    assert first.status_code == 200
+    session_id = uuid.UUID(first.cookies["pf_demo_session"])
+    sessions_before = await _demo_session_count(database_engine)
+
+    # The jar carries the cookie into the second post automatically.
+    second_email, second_phone = unique_contact()
+    second = await db_client.post(
+        "/api/public/intake",
+        json=public_body_with(email=second_email, phone=second_phone),
+    )
+    assert second.status_code == 200
+
+    # Reuse, not re-mint: the row count is unchanged, and the jar still names the
+    # same session.
+    assert await _demo_session_count(database_engine) == sessions_before
+    assert uuid.UUID(db_client.cookies["pf_demo_session"]) == session_id
+
+    # Both leads carry the one shared session id.
+    first_id = await _only_lead_id_for_email(database_engine, first_email)
+    second_id = await _only_lead_id_for_email(database_engine, second_email)
+    first_row = await read_lead_row(database_engine, SUNSHINE.schema_name, first_id)
+    second_row = await read_lead_row(database_engine, SUNSHINE.schema_name, second_id)
+    assert first_row.demo_session_id == session_id
+    assert second_row.demo_session_id == session_id
 
 
 async def test_public_intake_response_is_sanitized_even_on_a_duplicate(
@@ -431,5 +479,36 @@ async def _sunshine_tenant_id(database_engine):
             await connection.execute(
                 text("SELECT id FROM platform.tenants WHERE slug = :slug"),
                 {"slug": SUNSHINE.slug},
+            )
+        ).scalar_one()
+
+
+async def _demo_session_exists(database_engine, session_id) -> bool:
+    """Whether a `platform.demo_sessions` row with `session_id` exists.
+
+    Reads through the SELECT-capable superuser engine, schema-qualified, matching the
+    other platform reads above — the route auto-mints on the login-role session.
+    """
+    async with database_engine.connect() as connection:
+        return (
+            await connection.execute(
+                text(
+                    "SELECT count(*) FROM platform.demo_sessions WHERE id = :id"
+                ),
+                {"id": session_id},
+            )
+        ).scalar_one() == 1
+
+
+async def _demo_session_count(database_engine) -> int:
+    """Return the total number of `platform.demo_sessions` rows.
+
+    The container DB is shared and never reset, so a reuse test asserts the count is
+    **unchanged** across a second post rather than any absolute value.
+    """
+    async with database_engine.connect() as connection:
+        return (
+            await connection.execute(
+                text("SELECT count(*) FROM platform.demo_sessions")
             )
         ).scalar_one()

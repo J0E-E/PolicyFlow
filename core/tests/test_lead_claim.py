@@ -39,11 +39,13 @@ files: `insert_lead` / `login_agent_for_slug` / `tenant_id_for_slug` /
 
 import uuid
 
+from app.demo.session import DEMO_SESSION_COOKIE_NAME
 from app.events.catalog import EventType
 from app.leads.state import LeadStatus
 from app.models.user import Role
 from app.tenancy.registry import FLORIDA, SUNSHINE
 
+from tests.test_demo_assume_persona import assume  # noqa: F401 — used by name
 from tests.test_endpoints_db import login_as, seeded  # noqa: F401
 from tests.test_lead_intake import read_lead_row, read_outbox_rows_for_entity
 from tests.test_lead_reads import (
@@ -146,6 +148,80 @@ async def test_claim_enqueues_one_lead_assigned_event(
     # The event reuses the lead's own correlation id (one lead, one trace id).
     row = await read_lead_row(database_engine, SUNSHINE.schema_name, lead_id)
     assert assigned.correlation_id == row.correlation_id
+
+
+# --- Phase 2b: the `lead.assigned` event carries the demo session (Epic 3) ----
+
+
+async def test_claim_event_carries_the_cookie_demo_session(
+    seeded, db_client, database_engine
+):
+    """A claim under a demo cookie tags its `lead.assigned` event with the session id.
+
+    `assume` mints the demo session (setting `pf_demo_session`) and logs the Agent in;
+    the following claim resolves that cookie read-only and stamps the event's
+    `demo_session_id` with the minted id.
+    """
+    sunshine_tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    email, phone = unique_contact()
+    lead_id = await insert_lead(
+        database_engine,
+        SUNSHINE.schema_name,
+        sunshine_tenant_id,
+        first_name=unique_marker(),
+        email=email,
+        phone=phone,
+        status=LeadStatus.NEW,
+        owner_user_id=None,
+    )
+
+    assert (
+        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    ).status_code == 200
+    minted_id = uuid.UUID(db_client.cookies[DEMO_SESSION_COOKIE_NAME])
+
+    response = await db_client.post(f"/api/leads/{lead_id}/claim")
+    assert response.status_code == 200
+
+    rows = await read_outbox_rows_for_entity(
+        database_engine, SUNSHINE.schema_name, EventType.LEAD_ASSIGNED, lead_id
+    )
+    assert len(rows) == 1
+    assert rows[0].demo_session_id == minted_id
+
+
+async def test_claim_event_demo_session_is_none_without_a_cookie(
+    seeded, db_client, database_engine
+):
+    """A claim with no demo cookie leaves the event's `demo_session_id` NULL.
+
+    `login_agent_for_slug` authenticates the Agent without minting a demo session, so
+    no `pf_demo_session` cookie is present and the `lead.assigned` event is untagged.
+    """
+    sunshine_tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    email, phone = unique_contact()
+    lead_id = await insert_lead(
+        database_engine,
+        SUNSHINE.schema_name,
+        sunshine_tenant_id,
+        first_name=unique_marker(),
+        email=email,
+        phone=phone,
+        status=LeadStatus.NEW,
+        owner_user_id=None,
+    )
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    assert DEMO_SESSION_COOKIE_NAME not in db_client.cookies
+
+    response = await db_client.post(f"/api/leads/{lead_id}/claim")
+    assert response.status_code == 200
+
+    rows = await read_outbox_rows_for_entity(
+        database_engine, SUNSHINE.schema_name, EventType.LEAD_ASSIGNED, lead_id
+    )
+    assert len(rows) == 1
+    assert rows[0].demo_session_id is None
 
 
 # --- Phase 3: illegal transition → 409 ---------------------------------------

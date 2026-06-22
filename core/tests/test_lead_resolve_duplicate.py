@@ -40,11 +40,13 @@ files: `insert_lead` / `login_agent_for_slug` / `tenant_id_for_slug` /
 
 import uuid
 
+from app.demo.session import DEMO_SESSION_COOKIE_NAME
 from app.events.catalog import EventType
 from app.leads.state import LeadStatus
 from app.models.user import Role
 from app.tenancy.registry import FLORIDA, SUNSHINE
 
+from tests.test_demo_assume_persona import assume  # noqa: F401 — used by name
 from tests.test_endpoints_db import login_as, seeded  # noqa: F401
 from tests.test_lead_intake import read_lead_row, read_outbox_rows_for_entity
 from tests.test_lead_reads import (
@@ -254,6 +256,64 @@ async def test_reject_enqueues_one_lead_rejected_event_with_duplicate_reason(
 
     row = await read_lead_row(database_engine, SUNSHINE.schema_name, flagged_lead_id)
     assert rejected.correlation_id == row.correlation_id
+
+
+# --- Phase 3b: the duplicate-reject event carries the demo session (Epic 3) ---
+
+
+async def test_duplicate_reject_event_carries_the_cookie_demo_session(
+    seeded, db_client, database_engine
+):
+    """A duplicate-reject under a demo cookie tags its `lead.rejected` event's session.
+
+    `assume` mints the demo session (setting `pf_demo_session`) and logs the Agent in;
+    the reject branch resolves that cookie read-only and stamps `demo_session_id`. The
+    session is resolved lazily — only this event-emitting branch does the platform read.
+    """
+    tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    _, flagged_lead_id = await insert_flagged_new_lead(
+        database_engine, SUNSHINE.schema_name, tenant_id
+    )
+
+    assert (
+        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    ).status_code == 200
+    minted_id = uuid.UUID(db_client.cookies[DEMO_SESSION_COOKIE_NAME])
+
+    response = await db_client.post(
+        f"/api/leads/{flagged_lead_id}/resolve-duplicate", json={"action": "reject"}
+    )
+    assert response.status_code == 200
+
+    rows = await read_outbox_rows_for_entity(
+        database_engine, SUNSHINE.schema_name, EventType.LEAD_REJECTED, flagged_lead_id
+    )
+    assert len(rows) == 1
+    assert rows[0].demo_session_id == minted_id
+
+
+async def test_duplicate_reject_event_demo_session_is_none_without_a_cookie(
+    seeded, db_client, database_engine
+):
+    """A duplicate-reject with no demo cookie leaves the event's `demo_session_id` NULL."""
+    tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    _, flagged_lead_id = await insert_flagged_new_lead(
+        database_engine, SUNSHINE.schema_name, tenant_id
+    )
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    assert DEMO_SESSION_COOKIE_NAME not in db_client.cookies
+
+    response = await db_client.post(
+        f"/api/leads/{flagged_lead_id}/resolve-duplicate", json={"action": "reject"}
+    )
+    assert response.status_code == 200
+
+    rows = await read_outbox_rows_for_entity(
+        database_engine, SUNSHINE.schema_name, EventType.LEAD_REJECTED, flagged_lead_id
+    )
+    assert len(rows) == 1
+    assert rows[0].demo_session_id is None
 
 
 async def test_reject_on_flagged_working_lead_is_409(

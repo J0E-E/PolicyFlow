@@ -34,12 +34,12 @@ column + the always-`None` event-envelope field already exist as P1.7 seams; thi
   - **Plan deviation:** adds a *separate* `read_demo_session_state` rather than reusing `current_demo_session` (Epic 1's note suggested) — the latter collapses `expired`→`None`, so it cannot report the `expired` status this endpoint's contract requires.
   - **Cross-epic test gotcha (Epic 2):** `<Masthead>` now mounts the self-contained `<DemoSessionCountdown>`, which calls `getDemoSession()` on mount. Any test rendering the real signed-in shell (e.g. the `RequireSession` / `SelectTenantPage` happy paths) must add `getDemoSession` to its `vi.mock("../api")` factory — resolved to `{status:"none"}` for the plain-stamp steady state — or the unmocked call crashes the test after render.
 
-## Epic 3 — Public intake auto-mint + tagging
+## Epic 3 — Public intake auto-mint + tagging — **COMPLETED** (25m · 20.3M tok · 796k tok/min)
 - **Goal:** A self-service lead submitted on the unauthenticated Shopper surface auto-mints a demo session (if none) and is tagged with its id — so visitor-created leads on both routes now carry the session.
 - **Rough scope:** `POST /api/public/intake` calls `ensure_demo_session` (sets the cookie on the response) and passes the id into the shared `create_lead`; the claim/qualify/reject/resolve-duplicate actions also carry the session id onto their events.
-- **Open questions / decisions for stakeholders:** none expected — the auto-mint seam is the same one Epic 1 builds.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 1.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** none — shipped exactly as planned.
 
 ## Epic 4 — Read isolation: visibility predicate
 - **Goal:** One visitor never sees another's leads in the shared tenant schema — list, queue, and detail reads return only seed rows (`demo_session_id IS NULL`) plus the caller's own session rows; another session's row resolves to a 404, identical to the cross-tenant case.
