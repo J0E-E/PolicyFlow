@@ -41,12 +41,14 @@ column + the always-`None` event-envelope field already exist as P1.7 seams; thi
 - **Depends on:** Epic 1.
 - **Implementation notes:** none — shipped exactly as planned.
 
-## Epic 4 — Read isolation: visibility predicate
+## Epic 4 — Read isolation: visibility predicate — **COMPLETED** (28m · 10.7M tok · 373k tok/min)
 - **Goal:** One visitor never sees another's leads in the shared tenant schema — list, queue, and detail reads return only seed rows (`demo_session_id IS NULL`) plus the caller's own session rows; another session's row resolves to a 404, identical to the cross-tenant case.
 - **Rough scope:** A small `visible_to_session` query helper applied to `list_leads` (+ queue filter) and, by post-load check, `get_lead`; `None` session ⇒ seed-only.
-- **Open questions / decisions for stakeholders:** confirm the 404 (not 403) shape for a foreign-session row, to match the existing cross-tenant not-found behavior.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time. A foreign-session row resolves to `404 "lead not found"` (not 403), identical to the existing cross-tenant not-found (TDD D3).
 - **Depends on:** Epic 1.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Cross-epic fact:** Epic 4 scopes only the **read** path (list/queue/detail). The same foreign-session `404` on the **action** endpoints (claim/qualify/reject/resolve-duplicate) is **Epic 5's** — it already opens every action endpoint for its seed-row `409` guard, so the foreign-session post-load `404` folds into that one write-isolation pass (settled at plan time; TDD §5.3 lists "every action endpoint").
+  - **Cross-epic fact (Epic 4):** `core/app/leads/visibility.py::visible_to_session(query, demo_session_id)` is the one isolation predicate — Epic 5's matcher scoping (`find_duplicate_lead`) reuses it. `list_leads`/`get_lead` now take `request: Request` and resolve the session via `current_demo_session(request, db)`, so the read path already carries the `request` any future session work needs.
 
 ## Epic 5 — Matcher scoping + seed-row write guard
 - **Goal:** Duplicate detection respects session isolation (a visitor's submission only flags against seed ∪ their own rows), and mutating actions refuse to alter a shared seed row.

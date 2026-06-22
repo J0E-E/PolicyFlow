@@ -38,6 +38,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, text
 
 from app.config import settings
+from app.demo.session import DEMO_SESSION_COOKIE_NAME
 from app.leads.state import LeadStatus
 from app.models.tenant import Tenant
 from app.models.user import Role
@@ -107,18 +108,21 @@ async def insert_lead(
     owner_username: str | None = None,
     product_lines_of_interest: list[str] | None = None,
     duplicate_of_lead_id: uuid.UUID | None = None,
+    demo_session_id: uuid.UUID | None = None,
     created_at: datetime = BASE_CREATED_AT,
 ) -> uuid.UUID:
     """Insert one lead into `<schema_name>.leads` via the normal encryption path.
 
     The controllable setup seam: it sets `status`, `owner_user_id`,
-    `duplicate_of_lead_id`, and `created_at` directly — combinations the create endpoint
-    cannot produce (a `New`/unowned queue lead, an unowned `Rejected` lead, a
-    duplicate-flagged lead for the resolve-duplicate tests, an explicitly-timestamped
-    row for deterministic ordering). The PII fields are encrypted with `encrypt_field`
-    and each blind index is computed over the normalized value, exactly the seed / Epic
-    6 insert path, so a masked read decrypts it cleanly. The schema name comes only from
-    the registry; every value is a bound parameter. Returns the new lead's id.
+    `duplicate_of_lead_id`, `demo_session_id`, and `created_at` directly — combinations
+    the create endpoint cannot produce (a `New`/unowned queue lead, an unowned
+    `Rejected` lead, a duplicate-flagged lead for the resolve-duplicate tests, an
+    explicitly-timestamped row for deterministic ordering, and — for Epic 4's read
+    isolation — a seed row (`demo_session_id=None`) or a row owned by a specific demo
+    session). The PII fields are encrypted with `encrypt_field` and each blind index is
+    computed over the normalized value, exactly the seed / Epic 6 insert path, so a
+    masked read decrypts it cleanly. The schema name comes only from the registry; every
+    value is a bound parameter. Returns the new lead's id.
     """
     lead_id = uuid.uuid4()
     async with database_engine.begin() as connection:
@@ -128,14 +132,14 @@ async def insert_lead(
                 "(id, first_name, last_name, email_encrypted, email_blind_index, "
                 "phone_encrypted, phone_blind_index, date_of_birth_encrypted, "
                 "age_band, zip_code, product_lines_of_interest, lead_source, status, "
-                "owner_user_id, owner_username, duplicate_of_lead_id, correlation_id, "
-                "created_at, updated_at) "
+                "owner_user_id, owner_username, duplicate_of_lead_id, demo_session_id, "
+                "correlation_id, created_at, updated_at) "
                 "VALUES (:id, :first_name, :last_name, :email_encrypted, "
                 ":email_blind_index, :phone_encrypted, :phone_blind_index, "
                 ":date_of_birth_encrypted, :age_band, :zip_code, "
                 ":product_lines_of_interest, :lead_source, :status, :owner_user_id, "
-                ":owner_username, :duplicate_of_lead_id, :correlation_id, :created_at, "
-                ":updated_at)"
+                ":owner_username, :duplicate_of_lead_id, :demo_session_id, "
+                ":correlation_id, :created_at, :updated_at)"
             ),
             {
                 "id": lead_id,
@@ -160,12 +164,36 @@ async def insert_lead(
                 "owner_user_id": owner_user_id,
                 "owner_username": owner_username,
                 "duplicate_of_lead_id": duplicate_of_lead_id,
+                "demo_session_id": demo_session_id,
                 "correlation_id": uuid.uuid4(),
                 "created_at": created_at,
                 "updated_at": created_at,
             },
         )
     return lead_id
+
+
+async def mint_live_demo_session(database_engine) -> uuid.UUID:
+    """Insert a live (unexpired) `platform.demo_sessions` row; return its id.
+
+    Epic 4's read-isolation tests need real demo-session ids to tag leads with and to
+    point the client cookie at. A row is written straight into `platform.demo_sessions`
+    via the superuser `database_engine`, with `expires_at` well in the future so
+    `current_demo_session` resolves it as live. Returns the new session's id.
+    """
+    session_id = uuid.uuid4()
+    async with database_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "INSERT INTO platform.demo_sessions (id, expires_at) "
+                "VALUES (:id, :expires_at)"
+            ),
+            {
+                "id": session_id,
+                "expires_at": datetime.now(timezone.utc) + timedelta(days=1),
+            },
+        )
+    return session_id
 
 
 def unique_contact() -> tuple[str, str]:
@@ -440,3 +468,126 @@ async def test_list_excludes_other_tenant_leads(
     florida_ids = {lead["id"] for lead in florida_response.json()["leads"]}
     assert str(florida_lead_id) in florida_ids
     assert str(sunshine_lead_id) not in florida_ids
+
+
+# --- Epic 4: read isolation (visibility predicate) ---------------------------
+
+
+async def test_list_and_queue_are_isolated_per_demo_session(
+    seeded, db_client, database_engine
+):
+    """`GET /api/leads` (and the `unassigned` queue) show only seed ∪ the caller's own.
+
+    Two demo sessions plus a shared seed (`NULL`) row are inserted into Sunshine's
+    schema, all unowned/`New` so they qualify for the queue. Logged in as a Sunshine
+    Agent and carrying session A's cookie, the list shows the seed row and A's row but
+    **never** B's; the `unassigned=true` queue respects the same predicate. Dropping
+    the demo cookie leaves only the seed row (seed-only). Session B's own row is proven
+    reachable from B's cookie, so it is hidden from A by isolation, not by absence.
+    """
+    sunshine_tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    marker = unique_marker()
+    session_a = await mint_live_demo_session(database_engine)
+    session_b = await mint_live_demo_session(database_engine)
+
+    async def insert_queue_lead(demo_session_id):
+        email, phone = unique_contact()
+        return await insert_lead(
+            database_engine,
+            SUNSHINE.schema_name,
+            sunshine_tenant_id,
+            first_name=marker,
+            email=email,
+            phone=phone,
+            status=LeadStatus.NEW,
+            owner_user_id=None,
+            demo_session_id=demo_session_id,
+        )
+
+    seed_lead_id = await insert_queue_lead(None)
+    session_a_lead_id = await insert_queue_lead(session_a)
+    session_b_lead_id = await insert_queue_lead(session_b)
+
+    assert (await login_as(db_client, Role.AGENT)).status_code == 200
+
+    def mine(response):
+        return {
+            lead["id"]
+            for lead in response.json()["leads"]
+            if lead["first_name"] == marker
+        }
+
+    # Session A's cookie: the list shows seed + A's row, never B's.
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_a))
+    list_response = await db_client.get("/api/leads")
+    assert list_response.status_code == 200
+    assert mine(list_response) == {str(seed_lead_id), str(session_a_lead_id)}
+    assert str(session_b_lead_id) not in mine(list_response)
+
+    # The `unassigned` queue respects the same predicate (all three are unowned/New).
+    queue_response = await db_client.get("/api/leads", params={"unassigned": "true"})
+    assert queue_response.status_code == 200
+    assert mine(queue_response) == {str(seed_lead_id), str(session_a_lead_id)}
+
+    # No demo cookie ⇒ seed-only: just the `NULL` row, neither session's.
+    db_client.cookies.delete(DEMO_SESSION_COOKIE_NAME)
+    seed_only_response = await db_client.get("/api/leads")
+    assert seed_only_response.status_code == 200
+    assert mine(seed_only_response) == {str(seed_lead_id)}
+
+    # Session B's own row is reachable from B's cookie — hidden from A by isolation.
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_b))
+    b_response = await db_client.get("/api/leads")
+    assert b_response.status_code == 200
+    assert mine(b_response) == {str(seed_lead_id), str(session_b_lead_id)}
+
+
+async def test_detail_is_isolated_per_demo_session(
+    seeded, db_client, database_engine
+):
+    """`GET /api/leads/{id}`: own row 200, seed row 200, foreign-session row 404.
+
+    A seed (`NULL`) row, session A's row, and session B's row are inserted into
+    Sunshine's schema. A Sunshine Agent carrying session A's cookie reads its own row
+    (200) and the seed row (200), but session B's row resolves to a `404 "lead not
+    found"` — identical to the cross-tenant not-found, so a visitor can neither read nor
+    probe for another session's lead. With no demo cookie, only the seed row resolves
+    (the session rows 404).
+    """
+    sunshine_tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    marker = unique_marker()
+    session_a = await mint_live_demo_session(database_engine)
+    session_b = await mint_live_demo_session(database_engine)
+
+    async def insert_owned_row(demo_session_id):
+        email, phone = unique_contact()
+        return await insert_lead(
+            database_engine,
+            SUNSHINE.schema_name,
+            sunshine_tenant_id,
+            first_name=marker,
+            email=email,
+            phone=phone,
+            demo_session_id=demo_session_id,
+        )
+
+    seed_lead_id = await insert_owned_row(None)
+    session_a_lead_id = await insert_owned_row(session_a)
+    session_b_lead_id = await insert_owned_row(session_b)
+
+    assert (await login_as(db_client, Role.AGENT)).status_code == 200
+
+    # Session A's cookie: own row 200, seed row 200, foreign session B's row 404.
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_a))
+    assert (await db_client.get(f"/api/leads/{session_a_lead_id}")).status_code == 200
+    assert (await db_client.get(f"/api/leads/{seed_lead_id}")).status_code == 200
+
+    foreign_response = await db_client.get(f"/api/leads/{session_b_lead_id}")
+    assert foreign_response.status_code == 404
+    assert foreign_response.json() == {"detail": "lead not found"}
+
+    # No demo cookie ⇒ only the seed row resolves; both session rows 404.
+    db_client.cookies.delete(DEMO_SESSION_COOKIE_NAME)
+    assert (await db_client.get(f"/api/leads/{seed_lead_id}")).status_code == 200
+    assert (await db_client.get(f"/api/leads/{session_a_lead_id}")).status_code == 404
+    assert (await db_client.get(f"/api/leads/{session_b_lead_id}")).status_code == 404

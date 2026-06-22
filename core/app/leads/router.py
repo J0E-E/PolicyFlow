@@ -83,6 +83,7 @@ from ..tenancy.registry import tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
 from .intake import create_lead
 from .masking import build_masked_lead
+from .visibility import visible_to_session
 from .schemas import (
     CreateLeadRequest,
     RejectLeadRequest,
@@ -195,6 +196,7 @@ async def create_lead_endpoint(
 
 @router.get("")
 async def list_leads(
+    request: Request,
     unassigned: bool = False,
     identity: Identity = Depends(require_authenticated),
     db: AsyncSession = Depends(get_tenant_db),
@@ -207,6 +209,14 @@ async def list_leads(
     list can only ever contain that one tenant's leads; another tenant's rows are
     physically out of reach.
 
+    In the shared demo tenant, schema scoping is not enough — many visitors share one
+    schema — so the caller's demo session is resolved from the `pf_demo_session`
+    cookie (read-only) and `visible_to_session` scopes the list to the shared seed
+    baseline (`demo_session_id IS NULL`) plus the caller's own session rows. No demo
+    cookie (or an expired one) resolves to `None` ⇒ seed-only. The predicate is
+    applied to **both** the default list and the `unassigned` queue branch, so neither
+    can ever surface another visitor's leads.
+
     Rows are ordered newest first (`created_at` DESC, tie-broken by `id` for a stable
     order across requests) and capped at `LEAD_LIST_LIMIT` — a simple safety cap, not
     pagination. The optional `unassigned` query param backs the two-tab queue UI:
@@ -216,12 +226,17 @@ async def list_leads(
     shared `build_masked_lead` builder under the `{"leads": […]}` envelope. The
     dependency chain inherits 401 (no session) and 400 (tenantless caller).
     """
+    demo_session = await current_demo_session(request, db)
+    demo_session_id = demo_session.id if demo_session is not None else None
+
     query = select(Lead).order_by(Lead.created_at.desc(), Lead.id)
 
     if unassigned:
         query = query.where(
             Lead.owner_user_id.is_(None), Lead.status == LeadStatus.NEW.value
         )
+
+    query = visible_to_session(query, demo_session_id)
 
     leads = (
         await db.execute(query.limit(LEAD_LIST_LIMIT))
@@ -236,6 +251,7 @@ async def list_leads(
 @router.get("/{lead_id}")
 async def get_lead(
     lead_id: uuid.UUID,
+    request: Request,
     identity: Identity = Depends(require_authenticated),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> dict:
@@ -250,6 +266,13 @@ async def get_lead(
     probe for another tenant's leads. The dependency chain inherits 401 (no session)
     and 400 (tenantless caller).
 
+    In the shared demo tenant, a session check matches the list path: after the load,
+    a row owned by **another** demo session (`demo_session_id` neither `NULL` nor the
+    caller's resolved session id) is treated as if it did not exist — the same
+    `404 "lead not found"` as the cross-tenant case, so one visitor can neither read
+    nor probe for another's lead. Seed rows (`NULL`) and the caller's own session rows
+    resolve normally; a caller with no demo session sees only seed rows.
+
     The matched lead is returned through the shared `build_masked_lead` builder under
     the `{"lead": …}` envelope.
     """
@@ -258,6 +281,11 @@ async def get_lead(
     ).scalar_one_or_none()
 
     if lead is None:
+        raise HTTPException(status_code=404, detail="lead not found")
+
+    demo_session = await current_demo_session(request, db)
+    demo_session_id = demo_session.id if demo_session is not None else None
+    if lead.demo_session_id is not None and lead.demo_session_id != demo_session_id:
         raise HTTPException(status_code=404, detail="lead not found")
 
     return {"lead": await build_masked_lead(identity.tenant_id, lead)}
