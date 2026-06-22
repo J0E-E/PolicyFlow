@@ -8,12 +8,22 @@
 // labelled, not silently absent.
 
 import type { ReactElement } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Identity } from "../api";
 import Masthead from "./Masthead.tsx";
+
+// The masthead now mounts the self-contained <DemoSessionCountdown />, which
+// fetches `getDemoSession` on mount. jsdom has no backend, so `../api` is mocked
+// and the call resolves to a `none` state by default — the countdown then falls
+// back to the plain "DEMO SESSION" overline stamp, the steady state these masthead
+// tests assert. (The countdown's own active/expired/tick behavior is covered by
+// DemoSessionCountdown.test.tsx.) Mocking it also keeps no unmocked network firing.
+vi.mock("../api", () => ({
+  getDemoSession: vi.fn().mockResolvedValue({ status: "none" }),
+}));
 
 // The switcher just needs a resolving stub; the switching behavior is covered by
 // RoleSwitcher.test.tsx.
@@ -107,18 +117,28 @@ describe("Masthead", () => {
     expect(seal).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("renders the static DEMO SESSION stamp placeholder", () => {
+  it("mounts the live demo-session countdown, falling back to the plain DEMO SESSION stamp", async () => {
+    // With a `none` session (the default mock), the self-contained countdown
+    // resolves to the plain "DEMO SESSION" overline stamp — the same stable
+    // `app-masthead-session-stamp` id the static placeholder used. (The active
+    // figure + per-minute tick is covered by DemoSessionCountdown.test.tsx.)
     render(
       withRouter(<Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />),
     );
 
-    expect(
-      document.getElementById("app-masthead-session-stamp"),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        document.getElementById("app-masthead-session-stamp"),
+      ).toBeInTheDocument();
+    });
     // Natural-case in the DOM; CSS uppercases it (Stamp type).
     expect(
       document.getElementById("app-masthead-session-stamp-label"),
     ).toHaveTextContent("Demo session");
+    // No active session here, so no live countdown figure is rendered.
+    expect(
+      document.getElementById("app-masthead-session-countdown"),
+    ).toBeNull();
   });
 
   it("renders the notification bell as a disabled, labelled placeholder", () => {

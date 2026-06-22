@@ -2,7 +2,7 @@ import { HelpCircle } from "iconoir-react";
 import type { Identity, Role } from "../api";
 import TenantSealMark from "./TenantSealMark.tsx";
 import RoleSwitcher from "./RoleSwitcher.tsx";
-import StampTag from "./StampTag.tsx";
+import DemoSessionCountdown from "./DemoSessionCountdown.tsx";
 import ViewOnlyTag from "./ViewOnlyTag.tsx";
 import ExplainerPopover from "./ExplainerPopover.tsx";
 import SurfaceToggle from "./SurfaceToggle.tsx";
@@ -30,7 +30,8 @@ interface MastheadProperties {
 //
 //   left  — the tenant seal mark, the "PolicyFlow" wordmark, the tenant name,
 //           and the role switcher (who you are, what tenant you're in).
-//   right — a static "DEMO SESSION" stamp (the live countdown is P1.8), an inert
+//   right — the live demo-session countdown ("DEMO SESSION · HH:MM REMAINING",
+//           P1.8 — self-contained, owns its own fetch), an inert
 //           notification-bell placeholder (Guide §6.12, wired later), and a live
 //           "How it's built" link opening the public /how-its-built page in a new
 //           tab (Epic 21 — preserving the open workspace).
@@ -151,9 +152,13 @@ export default function Masthead({
               className="masthead-help-glyph"
             />
           </button>
-          <StampTag id="app-masthead-session-stamp" variant="overline">
-            Demo session
-          </StampTag>
+          {/* Live demo-session countdown (P1.8) — self-contained: it owns its own
+              `GET /api/demo/session` fetch and ticks locally from `expires_at`, so
+              this masthead stays props-only. For an active session it renders
+              "DEMO SESSION · HH:MM REMAINING"; every other state falls back to the
+              plain "DEMO SESSION" overline stamp (keeping the stable
+              `app-masthead-session-stamp` id). */}
+          <DemoSessionCountdown />
           {/* Session-model explainer (Epic 19) — after the DEMO SESSION stamp,
               explaining the sandboxed demo session (no CRM PARALLEL section). */}
           <ExplainerPopover

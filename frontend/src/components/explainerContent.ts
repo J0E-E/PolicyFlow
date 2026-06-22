@@ -110,9 +110,9 @@ export const sessionModelExplainer: ExplainerContent = {
     " cookie); switching personas re-mints it as a different seeded user.",
   ],
   realVsSimulated: [
-    "Passwordless entry and the server session are real today. The countdown shown here is a static placeholder, and ",
+    "Passwordless entry, the server session, and the live countdown are real today. ",
     { mono: "session-scoped" },
-    " record overlays + one-click reset arrive in later phases (P1.7–P1.8).",
+    " record overlays and one-click reset arrive later in P1.8.",
   ],
 };
 

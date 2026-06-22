@@ -236,3 +236,23 @@ export interface RevealLeadResponse {
 export interface PublicIntakeResult {
   ok: boolean;
 }
+
+/** The status of the current demo session — mirrors the backend `DemoSessionStatus`. */
+export type DemoSessionStatus = "active" | "expired" | "none";
+
+/**
+ * The current demo session's public state from `GET /api/demo/session`, mirroring
+ * the backend `read_demo_session_state` body. `active` carries all fields;
+ * `expired` carries `expires_at` + `last_tenant_slug` (the seam graceful expiry
+ * reuses to preserve the tenant); `none` carries just the status. The masthead
+ * countdown ticks locally from `expires_at`, fetched once on mount (no polling).
+ */
+export interface DemoSessionState {
+  status: DemoSessionStatus;
+  /** Raw demo-session UUID string — present for `active`/`expired`, absent for `none`. */
+  demo_session_id?: string;
+  /** ISO 8601 timestamp when the session window ends — absent for `none`. */
+  expires_at?: string;
+  /** The last tenant slug the visit assumed — present when known, else absent. */
+  last_tenant_slug?: string;
+}

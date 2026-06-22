@@ -117,6 +117,22 @@ async def _get_live_session(
     ).scalar_one_or_none()
 
 
+async def _get_session_ignoring_expiry(
+    db: AsyncSession, session_id: uuid.UUID
+) -> Optional[DemoSession]:
+    """Load the `demo_sessions` row for `session_id` regardless of expiry, else `None`.
+
+    The companion to `_get_live_session` that does **not** filter on the clock, so
+    a caller can tell an expired-but-known session apart from one that never
+    existed. `read_demo_session_state` uses it for the `EXPIRED` branch.
+    """
+    return (
+        await db.execute(
+            select(DemoSession).where(DemoSession.id == session_id)
+        )
+    ).scalar_one_or_none()
+
+
 async def ensure_demo_session(
     db: AsyncSession,
     request: Request,
@@ -200,3 +216,46 @@ async def current_demo_session(
         expires_at=live_session.expires_at,
         last_tenant_slug=live_session.last_tenant_slug,
     )
+
+
+async def read_demo_session_state(
+    request: Request, db: AsyncSession
+) -> DemoSessionState:
+    """Report the cookie's session as `ACTIVE`, `EXPIRED`, or `NONE`. Read-only.
+
+    The tri-state read behind the public `GET /api/demo/session` endpoint and the
+    masthead countdown. Unlike `current_demo_session` — which collapses an expired
+    session to `None` — this distinguishes the three cases the frontend needs:
+
+    - **NONE** — no cookie, a malformed value, or a cookie naming a row that does
+      not exist. Just the status; no id, expiry, or tenant.
+    - **EXPIRED** — the cookie names a real row whose window has passed. Carries
+      `last_tenant_slug` and `expires_at` so a later fresh-mint can preserve the
+      tenant (the seam Epic 12 reuses).
+    - **ACTIVE** — a live, unexpired row; all fields populated.
+
+    No mint and no cookie write — this is purely a read of the current state.
+    """
+    session_id = _parse_cookie_id(request)
+    if session_id is None:
+        return DemoSessionState(status=DemoSessionStatus.NONE)
+
+    live_session = await _get_live_session(db, session_id)
+    if live_session is not None:
+        return DemoSessionState(
+            status=DemoSessionStatus.ACTIVE,
+            id=live_session.id,
+            expires_at=live_session.expires_at,
+            last_tenant_slug=live_session.last_tenant_slug,
+        )
+
+    known_session = await _get_session_ignoring_expiry(db, session_id)
+    if known_session is not None:
+        return DemoSessionState(
+            status=DemoSessionStatus.EXPIRED,
+            id=known_session.id,
+            expires_at=known_session.expires_at,
+            last_tenant_slug=known_session.last_tenant_slug,
+        )
+
+    return DemoSessionState(status=DemoSessionStatus.NONE)

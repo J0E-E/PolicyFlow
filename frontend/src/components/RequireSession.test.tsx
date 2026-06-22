@@ -18,6 +18,10 @@ vi.mock("../api", () => ({
   getCurrentIdentity: vi.fn(),
   assumePersona: vi.fn(),
   signOut: vi.fn(),
+  // The signed-in shell mounts the masthead's <DemoSessionCountdown />, which
+  // fetches on mount; resolve it to `none` so it shows the plain stamp and fires
+  // no unmocked network.
+  getDemoSession: vi.fn().mockResolvedValue({ status: "none" }),
 }));
 
 import { getCurrentIdentity } from "../api";

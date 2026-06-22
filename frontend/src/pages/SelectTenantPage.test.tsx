@@ -24,6 +24,10 @@ vi.mock("../api", () => ({
   listTenants: vi.fn(),
   assumePersona: vi.fn(),
   signOut: vi.fn(),
+  // The happy path lands on `/app`, mounting the masthead's
+  // <DemoSessionCountdown />, which fetches on mount; resolve it to `none` so it
+  // shows the plain stamp and fires no unmocked network.
+  getDemoSession: vi.fn().mockResolvedValue({ status: "none" }),
 }));
 
 import { assumePersona, getCurrentIdentity, listTenants } from "../api";

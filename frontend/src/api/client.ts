@@ -10,6 +10,7 @@
 
 import type {
   CreateLeadRequest,
+  DemoSessionState,
   Identity,
   MaskedLead,
   PublicIntakeRequest,
@@ -133,6 +134,19 @@ export function assumePersona(
     tenant_slug: tenantSlug,
     role,
   });
+}
+
+/**
+ * Read the current demo session's state from the public `GET /api/demo/session`.
+ *
+ * The masthead countdown fetches this once on mount and then ticks locally from
+ * `expires_at`. The body is the flat `DemoSessionState` shape (no envelope): an
+ * `active` session carries the id, expiry, and remembered tenant; `expired` keeps
+ * the expiry + tenant; `none` is just `{ status: "none" }`. The `pf_demo_session`
+ * cookie rides the call via `credentials: "include"`.
+ */
+export function getDemoSession(): Promise<DemoSessionState> {
+  return request<DemoSessionState>("GET", "/api/demo/session");
 }
 
 /** Sign out via `POST /api/auth/logout`; the response body is ignored. */

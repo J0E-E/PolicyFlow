@@ -26,7 +26,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Response
-from sqlalchemy import text
 from starlette.requests import Request
 
 from app.config import settings
@@ -36,6 +35,7 @@ from app.demo.session import (
     _set_demo_session_cookie,
     current_demo_session,
     ensure_demo_session,
+    read_demo_session_state,
 )
 from app.events.catalog import EventType
 from app.models.demo_session import DemoSession
@@ -328,11 +328,142 @@ async def test_ensure_remints_when_the_cookie_session_has_expired(db_session):
     assert "set-cookie" in response.headers
 
 
+# --- tri-state resolver: read_demo_session_state -----------------------------
+
+
+async def test_read_state_is_none_for_no_cookie(db_session):
+    """No cookie → NONE, with no id / expiry / tenant surfaced."""
+    state = await read_demo_session_state(_request_with_cookie(None), db_session)
+
+    assert state.status is DemoSessionStatus.NONE
+    assert state.id is None
+    assert state.expires_at is None
+    assert state.last_tenant_slug is None
+
+
+async def test_read_state_is_none_for_unknown_and_malformed_cookie(db_session):
+    """A cookie naming no row, or a non-UUID value, both resolve to NONE."""
+    unknown = await read_demo_session_state(
+        _request_with_cookie(str(uuid.uuid4())), db_session
+    )
+    assert unknown.status is DemoSessionStatus.NONE
+
+    malformed = await read_demo_session_state(
+        _request_with_cookie("not-a-uuid"), db_session
+    )
+    assert malformed.status is DemoSessionStatus.NONE
+
+
+async def test_read_state_is_active_for_a_live_session(db_session):
+    """A cookie naming a live row → ACTIVE with all fields populated."""
+    minted = await ensure_demo_session(
+        db_session,
+        _request_with_cookie(None),
+        Response(),
+        tenant_slug=SUNSHINE.slug,
+    )
+
+    state = await read_demo_session_state(
+        _request_with_cookie(str(minted.id)), db_session
+    )
+
+    assert state.status is DemoSessionStatus.ACTIVE
+    assert state.id == minted.id
+    assert state.expires_at == minted.expires_at
+    assert state.last_tenant_slug == SUNSHINE.slug
+
+
+async def test_read_state_is_expired_for_a_known_expired_session(db_session):
+    """A cookie naming a real but expired row → EXPIRED, keeping expiry + tenant.
+
+    Unlike `current_demo_session` (which collapses this to `None`), the tri-state
+    resolver reports `EXPIRED` and surfaces `last_tenant_slug` + `expires_at` —
+    the seam the graceful-expiry epic reuses to preserve the tenant.
+    """
+    expired = DemoSession(
+        expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        last_tenant_slug=SUNSHINE.slug,
+    )
+    db_session.add(expired)
+    await db_session.commit()
+    await db_session.refresh(expired)
+
+    state = await read_demo_session_state(
+        _request_with_cookie(str(expired.id)), db_session
+    )
+
+    assert state.status is DemoSessionStatus.EXPIRED
+    assert state.id == expired.id
+    assert state.expires_at == expired.expires_at
+    assert state.last_tenant_slug == SUNSHINE.slug
+
+
+# --- public endpoint: GET /api/demo/session ----------------------------------
+
+
+async def test_get_demo_session_endpoint_reports_none_without_a_cookie(db_client):
+    """The public endpoint returns just `{"status": "none"}` with no cookie."""
+    response = await db_client.get("/api/demo/session")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "none"}
+
+
+async def test_get_demo_session_endpoint_reports_active(seeded, db_client):  # noqa: F811 — `seeded` is a fixture param, not a redefinition
+    """After assume-persona mints a session, the endpoint reports it ACTIVE.
+
+    Drives the real mint via `assume-persona` (which sets the cookie on the
+    client), then reads `GET /api/demo/session` back — the seam the masthead
+    countdown consumes. The body carries `demo_session_id`, `expires_at`, and the
+    remembered tenant.
+    """
+    assume_response = await assume(
+        db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT
+    )
+    assert assume_response.status_code == 200
+    minted_id = db_client.cookies[DEMO_SESSION_COOKIE_NAME]
+
+    response = await db_client.get("/api/demo/session")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "active"
+    assert body["demo_session_id"] == minted_id
+    assert "expires_at" in body
+    assert body["last_tenant_slug"] == SUNSHINE.slug
+
+
+async def test_get_demo_session_endpoint_reports_expired(db_client, db_session):
+    """A cookie naming a known-but-expired row → status `expired` + its fields.
+
+    Inserts an expired row directly, points the client's cookie at it, and reads
+    the endpoint back — proving the `expired` branch the graceful-expiry epic
+    relies on (distinct from a plain `none`).
+    """
+    expired = DemoSession(
+        expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        last_tenant_slug=SUNSHINE.slug,
+    )
+    db_session.add(expired)
+    await db_session.commit()
+    await db_session.refresh(expired)
+
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(expired.id))
+    response = await db_client.get("/api/demo/session")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "expired"
+    assert body["demo_session_id"] == str(expired.id)
+    assert body["last_tenant_slug"] == SUNSHINE.slug
+    assert "expires_at" in body
+
+
 # --- End-to-end tracer: mint -> carry -> tag -> observe ----------------------
 
 
 async def test_assume_persona_then_create_lead_tags_row_and_event(
-    seeded, db_client, database_engine
+    seeded, db_client, database_engine  # noqa: F811 — `seeded` is a fixture param, not a redefinition
 ):
     """TRACER: assume-persona mints the session; a created lead + its event carry its id.
 

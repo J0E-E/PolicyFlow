@@ -46,7 +46,11 @@ from ..db import get_db
 from ..models.tenant import Tenant
 from ..models.user import Role, User
 from ..tenancy.registry import TENANTS, tenant_by_slug
-from .session import ensure_demo_session
+from .session import (
+    DemoSessionStatus,
+    ensure_demo_session,
+    read_demo_session_state,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -88,6 +92,38 @@ async def list_tenants() -> dict:
             for tenant in TENANTS
         ]
     }
+
+
+@router.get("/demo/session")
+async def get_demo_session(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Report the caller's demo-session state for the live masthead countdown.
+
+    **Public** and read-only: no auth dependency and no mint or cookie write — it
+    only resolves the `pf_demo_session` cookie to one of three states the frontend
+    needs (`active` / `expired` / `none`). The masthead fetches this once on mount
+    and then ticks the countdown locally from `expires_at`, so no polling.
+
+    The body is the PII-free `DemoSessionState` shape, with `DemoSessionState.id`
+    surfaced as `demo_session_id`. Fields absent for a status are omitted: `none`
+    returns just `{"status": "none"}`; `expired` adds `expires_at` and
+    `last_tenant_slug` (the seam the graceful-expiry epic reuses to preserve the
+    tenant on a fresh mint); `active` carries all four fields.
+    """
+    state = await read_demo_session_state(request, db)
+    if state.status is DemoSessionStatus.NONE:
+        return {"status": state.status.value}
+
+    body: dict = {"status": state.status.value}
+    if state.id is not None:
+        body["demo_session_id"] = str(state.id)
+    if state.expires_at is not None:
+        body["expires_at"] = state.expires_at.isoformat()
+    if state.last_tenant_slug is not None:
+        body["last_tenant_slug"] = state.last_tenant_slug
+    return body
 
 
 @router.post("/demo/assume-persona")

@@ -170,10 +170,46 @@
   white-space: nowrap;
 }
 
-/* ---- Right cluster: session stamp + inert bell + inert link ---- */
+/* ---- Right cluster: session countdown + inert bell + inert link ---- */
 
 .masthead-right {
   gap: var(--space-4);
+}
+
+/* Live demo-session countdown (Guide §6.5) — "DEMO SESSION · HH:MM REMAINING".
+   The "DEMO SESSION" / "REMAINING" words keep the Stamp type register (the same
+   11/16/700 uppercase eyebrow the overline stamp uses), while the HH:MM figure
+   is set in tabular mono so the minute digits tick in place without reflow. */
+.masthead-session-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--on-surface-variant);
+}
+
+.masthead-session-countdown-label,
+.masthead-session-countdown-remaining {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.masthead-session-countdown-separator {
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* The minute figure: tabular mono so each digit holds its box as it ticks. */
+.masthead-session-countdown-figure {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 /* Inert notification-bell placeholder (Guide §6.12 — wired live later). A real

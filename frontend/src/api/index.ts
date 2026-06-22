@@ -7,6 +7,7 @@ export {
   claimLead,
   createLead,
   getCurrentIdentity,
+  getDemoSession,
   getLead,
   listLeads,
   listTenants,
@@ -20,6 +21,8 @@ export {
 export type {
   Capability,
   CreateLeadRequest,
+  DemoSessionState,
+  DemoSessionStatus,
   DuplicateResolution,
   Identity,
   IdentityUser,
