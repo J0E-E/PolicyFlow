@@ -40,6 +40,7 @@ from ..models.lead import Lead
 from ..pii.crypto import normalize_email, normalize_phone
 from ..pii.service import compute_blind_index
 from .state import LeadStatus
+from .visibility import visible_to_session
 
 __all__ = ["find_duplicate_lead"]
 
@@ -50,6 +51,7 @@ async def find_duplicate_lead(
     email: str,
     phone: str,
     exclude_lead_id: uuid.UUID | None = None,
+    demo_session_id: uuid.UUID | None = None,
 ) -> Lead | None:
     """Return the oldest prior lead matching this email or phone, or `None`.
 
@@ -61,6 +63,13 @@ async def find_duplicate_lead(
     matching, so it passes the new lead's id) that row is filtered out so a lead
     can never match itself. The result is ordered by `created_at` then `id`, so
     the **oldest** match wins deterministically, and limited to one row.
+
+    The match also respects demo-session isolation: `demo_session_id` is threaded
+    into `visible_to_session`, so a visitor only ever flags against the shared seed
+    baseline (`demo_session_id IS NULL`) plus their own session's rows — never
+    another visitor's. A `None` session id (non-demo or session-less caller) scopes
+    the match to seed rows only. The shared dup-bait stays `NULL`, so "Try a
+    duplicate" still flags for everyone.
 
     Returns that prior `Lead` on a hit or `None` on a miss. **Nothing is decrypted
     here** — the match is made on the blind-index fingerprint alone — and the query
@@ -80,6 +89,7 @@ async def find_duplicate_lead(
         )
         .where(Lead.status != LeadStatus.REJECTED)
     )
+    query = visible_to_session(query, demo_session_id)
     if exclude_lead_id is not None:
         query = query.where(Lead.id != exclude_lead_id)
     query = query.order_by(Lead.created_at, Lead.id).limit(1)

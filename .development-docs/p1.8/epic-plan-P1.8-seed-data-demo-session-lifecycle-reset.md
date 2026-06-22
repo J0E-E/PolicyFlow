@@ -50,12 +50,15 @@ column + the always-`None` event-envelope field already exist as P1.7 seams; thi
   - **Cross-epic fact:** Epic 4 scopes only the **read** path (list/queue/detail). The same foreign-session `404` on the **action** endpoints (claim/qualify/reject/resolve-duplicate) is **Epic 5's** — it already opens every action endpoint for its seed-row `409` guard, so the foreign-session post-load `404` folds into that one write-isolation pass (settled at plan time; TDD §5.3 lists "every action endpoint").
   - **Cross-epic fact (Epic 4):** `core/app/leads/visibility.py::visible_to_session(query, demo_session_id)` is the one isolation predicate — Epic 5's matcher scoping (`find_duplicate_lead`) reuses it. `list_leads`/`get_lead` now take `request: Request` and resolve the session via `current_demo_session(request, db)`, so the read path already carries the `request` any future session work needs.
 
-## Epic 5 — Matcher scoping + seed-row write guard
+## Epic 5 — Matcher scoping + seed-row write guard — **COMPLETED** (41m · 40.7M tok · 971k tok/min)
 - **Goal:** Duplicate detection respects session isolation (a visitor's submission only flags against seed ∪ their own rows), and mutating actions refuse to alter a shared seed row.
 - **Rough scope:** Apply the visibility predicate inside `find_duplicate_lead`; add a defense-in-depth `409` when a claim/qualify/reject/resolve-duplicate targets a `demo_session_id IS NULL` seed row. The seeded dup-bait stays `NULL` so "Try a duplicate" still flags for everyone.
-- **Open questions / decisions for stakeholders:** none expected — predicate and guard are specified in the TDD.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time. The foreign-session `404` pass **also covers `reveal`** (the PII-decrypting read the TDD §5.3 left unnamed): `404` only, no seed `409`. Defense-in-depth — foreign ids are never API-exposed, so near-unexploitable, but the isolation contract then holds without an asterisk.
 - **Depends on:** Epic 4.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Scope deviation:** the foreign-session `404` also covers `POST /api/leads/{id}/reveal` (outside the TDD §5.3 enumeration) — `404` only, no seed `409` (revealing shared seed PII is fine).
+  - **Plan refinement (load-bearing for Epics 6/11/14):** the seed-row `409` fires **only when the caller is in a live demo session**, not on every `demo_session_id IS NULL` row — `NULL` is also every ordinary non-demo lead, so a session-less caller acts on `NULL` rows normally (symmetric with the read path's `None`-session ⇒ seed-baseline). **Epic 6** (hide actions on `is_seed`) and **Epic 11** (session reset) must honor this gating, not the unconditional reading. Shared helper `_guard_loaded_lead_for_session(lead, request, db, *, refuse_seed)` (router.py) does both the 404 and the gated 409; `get_lead`/the 4 actions/`reveal` all route through it.
+  - **Cross-epic fact (Epic 7):** `find_duplicate_lead` now takes `demo_session_id` and applies `visible_to_session`; `create_lead` threads it through. Epic 7's session-tagged dup-bait (vs. the shared `NULL` bait) relies on this — a visitor's "Try a duplicate" flags against seed ∪ their own only.
 
 ## Epic 6 — Masked-read session markers + list/detail UI [UI]
 - **Goal:** The UI distinguishes shared seed rows from "your session" rows — masked reads expose `is_seed` and `is_session_record` (never the raw id), lists/detail show a "YOUR SESSION" marginal tag, and mutating actions hide on seed rows.

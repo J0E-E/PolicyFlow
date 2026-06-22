@@ -157,7 +157,12 @@ async def create_lead(
     # so it can never match itself. On a hit, record the linkage on the row and
     # re-flush so the column is durable within this same request transaction.
     duplicate = await find_duplicate_lead(
-        db, tenant_id, email, phone, exclude_lead_id=lead.id
+        db,
+        tenant_id,
+        email,
+        phone,
+        exclude_lead_id=lead.id,
+        demo_session_id=demo_session_id,
     )
     if duplicate is not None:
         lead.duplicate_of_lead_id = duplicate.id

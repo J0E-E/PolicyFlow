@@ -45,6 +45,7 @@ from tests.test_lead_intake import read_lead_row, read_outbox_rows_for_entity
 from tests.test_lead_reads import (
     insert_lead,
     login_agent_for_slug,
+    mint_live_demo_session,
     tenant_id_for_slug,
     unique_contact,
     unique_marker,
@@ -228,13 +229,16 @@ async def test_qualify_event_carries_the_cookie_demo_session(
 
     `assume` mints the demo session (setting `pf_demo_session`) and logs the Agent in;
     the qualify resolves that cookie read-only and stamps the event's `demo_session_id`.
+    The lead is tagged with the minted session so it is the caller's **own** row — under
+    Epic 5's write-isolation a visitor-in-session may act only on their own (or no) row,
+    so `assume` runs first and the insert carries that session id.
     """
-    _, lead_id = await insert_working_lead(database_engine)
-
     assert (
         await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
     ).status_code == 200
     minted_id = uuid.UUID(db_client.cookies[DEMO_SESSION_COOKIE_NAME])
+
+    _, lead_id = await insert_working_lead(database_engine, demo_session_id=minted_id)
 
     response = await db_client.post(f"/api/leads/{lead_id}/qualify")
     assert response.status_code == 200
@@ -268,13 +272,18 @@ async def test_qualify_event_demo_session_is_none_without_a_cookie(
 async def test_reject_event_carries_the_cookie_demo_session(
     seeded, db_client, database_engine
 ):
-    """A reject under a demo cookie tags its `lead.rejected` event with the session id."""
-    _, lead_id = await insert_working_lead(database_engine)
+    """A reject under a demo cookie tags its `lead.rejected` event with the session id.
 
+    The lead is tagged with the minted session so it is the caller's **own** row — under
+    Epic 5's write-isolation a visitor-in-session may act only on their own (or no) row,
+    so `assume` runs first and the insert carries that session id.
+    """
     assert (
         await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
     ).status_code == 200
     minted_id = uuid.UUID(db_client.cookies[DEMO_SESSION_COOKIE_NAME])
+
+    _, lead_id = await insert_working_lead(database_engine, demo_session_id=minted_id)
 
     response = await db_client.post(f"/api/leads/{lead_id}/reject", json={})
     assert response.status_code == 200
@@ -469,3 +478,88 @@ async def test_reject_cross_tenant_id_is_404(seeded, db_client, database_engine)
 
     assert response.status_code == 404
     assert response.json() == {"detail": "lead not found"}
+
+
+# --- Phase 6: demo-session write isolation (Epic 5) --------------------------
+
+
+async def test_qualify_seed_row_is_409(seeded, db_client, database_engine):
+    """Qualifying a shared seed row (`demo_session_id IS NULL`) → 409.
+
+    A `Working` seed row is otherwise qualifiable, but the seed-row guard runs first and
+    refuses to mutate a row every visitor sees.
+    """
+    _, lead_id = await insert_working_lead(database_engine, demo_session_id=None)
+    session_id = await mint_live_demo_session(database_engine)
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_id))
+    response = await db_client.post(f"/api/leads/{lead_id}/qualify")
+
+    assert response.status_code == 409
+
+
+async def test_qualify_foreign_session_row_is_404(seeded, db_client, database_engine):
+    """Qualifying another session's row → 404, identical to the cross-tenant case."""
+    session_a = await mint_live_demo_session(database_engine)
+    session_b = await mint_live_demo_session(database_engine)
+    _, lead_id = await insert_working_lead(database_engine, demo_session_id=session_b)
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_a))
+    response = await db_client.post(f"/api/leads/{lead_id}/qualify")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "lead not found"}
+
+
+async def test_qualify_own_session_row_succeeds(seeded, db_client, database_engine):
+    """Qualifying the caller's own session row succeeds normally → 200."""
+    session_id = await mint_live_demo_session(database_engine)
+    _, lead_id = await insert_working_lead(database_engine, demo_session_id=session_id)
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_id))
+    response = await db_client.post(f"/api/leads/{lead_id}/qualify")
+
+    assert response.status_code == 200
+    assert response.json()["lead"]["status"] == "Qualified"
+
+
+async def test_reject_seed_row_is_409(seeded, db_client, database_engine):
+    """Rejecting a shared seed row (`demo_session_id IS NULL`) → 409."""
+    _, lead_id = await insert_working_lead(database_engine, demo_session_id=None)
+    session_id = await mint_live_demo_session(database_engine)
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_id))
+    response = await db_client.post(f"/api/leads/{lead_id}/reject", json={})
+
+    assert response.status_code == 409
+
+
+async def test_reject_foreign_session_row_is_404(seeded, db_client, database_engine):
+    """Rejecting another session's row → 404, identical to the cross-tenant case."""
+    session_a = await mint_live_demo_session(database_engine)
+    session_b = await mint_live_demo_session(database_engine)
+    _, lead_id = await insert_working_lead(database_engine, demo_session_id=session_b)
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_a))
+    response = await db_client.post(f"/api/leads/{lead_id}/reject", json={})
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "lead not found"}
+
+
+async def test_reject_own_session_row_succeeds(seeded, db_client, database_engine):
+    """Rejecting the caller's own session row succeeds normally → 200."""
+    session_id = await mint_live_demo_session(database_engine)
+    _, lead_id = await insert_working_lead(database_engine, demo_session_id=session_id)
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_id))
+    response = await db_client.post(f"/api/leads/{lead_id}/reject", json={})
+
+    assert response.status_code == 200
+    assert response.json()["lead"]["status"] == "Rejected"

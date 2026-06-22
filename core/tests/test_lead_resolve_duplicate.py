@@ -52,6 +52,7 @@ from tests.test_lead_intake import read_lead_row, read_outbox_rows_for_entity
 from tests.test_lead_reads import (
     insert_lead,
     login_agent_for_slug,
+    mint_live_demo_session,
     tenant_id_for_slug,
     unique_marker,
 )
@@ -268,17 +269,21 @@ async def test_duplicate_reject_event_carries_the_cookie_demo_session(
 
     `assume` mints the demo session (setting `pf_demo_session`) and logs the Agent in;
     the reject branch resolves that cookie read-only and stamps `demo_session_id`. The
-    session is resolved lazily — only this event-emitting branch does the platform read.
+    session is resolved up front so the guard and the reject-branch event reuse it. The
+    flagged lead is tagged with the minted session so it is the caller's **own** row —
+    under Epic 5's write-isolation a visitor-in-session may act only on their own (or no)
+    row, so `assume` runs first and the insert carries that session id.
     """
     tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
-    _, flagged_lead_id = await insert_flagged_new_lead(
-        database_engine, SUNSHINE.schema_name, tenant_id
-    )
 
     assert (
         await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
     ).status_code == 200
     minted_id = uuid.UUID(db_client.cookies[DEMO_SESSION_COOKIE_NAME])
+
+    _, flagged_lead_id = await insert_flagged_new_lead(
+        database_engine, SUNSHINE.schema_name, tenant_id, demo_session_id=minted_id
+    )
 
     response = await db_client.post(
         f"/api/leads/{flagged_lead_id}/resolve-duplicate", json={"action": "reject"}
@@ -456,3 +461,66 @@ async def test_resolve_cross_tenant_id_is_404(seeded, db_client, database_engine
 
     assert response.status_code == 404
     assert response.json() == {"detail": "lead not found"}
+
+
+# --- Phase 8: demo-session write isolation (Epic 5) --------------------------
+
+
+async def test_resolve_seed_row_is_409(seeded, db_client, database_engine):
+    """A `link` on a flagged shared seed row (`demo_session_id IS NULL`) → 409.
+
+    The seed-row guard runs **before** the flag check, so even a properly-flagged seed
+    row is refused — a mutating action must never alter a row every visitor sees.
+    """
+    tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    _, flagged_lead_id = await insert_flagged_new_lead(
+        database_engine, SUNSHINE.schema_name, tenant_id, demo_session_id=None
+    )
+    session_id = await mint_live_demo_session(database_engine)
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_id))
+    response = await db_client.post(
+        f"/api/leads/{flagged_lead_id}/resolve-duplicate", json={"action": "link"}
+    )
+
+    assert response.status_code == 409
+
+
+async def test_resolve_foreign_session_row_is_404(seeded, db_client, database_engine):
+    """A `link` on another session's flagged row → 404, identical to cross-tenant."""
+    tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    session_a = await mint_live_demo_session(database_engine)
+    session_b = await mint_live_demo_session(database_engine)
+    _, flagged_lead_id = await insert_flagged_new_lead(
+        database_engine, SUNSHINE.schema_name, tenant_id, demo_session_id=session_b
+    )
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_a))
+    response = await db_client.post(
+        f"/api/leads/{flagged_lead_id}/resolve-duplicate", json={"action": "link"}
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "lead not found"}
+
+
+async def test_resolve_own_session_row_succeeds(seeded, db_client, database_engine):
+    """A `link` on the caller's own flagged session row succeeds normally → 200."""
+    tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    session_id = await mint_live_demo_session(database_engine)
+    target_lead_id, flagged_lead_id = await insert_flagged_new_lead(
+        database_engine, SUNSHINE.schema_name, tenant_id, demo_session_id=session_id
+    )
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_id))
+    response = await db_client.post(
+        f"/api/leads/{flagged_lead_id}/resolve-duplicate", json={"action": "link"}
+    )
+
+    assert response.status_code == 200
+    lead = response.json()["lead"]
+    assert lead["duplicate_resolution"] == "linked"
+    assert lead["duplicate_of_lead_id"] == str(target_lead_id)

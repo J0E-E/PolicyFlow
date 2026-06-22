@@ -51,6 +51,7 @@ from tests.test_lead_intake import read_lead_row, read_outbox_rows_for_entity
 from tests.test_lead_reads import (
     insert_lead,
     login_agent_for_slug,
+    mint_live_demo_session,
     tenant_id_for_slug,
     unique_contact,
     unique_marker,
@@ -160,9 +161,18 @@ async def test_claim_event_carries_the_cookie_demo_session(
 
     `assume` mints the demo session (setting `pf_demo_session`) and logs the Agent in;
     the following claim resolves that cookie read-only and stamps the event's
-    `demo_session_id` with the minted id.
+    `demo_session_id` with the minted id. The lead is tagged with the minted session so
+    it is the caller's **own** row — under Epic 5's write-isolation a visitor-in-session
+    may act only on their own (or no) row, so `assume` runs first and the insert carries
+    that session id.
     """
     sunshine_tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+
+    assert (
+        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    ).status_code == 200
+    minted_id = uuid.UUID(db_client.cookies[DEMO_SESSION_COOKIE_NAME])
+
     email, phone = unique_contact()
     lead_id = await insert_lead(
         database_engine,
@@ -173,12 +183,8 @@ async def test_claim_event_carries_the_cookie_demo_session(
         phone=phone,
         status=LeadStatus.NEW,
         owner_user_id=None,
+        demo_session_id=minted_id,
     )
-
-    assert (
-        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
-    ).status_code == 200
-    minted_id = uuid.UUID(db_client.cookies[DEMO_SESSION_COOKIE_NAME])
 
     response = await db_client.post(f"/api/leads/{lead_id}/claim")
     assert response.status_code == 200
@@ -352,3 +358,97 @@ async def test_claim_cross_tenant_id_is_404(seeded, db_client, database_engine):
 
     assert response.status_code == 404
     assert response.json() == {"detail": "lead not found"}
+
+
+# --- Phase 6: demo-session write isolation (Epic 5) --------------------------
+
+
+async def test_claim_seed_row_is_409(seeded, db_client, database_engine):
+    """Claiming a shared seed row (`demo_session_id IS NULL`) → 409.
+
+    A mutating action must never alter a row every visitor sees. A Sunshine Agent
+    carrying a live session cookie tries to claim a `New` seed row and is refused with a
+    409 — the seed-row guard runs before the state-machine guard, so an otherwise-claimable
+    `New` lead is still refused.
+    """
+    sunshine_tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    session_id = await mint_live_demo_session(database_engine)
+    email, phone = unique_contact()
+    seed_lead_id = await insert_lead(
+        database_engine,
+        SUNSHINE.schema_name,
+        sunshine_tenant_id,
+        first_name=unique_marker(),
+        email=email,
+        phone=phone,
+        status=LeadStatus.NEW,
+        owner_user_id=None,
+        demo_session_id=None,
+    )
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_id))
+    response = await db_client.post(f"/api/leads/{seed_lead_id}/claim")
+
+    assert response.status_code == 409
+
+
+async def test_claim_foreign_session_row_is_404(seeded, db_client, database_engine):
+    """Claiming another demo session's row → 404, identical to the cross-tenant case.
+
+    A `New` lead owned by session B is invisible to a caller carrying session A's
+    cookie: the foreign-session guard maps it to a `404 "lead not found"`, so one
+    visitor can neither act on nor probe for another's lead.
+    """
+    sunshine_tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    session_a = await mint_live_demo_session(database_engine)
+    session_b = await mint_live_demo_session(database_engine)
+    email, phone = unique_contact()
+    foreign_lead_id = await insert_lead(
+        database_engine,
+        SUNSHINE.schema_name,
+        sunshine_tenant_id,
+        first_name=unique_marker(),
+        email=email,
+        phone=phone,
+        status=LeadStatus.NEW,
+        owner_user_id=None,
+        demo_session_id=session_b,
+    )
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_a))
+    response = await db_client.post(f"/api/leads/{foreign_lead_id}/claim")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "lead not found"}
+
+
+async def test_claim_own_session_row_succeeds(seeded, db_client, database_engine):
+    """Claiming the caller's own session row succeeds normally → 200.
+
+    The write-isolation guards pass a row the caller owns (`demo_session_id` = the
+    caller's session) straight through to the existing claim flow, proving the guards
+    refuse only foreign / seed rows, not the visitor's own work.
+    """
+    sunshine_tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    session_id = await mint_live_demo_session(database_engine)
+    email, phone = unique_contact()
+    own_lead_id = await insert_lead(
+        database_engine,
+        SUNSHINE.schema_name,
+        sunshine_tenant_id,
+        first_name=unique_marker(),
+        email=email,
+        phone=phone,
+        status=LeadStatus.NEW,
+        owner_user_id=None,
+        demo_session_id=session_id,
+    )
+
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_id))
+    response = await db_client.post(f"/api/leads/{own_lead_id}/claim")
+
+    assert response.status_code == 200
+    assert response.json()["lead"]["status"] == "Working"

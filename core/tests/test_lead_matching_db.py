@@ -65,6 +65,7 @@ async def _insert_lead(
     email: str,
     phone: str,
     status: LeadStatus = LeadStatus.NEW,
+    demo_session_id: uuid.UUID | None = None,
     created_at: datetime = BASE_CREATED_AT,
 ) -> uuid.UUID:
     """Insert one lead into `<schema_name>.leads` via the normal encryption path.
@@ -72,8 +73,10 @@ async def _insert_lead(
     Encrypts the email/phone with `encrypt_field` and computes each blind index
     over the normalized value with `compute_blind_index` — exactly the seed's
     insert path — so the row matches on the same fingerprint the matcher computes.
-    The schema name comes only from the registry; every value is a bound parameter.
-    Returns the new lead's id so a test can pass it as `exclude_lead_id`.
+    `demo_session_id` tags the row for Epic 5's matcher-scoping test (a seed row is
+    `None`, a session-owned row carries that session's id). The schema name comes only
+    from the registry; every value is a bound parameter. Returns the new lead's id so a
+    test can pass it as `exclude_lead_id`.
     """
     lead_id = uuid.uuid4()
     await db_session.execute(
@@ -82,12 +85,12 @@ async def _insert_lead(
             "(id, first_name, last_name, email_encrypted, email_blind_index, "
             "phone_encrypted, phone_blind_index, date_of_birth_encrypted, "
             "age_band, zip_code, product_lines_of_interest, lead_source, status, "
-            "correlation_id, created_at, updated_at) "
+            "demo_session_id, correlation_id, created_at, updated_at) "
             "VALUES (:id, :first_name, :last_name, :email_encrypted, "
             ":email_blind_index, :phone_encrypted, :phone_blind_index, "
             ":date_of_birth_encrypted, :age_band, :zip_code, "
-            ":product_lines_of_interest, :lead_source, :status, :correlation_id, "
-            ":created_at, :updated_at)"
+            ":product_lines_of_interest, :lead_source, :status, :demo_session_id, "
+            ":correlation_id, :created_at, :updated_at)"
         ),
         {
             "id": lead_id,
@@ -107,6 +110,7 @@ async def _insert_lead(
             "product_lines_of_interest": [],
             "lead_source": "agent_entered",
             "status": status.value,
+            "demo_session_id": demo_session_id,
             "correlation_id": uuid.uuid4(),
             "created_at": created_at,
             "updated_at": created_at,
@@ -327,3 +331,96 @@ async def test_match_never_decrypts(seeded, db_session, monkeypatch):
 
     assert match is not None
     assert match.id == prior_id
+
+
+# --- (g) Demo-session scoping (Epic 5) ---------------------------------------
+
+
+async def test_match_is_scoped_to_seed_plus_callers_own_session(seeded, db_session):
+    """A visitor flags against seed ∪ their own rows, never another session's.
+
+    Three priors share one email/phone: a shared seed row (`demo_session_id IS NULL`),
+    session A's own row, and session B's row. Running the matcher as session A
+    (`demo_session_id=session_a`) flags only against the seed row and A's own row —
+    never B's. The matcher reuses Epic 4's `visible_to_session` predicate, so the same
+    isolation that hides another visitor's leads from the read path also keeps the
+    duplicate check from leaking one visitor's data to another. (The session ids need
+    only tag the `leads` rows here — the matcher filters on `leads.demo_session_id`, it
+    never reads the `demo_sessions` table.)
+    """
+    tenant_id = await _tenant_id_for_slug(db_session, SUNSHINE.slug)
+    session_a = uuid.uuid4()
+    session_b = uuid.uuid4()
+    email, phone = _unique_contact()
+
+    seed_id = await _insert_lead(
+        db_session,
+        SUNSHINE.schema_name,
+        tenant_id,
+        email=email,
+        phone=phone,
+        demo_session_id=None,
+        created_at=BASE_CREATED_AT,
+    )
+    session_a_id = await _insert_lead(
+        db_session,
+        SUNSHINE.schema_name,
+        tenant_id,
+        email=email,
+        phone=phone,
+        demo_session_id=session_a,
+        created_at=BASE_CREATED_AT + timedelta(days=1),
+    )
+    session_b_id = await _insert_lead(
+        db_session,
+        SUNSHINE.schema_name,
+        tenant_id,
+        email=email,
+        phone=phone,
+        demo_session_id=session_b,
+        created_at=BASE_CREATED_AT + timedelta(days=2),
+    )
+    await _scope_session_to_schema(db_session, SUNSHINE.schema_name)
+
+    # Session A: the oldest *visible* match is the seed row; B's row is invisible.
+    match_for_a = await find_duplicate_lead(
+        db_session, tenant_id, email, phone, demo_session_id=session_a
+    )
+    assert match_for_a is not None
+    assert match_for_a.id == seed_id
+
+    # Excluding seed and A's own rows, A must *not* fall through to session B's row.
+    match_for_a_without_visible = await find_duplicate_lead(
+        db_session,
+        tenant_id,
+        email,
+        phone,
+        exclude_lead_id=seed_id,
+        demo_session_id=session_a,
+    )
+    assert match_for_a_without_visible is not None
+    assert match_for_a_without_visible.id == session_a_id
+
+    excluding_all_visible = await find_duplicate_lead(
+        db_session,
+        tenant_id,
+        email,
+        phone,
+        exclude_lead_id=session_a_id,
+        demo_session_id=session_a,
+    )
+    # Only the seed row remains visible to A (B's row stays hidden) — never B's.
+    assert excluding_all_visible is not None
+    assert excluding_all_visible.id == seed_id
+    assert excluding_all_visible.id != session_b_id
+
+    # A session-less caller (no demo cookie) sees seed only — still never B's.
+    seed_only = await find_duplicate_lead(
+        db_session,
+        tenant_id,
+        email,
+        phone,
+        exclude_lead_id=seed_id,
+        demo_session_id=None,
+    )
+    assert seed_only is None

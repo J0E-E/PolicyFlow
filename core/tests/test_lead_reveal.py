@@ -45,13 +45,15 @@ from `test_lead_reads.py`.
 import uuid
 from unittest.mock import AsyncMock
 
+from app.demo.session import DEMO_SESSION_COOKIE_NAME
 from app.leads import router as leads_router
 from app.models.user import Role
-from app.tenancy.registry import FLORIDA
+from app.tenancy.registry import FLORIDA, SUNSHINE
 
 from tests.test_endpoints_db import login_as, seeded  # noqa: F401
 from tests.test_lead_reads import (
     insert_lead,
+    mint_live_demo_session,
     tenant_id_for_slug,
     unique_marker,
 )
@@ -363,3 +365,68 @@ async def test_reveal_awaits_the_seam_with_the_expected_arguments(
     assert entity_type == "lead"
     assert entity_id == uuid.UUID(created["id"])
     assert field_name == "email"
+
+
+# --- Phase 5: demo-session read isolation (Epic 5) ---------------------------
+
+
+async def test_reveal_seed_row_succeeds(seeded, db_client, database_engine):
+    """Revealing a shared seed row (`demo_session_id IS NULL`) succeeds → 200.
+
+    Unlike the mutating actions, reveal carries **no** seed `409` — revealing shared
+    seed PII is fine. A Sunshine Agent carrying a live session cookie reveals a seed
+    row's email and gets the stored plaintext back.
+    """
+    sunshine_tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    session_id = await mint_live_demo_session(database_engine)
+    email, phone = unique_contact()
+    seed_lead_id = await insert_lead(
+        database_engine,
+        SUNSHINE.schema_name,
+        sunshine_tenant_id,
+        first_name=unique_marker(),
+        email=email,
+        phone=phone,
+        demo_session_id=None,
+    )
+
+    assert (await login_as(db_client, Role.AGENT)).status_code == 200  # Sunshine
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_id))
+    response = await db_client.post(
+        f"/api/leads/{seed_lead_id}/reveal", json={"field": "email"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"field": "email", "value": email}
+
+
+async def test_reveal_foreign_session_row_is_404(seeded, db_client, database_engine):
+    """Revealing another session's row → 404, closing the cross-session PII-read gap.
+
+    A row owned by session B is invisible to a caller carrying session A's cookie: the
+    foreign-session guard maps it to a `404 "lead not found"`, so one visitor can neither
+    reveal nor probe for another's PII (the isolation contract then holds without an
+    asterisk, even though foreign ids are never API-exposed).
+    """
+    sunshine_tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    session_a = await mint_live_demo_session(database_engine)
+    session_b = await mint_live_demo_session(database_engine)
+    email, phone = unique_contact()
+    foreign_lead_id = await insert_lead(
+        database_engine,
+        SUNSHINE.schema_name,
+        sunshine_tenant_id,
+        first_name=unique_marker(),
+        email=email,
+        phone=phone,
+        demo_session_id=session_b,
+    )
+
+    assert (await login_as(db_client, Role.AGENT)).status_code == 200  # Sunshine
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_a))
+    response = await db_client.post(
+        f"/api/leads/{foreign_lead_id}/reveal", json={"field": "email"}
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "lead not found"}

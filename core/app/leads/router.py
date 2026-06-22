@@ -114,6 +114,54 @@ REVEALABLE_FIELDS: dict[str, str] = {
 }
 
 
+async def _guard_loaded_lead_for_session(
+    lead: Lead,
+    request: Request,
+    db: AsyncSession,
+    *,
+    refuse_seed: bool,
+) -> uuid.UUID | None:
+    """Enforce demo-session write-isolation on an **already-loaded** lead.
+
+    The action-endpoint twin of `get_lead`'s read-isolation check, shared across the
+    four mutating actions (claim / qualify / reject / resolve-duplicate) and reused —
+    `refuse_seed=False` — by `reveal`. It resolves the caller's demo session once
+    (from the `pf_demo_session` cookie, read-only — the `demo_sessions` table lives in
+    `platform`, which the tenant-scoped session can read) and applies up to two guards
+    in order:
+
+    - **Foreign session → `404 "lead not found"`** — a row owned by **another** demo
+      session (`demo_session_id` neither `NULL` nor the caller's resolved id) is
+      treated as if it did not exist, identical to the cross-tenant not-found, so one
+      visitor can neither mutate nor probe for another's lead. Always applied.
+    - **Seed row → `409`** — when `refuse_seed` is set **and the caller is in a live
+      demo session**, a shared seed row (`demo_session_id IS NULL`) is refused: a
+      visitor must never alter a row every visitor sees. The guard is gated on the
+      caller *having* a session, because `demo_session_id IS NULL` is also every
+      ordinary non-demo lead — a session-less caller (no `pf_demo_session` cookie) is
+      operating outside the demo, where `NULL` rows are normal data and the action must
+      proceed. `reveal` passes `refuse_seed=False`, since revealing shared seed PII is
+      fine.
+
+    Returns the resolved `demo_session_id` (or `None`) so a caller can reuse it for a
+    later event without a second `platform` read. Run this **before** the endpoint's
+    state-machine / flag guards.
+    """
+    demo_session = await current_demo_session(request, db)
+    demo_session_id = demo_session.id if demo_session is not None else None
+
+    if lead.demo_session_id is not None and lead.demo_session_id != demo_session_id:
+        raise HTTPException(status_code=404, detail="lead not found")
+
+    if refuse_seed and demo_session_id is not None and lead.demo_session_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="seed leads cannot be modified",
+        )
+
+    return demo_session_id
+
+
 @router.post("", status_code=201)
 async def create_lead_endpoint(
     new_lead: CreateLeadRequest,
@@ -283,10 +331,9 @@ async def get_lead(
     if lead is None:
         raise HTTPException(status_code=404, detail="lead not found")
 
-    demo_session = await current_demo_session(request, db)
-    demo_session_id = demo_session.id if demo_session is not None else None
-    if lead.demo_session_id is not None and lead.demo_session_id != demo_session_id:
-        raise HTTPException(status_code=404, detail="lead not found")
+    # Demo-session read-isolation: a foreign session's row is a 404, identical to the
+    # cross-tenant not-found. `refuse_seed=False` — a read may see shared seed rows.
+    await _guard_loaded_lead_for_session(lead, request, db, refuse_seed=False)
 
     return {"lead": await build_masked_lead(identity.tenant_id, lead)}
 
@@ -341,6 +388,13 @@ async def claim_lead(
     if lead is None:
         raise HTTPException(status_code=404, detail="lead not found")
 
+    # Demo-session write-isolation, **before** the state-machine guard: a foreign
+    # session's row is a 404, a shared seed row a 409. The resolved session id is
+    # reused below so this event carries it without a second `platform` read.
+    demo_session_id = await _guard_loaded_lead_for_session(
+        lead, request, db, refuse_seed=True
+    )
+
     try:
         assert_transition(LeadStatus(lead.status), LeadStatus.WORKING)
     except InvalidLeadTransition:
@@ -353,13 +407,6 @@ async def claim_lead(
     lead.owner_user_id = identity.user_id
     lead.owner_username = identity.username
     await db.flush()
-
-    # Resolve the caller's demo-visit session from the `pf_demo_session` cookie so this
-    # event carries the session id — read-only, no mint here (the intake paths are the
-    # mint points). Outside the demo the cookie is absent and this is `None`. The
-    # `demo_sessions` table is in `platform`, which the tenant-scoped session can read.
-    demo_session = await current_demo_session(request, db)
-    demo_session_id = demo_session.id if demo_session is not None else None
 
     # Reuse the row's `correlation_id` so this `lead.assigned` event shares the trace
     # id of the lead's `lead.created` (and any later) events — read it back off the
@@ -434,6 +481,13 @@ async def qualify_lead(
     if lead is None:
         raise HTTPException(status_code=404, detail="lead not found")
 
+    # Demo-session write-isolation, **before** the state-machine guard: a foreign
+    # session's row is a 404, a shared seed row a 409. The resolved session id is
+    # reused below so this event carries it without a second `platform` read.
+    demo_session_id = await _guard_loaded_lead_for_session(
+        lead, request, db, refuse_seed=True
+    )
+
     try:
         assert_transition(LeadStatus(lead.status), LeadStatus.QUALIFIED)
     except InvalidLeadTransition:
@@ -444,13 +498,6 @@ async def qualify_lead(
 
     lead.status = LeadStatus.QUALIFIED.value
     await db.flush()
-
-    # Resolve the caller's demo-visit session from the `pf_demo_session` cookie so this
-    # event carries the session id — read-only, no mint here (the intake paths are the
-    # mint points). Outside the demo the cookie is absent and this is `None`. The
-    # `demo_sessions` table is in `platform`, which the tenant-scoped session can read.
-    demo_session = await current_demo_session(request, db)
-    demo_session_id = demo_session.id if demo_session is not None else None
 
     # Reuse the row's `correlation_id` so this `lead.qualified` event shares the lead's
     # trace id. The payload is `entity_id` only (no owner or reason). On the same
@@ -518,6 +565,13 @@ async def reject_lead(
     if lead is None:
         raise HTTPException(status_code=404, detail="lead not found")
 
+    # Demo-session write-isolation, **before** the state-machine guard: a foreign
+    # session's row is a 404, a shared seed row a 409. The resolved session id is
+    # reused below so this event carries it without a second `platform` read.
+    demo_session_id = await _guard_loaded_lead_for_session(
+        lead, request, db, refuse_seed=True
+    )
+
     # This qualify/reject path rejects only a `Working` lead. The state machine
     # legally allows `New → Rejected` too, but that path belongs to Epic 14's
     # duplicate-resolution reject (same event, `reason_kind = "duplicate"`), so a
@@ -541,13 +595,6 @@ async def reject_lead(
     lead.status = LeadStatus.REJECTED.value
     lead.rejection_reason = rejection.reason
     await db.flush()
-
-    # Resolve the caller's demo-visit session from the `pf_demo_session` cookie so this
-    # event carries the session id — read-only, no mint here (the intake paths are the
-    # mint points). Outside the demo the cookie is absent and this is `None`. The
-    # `demo_sessions` table is in `platform`, which the tenant-scoped session can read.
-    demo_session = await current_demo_session(request, db)
-    demo_session_id = demo_session.id if demo_session is not None else None
 
     # Reuse the row's `correlation_id` so this `lead.rejected` event shares the lead's
     # trace id. The payload carries the entity reference and the `reason_kind` that
@@ -621,6 +668,14 @@ async def resolve_duplicate_lead(
     if lead is None:
         raise HTTPException(status_code=404, detail="lead not found")
 
+    # Demo-session write-isolation, **before** the flag / state-machine guards: a
+    # foreign session's row is a 404, a shared seed row a 409. Resolved once up front so
+    # the `reject` branch's event can reuse the id without a second `platform` read (the
+    # `link` / `new` branches return before the event but still pass through this guard).
+    demo_session_id = await _guard_loaded_lead_for_session(
+        lead, request, db, refuse_seed=True
+    )
+
     # The endpoint exists only to resolve a flag: every action requires the lead to be
     # flagged. An unflagged lead has nothing to resolve, so it is a 409 before any
     # action-specific logic runs.
@@ -666,15 +721,6 @@ async def resolve_duplicate_lead(
     lead.duplicate_resolution = "rejected"
     await db.flush()
 
-    # Resolve the caller's demo-visit session from the `pf_demo_session` cookie so this
-    # event carries the session id — read-only, no mint here (the intake paths are the
-    # mint points). Resolved lazily, in this `reject` branch only: the `link` / `new`
-    # branches emit no event, so they must not do the `platform` read. Outside the demo
-    # the cookie is absent and this is `None`; the tenant-scoped session reads
-    # `platform.demo_sessions` fine.
-    demo_session = await current_demo_session(request, db)
-    demo_session_id = demo_session.id if demo_session is not None else None
-
     # Reuse the row's `correlation_id` so this `lead.rejected` event shares the lead's
     # trace id. The payload carries the entity reference and `reason_kind = "duplicate"`
     # (this is the duplicate-reject path; the qualify/reject path emits
@@ -702,6 +748,7 @@ async def resolve_duplicate_lead(
 async def reveal_field(
     lead_id: uuid.UUID,
     reveal: RevealLeadRequest,
+    request: Request,
     identity: Identity = Depends(require_capability(Capability.REVEAL_PII)),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> dict:
@@ -719,7 +766,8 @@ async def reveal_field(
        exist (mirroring `pii_demo`).
     2. **Fetch the lead by id** within the caller's tenant schema; an id absent in
        this tenant (missing or another tenant's) is a `404 "lead not found"`, reusing
-       the read endpoints' string.
+       the read endpoints' string. In the shared demo tenant a foreign session's row is
+       the same 404 (seed rows reveal normally — revealing shared seed PII is fine).
     3. **Decrypt** the requested field's stored blob with `decrypt_field`. An absent
        optional field (a lead with no street address) is returned as `value: null`
        with a 200 — the same uniform call site, matching the masked read's `null`
@@ -746,6 +794,12 @@ async def reveal_field(
 
     if lead is None:
         raise HTTPException(status_code=404, detail="lead not found")
+
+    # Demo-session read-isolation: a foreign session's row is a 404, identical to the
+    # cross-tenant not-found, so one visitor can neither reveal nor probe for another's
+    # PII. `refuse_seed=False` — revealing shared seed PII is fine, so there is no 409
+    # here (the gap this closes is cross-session reads, not seed reads).
+    await _guard_loaded_lead_for_session(lead, request, db, refuse_seed=False)
 
     encrypted_blob = getattr(lead, REVEALABLE_FIELDS[reveal.field])
     value = (
