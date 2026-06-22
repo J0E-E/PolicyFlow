@@ -113,7 +113,9 @@ export type ResolveDuplicateAction = "link" | "new" | "reject";
  * mirroring `build_masked_lead`. `email`/`phone` are masked display strings,
  * `date_of_birth` is the constant masked-date token (`age_band` carries the usable
  * value), and `street_address` is the `***` token when present or `null` when absent.
- * UUIDs and timestamps cross the wire as strings.
+ * UUIDs and timestamps cross the wire as strings. `is_seed` / `is_session_record` are
+ * the two derived demo-session markers (the raw `demo_session_id` never crosses the
+ * wire); both are `false` for a session-less caller.
  */
 export interface MaskedLead {
   /** Raw lead UUID string. */
@@ -148,6 +150,19 @@ export interface MaskedLead {
   created_at: string;
   /** ISO 8601 timestamp string. */
   updated_at: string;
+  /**
+   * `true` when the caller is in a live demo session and this is a shared seed row
+   * (`demo_session_id IS NULL` on the backend) — visible to every visitor and not
+   * editable. Always `false` for a session-less caller. The UI shows a "SHARED SAMPLE"
+   * marker and hides mutating actions on these rows (reveal stays available).
+   */
+  is_seed: boolean;
+  /**
+   * `true` when the caller is in a live demo session and this row belongs to that
+   * session — the visitor's own record. Always `false` for a session-less caller. The
+   * UI shows a "YOUR SESSION" marker on these rows.
+   */
+  is_session_record: boolean;
 }
 
 /**

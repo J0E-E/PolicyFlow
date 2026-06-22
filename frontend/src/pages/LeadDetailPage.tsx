@@ -211,7 +211,7 @@ export default function LeadDetailPage() {
       {lead.duplicate_of_lead_id !== null && (
         <LeadDuplicatePanel
           lead={lead}
-          canEdit={canEdit}
+          canEdit={canEdit && !lead.is_seed}
           onLeadChange={setLead}
         />
       )}
@@ -220,8 +220,11 @@ export default function LeadDetailPage() {
         <LeadDetailsCard lead={lead} productLines={tenant.product_lines} />
       </div>
       {/* Qualify / reject sit below the cards, but only for a Working lead a
-          permitted user can transition (Guide §6 — status-gated actions). */}
-      {canEdit && lead.status === "Working" && (
+          permitted user can transition (Guide §6 — status-gated actions). A shared
+          seed row is read-only to a demo visitor (Epic 6), so the mutating actions are
+          hidden on it; `is_seed` is false outside the demo, so this never hides them
+          for an ordinary caller. Reveal stays available (it is a read). */}
+      {canEdit && lead.status === "Working" && !lead.is_seed && (
         <LeadActionsSection lead={lead} onLeadChange={setLead} />
       )}
     </div>
@@ -270,6 +273,24 @@ function LeadDetailHeader({ lead }: { lead: MaskedLead }) {
         <StampTag id="lead-detail-status-stamp" status={statusStamp.status}>
           {statusStamp.label}
         </StampTag>
+        {/* The demo-session marker (Guide §6.5), beside the status stamp: a neutral
+            "YOUR SESSION" tag on the visitor's own record, or a "SHARED SAMPLE" tag
+            (with an explanatory tooltip) on a read-only shared seed row. Both are
+            false for a session-less caller, so neither renders outside the demo. */}
+        {lead.is_session_record && (
+          <StampTag id="lead-detail-session-stamp" status="neutral">
+            Your session
+          </StampTag>
+        )}
+        {lead.is_seed && (
+          <StampTag
+            id="lead-detail-seed-stamp"
+            status="neutral"
+            title="Shared sample data — visible to every visitor, not editable"
+          >
+            Shared sample
+          </StampTag>
+        )}
       </div>
       <p id="lead-detail-id" className="lead-detail-id">
         {lead.id}

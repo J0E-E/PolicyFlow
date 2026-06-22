@@ -89,6 +89,8 @@ function makeLead(overrides: Partial<MaskedLead>): MaskedLead {
     duplicate_resolution: null,
     created_at: "2026-06-18T14:30:00Z",
     updated_at: "2026-06-18T14:30:00Z",
+    is_seed: false,
+    is_session_record: false,
     ...overrides,
   };
 }
@@ -321,6 +323,75 @@ describe("LeadsListPage loaded table", () => {
     });
     expect(allTab).toHaveAttribute("aria-selected", "true");
     expect(document.activeElement).toBe(allTab);
+  });
+});
+
+describe("LeadsListPage demo-session markers (Epic 6)", () => {
+  it("marks the visitor's own session row with a neutral YOUR SESSION stamp", async () => {
+    listLeadsMock.mockResolvedValue([
+      makeLead({ id: "own", is_session_record: true }),
+    ]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.getElementById("leads-list-row-own")).toBeInTheDocument();
+    });
+    expect(
+      document.getElementById("leads-list-row-own-session-label"),
+    ).toHaveTextContent("Your session");
+    // The own row carries no seed marker.
+    expect(document.getElementById("leads-list-row-own-seed")).toBeNull();
+  });
+
+  it("marks a shared seed row SHARED SAMPLE (with a tooltip) and hides its Claim", async () => {
+    listLeadsMock.mockResolvedValue([
+      makeLead({
+        id: "seed",
+        is_seed: true,
+        status: "New",
+        owner_user_id: null,
+      }),
+    ]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.getElementById("leads-list-row-seed")).toBeInTheDocument();
+    });
+    expect(
+      document.getElementById("leads-list-row-seed-seed-label"),
+    ).toHaveTextContent("Shared sample");
+    // The explanatory tooltip rides the stamp wrapper.
+    expect(document.getElementById("leads-list-row-seed-seed")).toHaveAttribute(
+      "title",
+      "Shared sample data — visible to every visitor, not editable",
+    );
+    // A seed row is read-only to a demo visitor: no Claim even when otherwise claimable.
+    expect(
+      document.getElementById("leads-list-row-seed-claim-button"),
+    ).toBeNull();
+    expect(
+      document.getElementById("leads-list-row-seed-session"),
+    ).toBeNull();
+  });
+
+  it("shows neither marker on an ordinary (session-less) row and keeps its Claim", async () => {
+    listLeadsMock.mockResolvedValue([
+      makeLead({ id: "plain", status: "New", owner_user_id: null }),
+    ]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.getElementById("leads-list-row-plain")).toBeInTheDocument();
+    });
+    expect(document.getElementById("leads-list-row-plain-seed")).toBeNull();
+    expect(document.getElementById("leads-list-row-plain-session")).toBeNull();
+    // A claimable non-seed row keeps its Claim control.
+    expect(
+      document.getElementById("leads-list-row-plain-claim-button"),
+    ).toBeInTheDocument();
   });
 });
 

@@ -192,6 +192,8 @@ async def test_happy_path_emits_the_full_expected_field_set():
         "duplicate_resolution",
         "created_at",
         "updated_at",
+        "is_seed",
+        "is_session_record",
     }
     assert set(masked) == expected_fields
 
@@ -255,3 +257,57 @@ async def test_excluded_fields_never_appear_in_the_output():
 
     for excluded_field in EXCLUDED_FIELDS:
         assert excluded_field not in masked
+
+
+# --- (d) Demo-session markers (Epic 6) ------------------------------------
+
+
+async def test_session_markers_false_for_session_less_caller():
+    """A caller with no demo session (the default arg) sees neither marker.
+
+    Both markers are gated on the caller having a live session, so the non-demo read
+    surface is unchanged: even a seed (`NULL`) row is neither `is_seed` nor
+    `is_session_record` when the reader is session-less.
+    """
+    masked = await build_masked_lead(TENANT_ID, build_lead(demo_session_id=None))
+
+    assert masked["is_seed"] is False
+    assert masked["is_session_record"] is False
+
+
+async def test_seed_row_is_marked_is_seed_for_a_session_caller():
+    """A session caller reading a shared seed row (`NULL`) gets `is_seed` only."""
+    caller_session_id = uuid.uuid4()
+    masked = await build_masked_lead(
+        TENANT_ID, build_lead(demo_session_id=None), caller_session_id
+    )
+
+    assert masked["is_seed"] is True
+    assert masked["is_session_record"] is False
+
+
+async def test_own_row_is_marked_is_session_record_for_a_session_caller():
+    """A session caller reading their own session's row gets `is_session_record` only."""
+    caller_session_id = uuid.uuid4()
+    masked = await build_masked_lead(
+        TENANT_ID, build_lead(demo_session_id=caller_session_id), caller_session_id
+    )
+
+    assert masked["is_session_record"] is True
+    assert masked["is_seed"] is False
+
+
+async def test_foreign_session_row_has_neither_marker():
+    """A row owned by another session is neither marker (it is not seed, not theirs).
+
+    (The read path 404s a foreign-session row before this builder is reached; this
+    proves the derivation itself does not mis-mark one as seed or own.)
+    """
+    caller_session_id = uuid.uuid4()
+    other_session_id = uuid.uuid4()
+    masked = await build_masked_lead(
+        TENANT_ID, build_lead(demo_session_id=other_session_id), caller_session_id
+    )
+
+    assert masked["is_seed"] is False
+    assert masked["is_session_record"] is False

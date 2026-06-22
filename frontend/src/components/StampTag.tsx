@@ -33,6 +33,9 @@ type StampTagProperties = (StatusStampProperties | OverlineStampProperties) & {
   /** The label, authored natural-case — CSS uppercases it so screen readers
    *  read words, not spelled-out letters (Guide §7). */
   children: ReactNode;
+  /** Optional native tooltip on the stamp wrapper (e.g. the demo "SHARED SAMPLE"
+   *  tag's explanation). Omitted by default, so existing stamps are unchanged. */
+  title?: string;
 };
 
 // The Guide's rubber-stamp status label (Guide §5, §3 Stamp type) — replaces
@@ -46,6 +49,7 @@ export default function StampTag({
   status,
   icon,
   children,
+  title,
 }: StampTagProperties) {
   const className =
     variant === "overline"
@@ -53,7 +57,7 @@ export default function StampTag({
       : `stamp-tag stamp-tag-${status}`;
 
   return (
-    <span id={id} className={className}>
+    <span id={id} className={className} title={title}>
       {icon && (
         <span id={`${id}-icon`} className="stamp-tag-icon" aria-hidden="true">
           {icon}

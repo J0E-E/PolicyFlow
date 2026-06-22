@@ -591,3 +591,75 @@ async def test_detail_is_isolated_per_demo_session(
     assert (await db_client.get(f"/api/leads/{seed_lead_id}")).status_code == 200
     assert (await db_client.get(f"/api/leads/{session_a_lead_id}")).status_code == 404
     assert (await db_client.get(f"/api/leads/{session_b_lead_id}")).status_code == 404
+
+
+# --- Epic 6: masked-read session markers -------------------------------------
+
+
+async def test_reads_carry_is_seed_and_is_session_record_markers(
+    seeded, db_client, database_engine
+):
+    """The list/detail reads expose `is_seed` / `is_session_record`, never the raw id.
+
+    A shared seed (`NULL`) row and the caller's own session row are inserted into
+    Sunshine's schema. Carrying the session's cookie, a Sunshine Agent's list marks the
+    seed row `is_seed` (not `is_session_record`) and the own row `is_session_record`
+    (not `is_seed`); the detail read agrees per row; and the raw `demo_session_id` never
+    appears on either body. With no demo cookie, the seed row (the only one a
+    session-less caller can see) carries neither marker — the non-demo surface is
+    unchanged.
+    """
+    sunshine_tenant_id = await tenant_id_for_slug(database_engine, SUNSHINE.slug)
+    marker = unique_marker()
+    session_id = await mint_live_demo_session(database_engine)
+
+    async def insert_queue_lead(demo_session_id):
+        email, phone = unique_contact()
+        return await insert_lead(
+            database_engine,
+            SUNSHINE.schema_name,
+            sunshine_tenant_id,
+            first_name=marker,
+            email=email,
+            phone=phone,
+            status=LeadStatus.NEW,
+            owner_user_id=None,
+            demo_session_id=demo_session_id,
+        )
+
+    seed_lead_id = await insert_queue_lead(None)
+    own_lead_id = await insert_queue_lead(session_id)
+
+    assert (await login_as(db_client, Role.AGENT)).status_code == 200
+
+    # Session cookie set: the list marks each row correctly and never leaks the raw id.
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_id))
+    list_response = await db_client.get("/api/leads")
+    assert list_response.status_code == 200
+    by_id = {
+        lead["id"]: lead
+        for lead in list_response.json()["leads"]
+        if lead["first_name"] == marker
+    }
+    assert by_id[str(seed_lead_id)]["is_seed"] is True
+    assert by_id[str(seed_lead_id)]["is_session_record"] is False
+    assert by_id[str(own_lead_id)]["is_session_record"] is True
+    assert by_id[str(own_lead_id)]["is_seed"] is False
+    for lead in by_id.values():
+        assert "demo_session_id" not in lead
+
+    # The detail read agrees per row.
+    seed_detail = (await db_client.get(f"/api/leads/{seed_lead_id}")).json()["lead"]
+    own_detail = (await db_client.get(f"/api/leads/{own_lead_id}")).json()["lead"]
+    assert seed_detail["is_seed"] is True
+    assert seed_detail["is_session_record"] is False
+    assert own_detail["is_session_record"] is True
+    assert own_detail["is_seed"] is False
+
+    # No demo cookie ⇒ the seed row carries neither marker (non-demo surface unchanged).
+    db_client.cookies.delete(DEMO_SESSION_COOKIE_NAME)
+    seed_no_session = (
+        await db_client.get(f"/api/leads/{seed_lead_id}")
+    ).json()["lead"]
+    assert seed_no_session["is_seed"] is False
+    assert seed_no_session["is_session_record"] is False

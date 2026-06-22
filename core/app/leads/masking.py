@@ -27,8 +27,22 @@ Three rules govern the shape (all locked at the gate):
   treatment as date of birth — `mask_generic()` (`***`) when the encrypted blob is
   present, `null` when absent — judged from blob presence with **no decryption**.
 - **Excluded** — the two blind indexes (`email_blind_index` / `phone_blind_index`),
-  the `correlation_id`, and the always-null `demo_session_id` are internal trace /
-  matching columns and never reach the wire.
+  the `correlation_id`, and the raw `demo_session_id` are internal trace / matching
+  columns and never reach the wire. The raw session id stays server-side; the read
+  surface gets only the two **derived booleans** below.
+
+Two derived markers (P1.8 Epic 6) let the UI distinguish shared seed rows from the
+caller's own session rows **without ever exposing the raw `demo_session_id`**. Both
+are derived from the caller's session id (the new `demo_session_id` keyword arg),
+gated exactly like the Epic 5 write guard: both are `False` for a session-less
+caller (no demo cookie), so the non-demo read surface is unchanged.
+
+- **`is_seed`** — `True` when the caller is in a live demo session **and** the row is
+  a shared seed row (`lead.demo_session_id IS NULL`): a row every visitor sees,
+  read-only to a demo visitor.
+- **`is_session_record`** — `True` when the caller is in a live demo session **and**
+  the row belongs to **that** session (`lead.demo_session_id == demo_session_id`):
+  the visitor's own row.
 
 An absent optional field (`preferred_contact_method`, `notes`, the owner fields,
 the duplicate-linkage fields, the street-address blob) renders as `null` rather
@@ -45,7 +59,11 @@ from ..pii.service import decrypt_field
 __all__ = ["build_masked_lead"]
 
 
-async def build_masked_lead(tenant_id: uuid.UUID, lead: Lead) -> dict:
+async def build_masked_lead(
+    tenant_id: uuid.UUID,
+    lead: Lead,
+    demo_session_id: uuid.UUID | None = None,
+) -> dict:
     """Build the masked response body for one lead — the single read shape.
 
     The one builder every read path (list / queue and detail) returns leads
@@ -61,8 +79,12 @@ async def build_masked_lead(tenant_id: uuid.UUID, lead: Lead) -> dict:
     other absent optional (`preferred_contact_method`, `notes`, the owner fields,
     the duplicate-linkage fields) renders as `null`.
 
-    The blind indexes, `correlation_id`, and the always-null `demo_session_id` are
-    internal trace / matching columns and are intentionally never included.
+    The blind indexes, `correlation_id`, and the raw `demo_session_id` are internal
+    trace / matching columns and are intentionally never included. In their place the
+    read surface carries two derived booleans — `is_seed` and `is_session_record` —
+    computed from the caller's `demo_session_id`, gated exactly like the Epic 5 write
+    guard so both are `False` for a session-less caller (the raw session id never
+    leaves the server).
     """
     masked_email = mask_email(await decrypt_field(tenant_id, lead.email_encrypted))
     masked_phone = mask_phone(await decrypt_field(tenant_id, lead.phone_encrypted))
@@ -73,6 +95,15 @@ async def build_masked_lead(tenant_id: uuid.UUID, lead: Lead) -> dict:
     masked_date_of_birth = mask_dob("")
     masked_street_address = (
         mask_generic() if lead.street_address_encrypted is not None else None
+    )
+
+    # The two derived session markers, gated exactly like the Epic 5 write guard: both
+    # are `False` unless the caller is in a live demo session. A session-less caller
+    # (no demo cookie ⇒ `demo_session_id is None`) sees neither marker, so the non-demo
+    # read surface is unchanged. The raw `lead.demo_session_id` is never returned.
+    is_seed = demo_session_id is not None and lead.demo_session_id is None
+    is_session_record = (
+        demo_session_id is not None and lead.demo_session_id == demo_session_id
     )
 
     return {
@@ -97,4 +128,6 @@ async def build_masked_lead(tenant_id: uuid.UUID, lead: Lead) -> dict:
         "duplicate_resolution": lead.duplicate_resolution,
         "created_at": lead.created_at,
         "updated_at": lead.updated_at,
+        "is_seed": is_seed,
+        "is_session_record": is_session_record,
     }

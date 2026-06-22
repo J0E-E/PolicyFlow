@@ -606,6 +606,27 @@ function LeadRow({
             Possible duplicate
           </StampTag>
         )}
+        {/* The two demo-session markers (Guide §6.5): a neutral "YOUR SESSION" tag on
+            the visitor's own row, or a "SHARED SAMPLE" tag (with an explanatory
+            tooltip) on a read-only shared seed row. Both are false for a session-less
+            caller, so neither renders outside the demo. */}
+        {lead.is_session_record && (
+          <StampTag
+            id={`leads-list-row-${lead.id}-session`}
+            status="neutral"
+          >
+            Your session
+          </StampTag>
+        )}
+        {lead.is_seed && (
+          <StampTag
+            id={`leads-list-row-${lead.id}-seed`}
+            status="neutral"
+            title="Shared sample data — visible to every visitor, not editable"
+          >
+            Shared sample
+          </StampTag>
+        )}
       </td>
       <td id={`leads-list-row-${lead.id}-status`} className="leads-list-cell">
         <StampTag
@@ -637,7 +658,10 @@ function LeadRow({
         {leadCreatedDate(lead.created_at)}
       </td>
       <td id={`leads-list-row-${lead.id}-claim`} className="leads-list-cell">
-        {canClaimLeads && isClaimable(lead) && (
+        {/* No Claim on a shared seed row — it is read-only to a demo visitor
+            (Epic 6). `is_seed` is false outside the demo, so this never hides the
+            control for an ordinary caller. */}
+        {canClaimLeads && isClaimable(lead) && !lead.is_seed && (
           <Button
             id={`leads-list-row-${lead.id}-claim-button`}
             variant="tonal"

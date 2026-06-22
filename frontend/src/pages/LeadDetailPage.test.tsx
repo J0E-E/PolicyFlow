@@ -104,6 +104,8 @@ function makeLead(overrides: Partial<MaskedLead>): MaskedLead {
     duplicate_resolution: null,
     created_at: "2026-06-18T14:30:00Z",
     updated_at: "2026-06-18T14:30:00Z",
+    is_seed: false,
+    is_session_record: false,
     ...overrides,
   };
 }
@@ -443,5 +445,83 @@ describe("LeadDetailPage duplicate panel", () => {
       ).toBeNull();
     });
     expect(resolveDuplicateMock).toHaveBeenCalledWith("lead-1", { action: "new" });
+  });
+});
+
+describe("LeadDetailPage demo-session markers (Epic 6)", () => {
+  it("marks the visitor's own record with a neutral YOUR SESSION header stamp", async () => {
+    getLeadMock.mockResolvedValue(makeLead({ is_session_record: true }));
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.getElementById("lead-detail-title")).toBeInTheDocument();
+    });
+    expect(
+      document.getElementById("lead-detail-session-stamp-label"),
+    ).toHaveTextContent("Your session");
+    expect(document.getElementById("lead-detail-seed-stamp")).toBeNull();
+  });
+
+  it("marks a shared seed row SHARED SAMPLE (with a tooltip) in the header", async () => {
+    getLeadMock.mockResolvedValue(makeLead({ is_seed: true }));
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.getElementById("lead-detail-title")).toBeInTheDocument();
+    });
+    expect(
+      document.getElementById("lead-detail-seed-stamp-label"),
+    ).toHaveTextContent("Shared sample");
+    expect(document.getElementById("lead-detail-seed-stamp")).toHaveAttribute(
+      "title",
+      "Shared sample data — visible to every visitor, not editable",
+    );
+    expect(document.getElementById("lead-detail-session-stamp")).toBeNull();
+  });
+
+  it("hides qualify/reject on a seed row but keeps the reveal control", async () => {
+    getLeadMock.mockResolvedValue(makeLead({ status: "Working", is_seed: true }));
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.getElementById("lead-detail-title")).toBeInTheDocument();
+    });
+    // The mutating actions are gone on a read-only shared seed row...
+    expect(document.getElementById("lead-detail-actions")).toBeNull();
+    // ...but reveal stays (it is a read — Epic 5 contract).
+    expect(
+      document.getElementById("lead-detail-email-unseal"),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the duplicate resolve controls on a seed row (panel still shows)", async () => {
+    getLeadMock.mockImplementation((id: string) => {
+      if (id === "lead-1") {
+        return Promise.resolve(
+          makeLead({
+            id: "lead-1",
+            status: "New",
+            is_seed: true,
+            duplicate_of_lead_id: "prior-lead",
+            duplicate_resolution: null,
+          }),
+        );
+      }
+      return Promise.resolve(makeLead({ id: "prior-lead" }));
+    });
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        document.getElementById("lead-detail-duplicate-panel"),
+      ).toBeInTheDocument();
+    });
+    // The match still renders, but no resolve controls on a seed row.
+    expect(
+      document.getElementById("lead-detail-duplicate-actions"),
+    ).toBeNull();
+    expect(
+      document.getElementById("lead-detail-duplicate-new-button"),
+    ).toBeNull();
   });
 });

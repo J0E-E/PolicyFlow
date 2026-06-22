@@ -64,6 +64,8 @@ const createdLead: MaskedLead = {
   duplicate_resolution: null,
   created_at: "2026-06-20T12:00:00Z",
   updated_at: "2026-06-20T12:00:00Z",
+  is_seed: false,
+  is_session_record: false,
 };
 
 function renderForm() {

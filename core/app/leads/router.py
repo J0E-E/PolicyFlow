@@ -239,7 +239,9 @@ async def create_lead_endpoint(
         demo_session_id=demo_session_id,
     )
 
-    return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+    return {
+        "lead": await build_masked_lead(identity.tenant_id, lead, demo_session_id)
+    }
 
 
 @router.get("")
@@ -292,7 +294,10 @@ async def list_leads(
 
     tenant_id = identity.tenant_id
     return {
-        "leads": [await build_masked_lead(tenant_id, lead) for lead in leads]
+        "leads": [
+            await build_masked_lead(tenant_id, lead, demo_session_id)
+            for lead in leads
+        ]
     }
 
 
@@ -332,10 +337,16 @@ async def get_lead(
         raise HTTPException(status_code=404, detail="lead not found")
 
     # Demo-session read-isolation: a foreign session's row is a 404, identical to the
-    # cross-tenant not-found. `refuse_seed=False` — a read may see shared seed rows.
-    await _guard_loaded_lead_for_session(lead, request, db, refuse_seed=False)
+    # cross-tenant not-found. `refuse_seed=False` — a read may see shared seed rows. The
+    # resolved session id is reused below so the masked read can derive `is_seed` /
+    # `is_session_record` without a second `platform` read.
+    demo_session_id = await _guard_loaded_lead_for_session(
+        lead, request, db, refuse_seed=False
+    )
 
-    return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+    return {
+        "lead": await build_masked_lead(identity.tenant_id, lead, demo_session_id)
+    }
 
 
 @router.post("/{lead_id}/claim")
@@ -428,7 +439,9 @@ async def claim_lead(
         ),
     )
 
-    return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+    return {
+        "lead": await build_masked_lead(identity.tenant_id, lead, demo_session_id)
+    }
 
 
 @router.post("/{lead_id}/qualify")
@@ -515,7 +528,9 @@ async def qualify_lead(
         ),
     )
 
-    return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+    return {
+        "lead": await build_masked_lead(identity.tenant_id, lead, demo_session_id)
+    }
 
 
 @router.post("/{lead_id}/reject")
@@ -615,7 +630,9 @@ async def reject_lead(
         ),
     )
 
-    return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+    return {
+        "lead": await build_masked_lead(identity.tenant_id, lead, demo_session_id)
+    }
 
 
 @router.post("/{lead_id}/resolve-duplicate")
@@ -689,14 +706,18 @@ async def resolve_duplicate_lead(
         # Confirm the match is the same person: record the resolution, keep the linkage.
         lead.duplicate_resolution = "linked"
         await db.flush()
-        return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+        return {
+        "lead": await build_masked_lead(identity.tenant_id, lead, demo_session_id)
+    }
 
     if resolution.action == "new":
         # A genuinely different person: clear the flag (drop the linkage too).
         lead.duplicate_resolution = "new"
         lead.duplicate_of_lead_id = None
         await db.flush()
-        return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+        return {
+        "lead": await build_masked_lead(identity.tenant_id, lead, demo_session_id)
+    }
 
     # action == "reject": discard the lead as a duplicate. This path owns the
     # `New → Rejected` move; the qualify/reject path owns `Working → Rejected`. Guard
@@ -741,7 +762,9 @@ async def resolve_duplicate_lead(
         ),
     )
 
-    return {"lead": await build_masked_lead(identity.tenant_id, lead)}
+    return {
+        "lead": await build_masked_lead(identity.tenant_id, lead, demo_session_id)
+    }
 
 
 @router.post("/{lead_id}/reveal")
