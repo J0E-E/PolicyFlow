@@ -80,6 +80,21 @@ class Settings:
             os.environ.get("DEMO_SESSION_LIFETIME_SECONDS", "86400")
         )
 
+        # How long the in-process demo-lifecycle scheduler sleeps between expiry
+        # sweeps, in seconds. Each tick runs `purge(Expired())` so expired demo
+        # sessions self-clean. Defaults to 300 (5 minutes); override via
+        # DEMO_PURGE_INTERVAL_SECONDS.
+        self.demo_purge_interval_seconds: int = int(
+            os.environ.get("DEMO_PURGE_INTERVAL_SECONDS", "300")
+        )
+
+        # The UTC hour (0-23) at which the demo-lifecycle scheduler fires its once-
+        # a-night canonical wipe (`purge(All())`), resetting the demo to seed state.
+        # Defaults to 4 (a quiet hour); override via DEMO_NIGHTLY_RESET_HOUR_UTC.
+        self.demo_nightly_reset_hour_utc: int = int(
+            os.environ.get("DEMO_NIGHTLY_RESET_HOUR_UTC", "4")
+        )
+
         # Public-intake rate limit: how many requests one IP may make per window
         # before the limiter blocks it. Defaults to 5; override via
         # PUBLIC_INTAKE_RATE_LIMIT. Read by app/leads/rate_limit.py.
