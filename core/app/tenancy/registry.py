@@ -111,6 +111,16 @@ OUTBOX_RELAY_ROLE = "outbox_relay"
 # events — never UPDATE or DELETE, mirroring the tight `audit_writer` grant shape.
 EVENT_CONSUMER_ROLE = "event_consumer"
 
+# The dedicated demo-purge role. Phase P1.8 Epic 9's `0013` migration creates it
+# and grants it SELECT+DELETE on each tenant's `leads` table plus SELECT+DELETE on
+# the two platform demo tables (`demo_session_tenant_seed`, `demo_sessions`); the
+# purge engine (`app.demo.purge`) sets this role to remove a demo session's
+# overlay across every tenant schema — never INSERT or UPDATE, mirroring the tight
+# `audit_writer` / `outbox_relay` grant shape. It is the *only* role granted
+# DELETE on `leads`, kept separate from the tenant roles' read/write grant on the
+# `0012` ledger so the destructive sweep never rides a request transaction.
+DEMO_PURGE_ROLE = "demo_purge"
+
 
 def is_known_schema(schema_name: str) -> bool:
     """Return whether ``schema_name`` matches a registered tenant's schema.
