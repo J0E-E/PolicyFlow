@@ -88,10 +88,21 @@ async def _count_leads_for_session(
 
 
 async def _count_all_leads(db_session, schema_name: str) -> int:
-    """Count every row in `<schema>.leads`."""
+    """Count every **session-tagged** (`demo_session_id IS NOT NULL`) lead.
+
+    These tests reason only about the rows `ensure_session_leads` produces (always
+    session-tagged). Since P1.8 Epic 8 the boot seed — run by `_reset_state` — also
+    inserts the shared read-only **historical** baseline as `demo_session_id IS NULL`
+    rows, so an unscoped `COUNT(*)` would now include those 6-per-tenant baseline
+    rows and break the exact-total assertions. Scoping to `IS NOT NULL` counts the
+    instantiated set alone, preserving each assertion's original intent.
+    """
     return (
         await db_session.execute(
-            text(f"SELECT COUNT(*) FROM {schema_name}.leads")
+            text(
+                f"SELECT COUNT(*) FROM {schema_name}.leads "
+                "WHERE demo_session_id IS NOT NULL"
+            )
         )
     ).scalar_one()
 
@@ -120,11 +131,15 @@ async def test_instantiation_inserts_the_session_tagged_set(
     # The set landed only in Sunshine's schema, not Florida's.
     assert await _count_all_leads(db_session, FLORIDA.schema_name) == 0
 
+    # Scope to the session-tagged rows: since P1.8 Epic 8 the boot seed (run by
+    # `_reset_state`) also leaves the shared historical `demo_session_id IS NULL`
+    # baseline in this schema, which these per-row assertions deliberately exclude.
     rows = (
         await db_session.execute(
             text(
                 f"SELECT status, lead_source, owner_user_id, demo_session_id "
-                f"FROM {SUNSHINE.schema_name}.leads"
+                f"FROM {SUNSHINE.schema_name}.leads "
+                "WHERE demo_session_id IS NOT NULL"
             )
         )
     ).all()

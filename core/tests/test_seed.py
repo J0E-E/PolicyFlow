@@ -15,9 +15,12 @@ insert-if-absent logic is exercised with no database.
 import pytest
 
 from app.auth.passwords import verify_password
+from app.leads.state import LeadStatus
 from app.models import Role, Tenant, User
+from app.pii.masking import age_band_for
 from app.seed import (
     PLATFORM_ADMIN_EMAIL,
+    SHARED_HISTORICAL_LEADS,
     demo_tenants,
     demo_user_specs,
     demo_users_for,
@@ -58,10 +61,13 @@ class FakeAsyncSession:
     already-present `Tenant` ORM rows, existing usernames, the existing data-key
     tenant ids (for the per-tenant root-key seeding step), then one
     ``SELECT COUNT(*) FROM <schema>.pii_demo`` per tenant (for the count-based
-    `pii_demo` idempotency skip). The fake is handed a list of result-row lists
-    and returns the next one on each of those SELECTs; the per-tenant count rows
-    are presets too (a non-zero count makes `seed_pii_demo_records` skip the
-    encryption path entirely, keeping this a pure no-DB unit test).
+    `pii_demo` idempotency skip), then one
+    ``SELECT COUNT(*) FROM <schema>.leads WHERE demo_session_id IS NULL`` per tenant
+    (the count-based shared-historical-leads idempotency skip). The fake is handed a
+    list of result-row lists and returns the next one on each of those SELECTs; the
+    per-tenant count rows are presets too (a non-zero count makes
+    `seed_pii_demo_records` / `seed_shared_historical_leads` skip the encryption path
+    entirely, keeping this a pure no-DB unit test).
 
     The per-tenant settings INSERTs call `execute(statement, params)` with a
     bound-parameters mapping; the fake recognises those by the second positional
@@ -70,9 +76,11 @@ class FakeAsyncSession:
     `added`, and `commit` increments `commit_count` (and sets `did_commit`), so a
     test can assert exactly which rows were inserted and that the seed committed.
 
-    The boot seed no longer touches `leads` — P1.8 Epic 7 moved the New-queue set
-    out of the boot seed into per-session instantiation, so the only parametrised
-    statements here are the `tenant_settings` INSERTs.
+    The boot seed touches `leads` only for the shared-historical set (P1.8 Epic 8);
+    P1.8 Epic 7 moved the New-queue set out of the boot seed into per-session
+    instantiation. With both per-tenant count presets non-zero the historical path
+    skips before any INSERT, so the only parametrised statements here are the
+    `tenant_settings` INSERTs.
     """
 
     def __init__(self, result_rows):
@@ -160,6 +168,106 @@ def test_persona_emails_use_their_tenants_registry_domain():
             assert email.endswith("@" + expected_domain)
 
 
+# --- The shared historical lead set is correct (pure data, no session) -------
+
+
+def test_shared_historical_leads_cover_both_tenants_with_six_each():
+    """Each tenant gets exactly 6 shared historical leads (P1.8 Epic 8)."""
+    assert set(SHARED_HISTORICAL_LEADS) == {
+        "sunshine-senior-benefits",
+        "florida-family-planning",
+    }
+    for rows in SHARED_HISTORICAL_LEADS.values():
+        assert len(rows) == 6
+
+
+def test_shared_historical_leads_split_two_working_two_qualified_two_rejected():
+    """Per tenant the status mix is the agreed 2 Working / 2 Qualified / 2 Rejected."""
+    for rows in SHARED_HISTORICAL_LEADS.values():
+        status_counts: dict[LeadStatus, int] = {}
+        for row in rows:
+            status_counts[row["status"]] = status_counts.get(row["status"], 0) + 1
+        assert status_counts == {
+            LeadStatus.WORKING: 2,
+            LeadStatus.QUALIFIED: 2,
+            LeadStatus.REJECTED: 2,
+        }
+
+
+def test_shared_historical_leads_are_all_owned_split_three_three():
+    """Every row is owned, split 3/3 across agent.one and agent.two per tenant.
+
+    No unowned / `New` rows: an unowned `New` row would surface in the Unassigned
+    queue looking claimable while the Epic 5 write guard silently `409`s it.
+    """
+    for rows in SHARED_HISTORICAL_LEADS.values():
+        owner_counts: dict[str, int] = {}
+        for row in rows:
+            assert row["owner_local_part"] in ("agent.one", "agent.two")
+            assert row["status"] is not LeadStatus.NEW
+            owner_counts[row["owner_local_part"]] = (
+                owner_counts.get(row["owner_local_part"], 0) + 1
+            )
+        assert owner_counts == {"agent.one": 3, "agent.two": 3}
+
+
+def test_shared_historical_rejected_rows_carry_a_reason_others_do_not():
+    """Only the Rejected rows carry a `rejection_reason` (a `Working → Rejected`)."""
+    for rows in SHARED_HISTORICAL_LEADS.values():
+        for row in rows:
+            if row["status"] is LeadStatus.REJECTED:
+                assert row["rejection_reason"]
+            else:
+                assert row["rejection_reason"] is None
+
+
+def test_shared_historical_leads_have_distinct_emails_and_all_decimal_phones():
+    """Emails are distinct and phones are distinct and all-decimal (matcher gotcha).
+
+    Low-entropy contact details in the shared container DB flag unrelated leads, so
+    each historical row carries a distinct email and a distinct phone whose digits
+    are all decimal.
+    """
+    all_emails = [
+        row["email"] for rows in SHARED_HISTORICAL_LEADS.values() for row in rows
+    ]
+    all_phones = [
+        row["phone"] for rows in SHARED_HISTORICAL_LEADS.values() for row in rows
+    ]
+    assert len(all_emails) == len(set(all_emails))
+    assert len(all_phones) == len(set(all_phones))
+    for phone in all_phones:
+        digits = [character for character in phone if character.isdigit()]
+        assert digits  # has at least one digit
+        assert all(character.isascii() for character in digits)
+
+
+def test_shared_historical_product_lines_come_from_the_tenant_registry():
+    """Every product-line key on a row belongs to that tenant's registry set."""
+    for tenant_slug, rows in SHARED_HISTORICAL_LEADS.items():
+        valid_keys = {
+            line.key for line in tenant_by_slug(tenant_slug).product_lines
+        }
+        for row in rows:
+            assert row["product_lines_of_interest"]
+            assert set(row["product_lines_of_interest"]) <= valid_keys
+
+
+def test_shared_historical_birth_dates_spread_across_age_bands():
+    """Birth dates span more than one age band per tenant, so lists read varied."""
+    for rows in SHARED_HISTORICAL_LEADS.values():
+        bands = {age_band_for(row["date_of_birth"]) for row in rows}
+        assert len(bands) >= 2
+
+
+def test_shared_historical_leads_carry_a_positive_backdate_offset():
+    """Each row carries a positive `created_at_offset_days` so it sorts as history."""
+    for rows in SHARED_HISTORICAL_LEADS.values():
+        for row in rows:
+            assert isinstance(row["created_at_offset_days"], int)
+            assert row["created_at_offset_days"] > 0
+
+
 # --- Phase 3: seeding from empty inserts the full matrix ----------------------
 
 
@@ -169,11 +277,13 @@ def _empty_database_results():
     The no-parameter SELECTs that run when no tenants pre-exist, in order: tenant
     slugs, then usernames (the present-tenant lookup is skipped because nothing is
     present), then the existing data-key tenant ids for the key-seeding step, then
-    one ``SELECT COUNT(*) FROM <schema>.pii_demo`` per tenant. The two count rows
-    are preset non-zero (`[2]`) so the `pii_demo` seeding skips its encryption
-    path on every tenant, keeping this a pure no-DB unit test.
+    one ``SELECT COUNT(*) FROM <schema>.pii_demo`` per tenant, then one
+    ``SELECT COUNT(*) FROM <schema>.leads WHERE demo_session_id IS NULL`` per tenant.
+    The four count rows are preset non-zero (`[2]` / `[1]`) so the `pii_demo` and
+    shared-historical-leads seeding both skip their encryption path on every tenant,
+    keeping this a pure no-DB unit test.
     """
-    return [[], [], [], [2], [2]]
+    return [[], [], [], [2], [2], [1], [1]]
 
 
 async def test_seed_from_empty_inserts_two_tenants_and_nine_users():
@@ -274,13 +384,24 @@ async def test_seed_is_idempotent_when_everything_already_present():
         Tenant(id="id-" + slug, slug=slug, name=slug) for slug in all_slugs
     ]
     all_usernames = [email for email, _role, _tenant_slug in demo_user_specs()]
-    # Six no-parameter SELECTs: existing slugs, present `Tenant` rows, existing
+    # Eight no-parameter SELECTs: existing slugs, present `Tenant` rows, existing
     # usernames, the existing data-key tenant ids, then one `pii_demo` count per
-    # tenant. All tenant ids already have keys here, so no new key is added; both
-    # counts are non-zero (`[2]`), so no demo PII record is added either.
+    # tenant, then one shared-historical `leads` count per tenant. All tenant ids
+    # already have keys here, so no new key is added; the `pii_demo` counts are
+    # non-zero (`[2]`) and the `leads` counts non-zero (`[1]`), so neither a demo PII
+    # record nor a historical lead is added.
     present_tenant_ids = [tenant.id for tenant in present_tenants]
     session = FakeAsyncSession(
-        [all_slugs, present_tenants, all_usernames, present_tenant_ids, [2], [2]]
+        [
+            all_slugs,
+            present_tenants,
+            all_usernames,
+            present_tenant_ids,
+            [2],
+            [2],
+            [1],
+            [1],
+        ]
     )
 
     await seed(session)
@@ -305,11 +426,13 @@ async def test_seed_adds_only_missing_rows_on_partial_state():
         if tenant_slug == present_slug
     ]
     # The fourth execute is the existing data-key tenant ids; none exist yet,
-    # so a wrapped key is minted for both registry tenants on this seed. The last
-    # two are the per-tenant `pii_demo` counts, preset non-zero (`[2]`) so the
-    # demo PII seeding skips its encryption path on both tenants.
+    # so a wrapped key is minted for both registry tenants on this seed. The next
+    # two are the per-tenant `pii_demo` counts and the last two the per-tenant
+    # shared-historical `leads` counts, all preset non-zero (`[2]` / `[1]`) so the
+    # demo PII and historical-leads seeding skip their encryption path on both
+    # tenants.
     session = FakeAsyncSession(
-        [[present_slug], present_tenants, present_usernames, [], [2], [2]]
+        [[present_slug], present_tenants, present_usernames, [], [2], [2], [1], [1]]
     )
 
     await seed(session)

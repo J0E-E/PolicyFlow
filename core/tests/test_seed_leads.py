@@ -1,17 +1,21 @@
-"""DB tests for the boot seed's relationship to `leads` — P1.8 Epic 7.
+"""DB tests for the boot seed's shared historical `leads` set — P1.8 Epic 8.
 
 These run against the real Postgres booted in Docker (the same `database_engine`
 substrate as the other seed tests). Originally (P1.7 Epic 16) this file proved the
-boot seed inserted 4 New-queue demo leads per tenant. P1.8 Epic 7 **split that set
-out** of the boot seed: the New-queue templates (3 fillers + the Jordan Rivera
-dup-bait) now live in `app.seed.SESSION_LEAD_TEMPLATES` and are stamped into a
-visitor's own private, session-tagged queue by `ensure_session_leads` on first
-`assume-persona` (proven in `test_session_lead_instantiation.py`), never by the
-shared boot seed. The shared-historical read-only `leads` set arrives in Epic 8.
+boot seed inserted 4 New-queue demo leads per tenant; P1.8 Epic 7 **split that set
+out** of the boot seed (the New-queue templates moved to `SESSION_LEAD_TEMPLATES`,
+stamped into a visitor's own session-tagged queue by `ensure_session_leads`), and
+this file briefly guarded the **negative** contract that the boot seed touched no
+`leads` at all.
 
-So the boot-seed contract this file now guards is the **negative** one: a boot
-seed inserts **no** `leads` rows. The templates structure is asserted to still
-carry the canonical 4-per-tenant shape (the data Epic 7's instantiation consumes).
+P1.8 Epic 8 brings the **positive** contract back, but for a different set: the boot
+seed now inserts the shared **read-only historical** leads — `SHARED_HISTORICAL_LEADS`
+(6 per tenant: 2 Working / 2 Qualified / 2 Rejected, all owned, split 3/3 across
+`agent.one` + `agent.two`) — as the shared `demo_session_id IS NULL` baseline so lists
+and dashboards render non-trivially from seed alone. Every row stays `NULL` (read-only,
+visible to all, never claimable). So this file now guards: a boot seed inserts 6
+`NULL`-session historical leads per tenant with the agreed status/owner spread, and a
+re-seed is a no-op (count-based idempotency on the `NULL` baseline).
 
 The seed encrypts each PII field, and `get_tenant_keys` reads the wrapped root key
 through the module-global `app.pii.keys.session_factory`. The `db_session` fixture
@@ -24,8 +28,12 @@ tenants' `leads` tables — owning its precondition — then seeds. `pytest.ini`
 
 from sqlalchemy import text
 
-from app.seed import SESSION_LEAD_TEMPLATES, seed
-from app.tenancy.registry import FLORIDA, SUNSHINE
+from app.seed import SHARED_HISTORICAL_LEADS, seed
+from app.tenancy.registry import FLORIDA, SUNSHINE, tenant_by_slug
+
+# The expected shared-historical row count per tenant (2 Working + 2 Qualified +
+# 2 Rejected = 6), derived from the canonical set so the count can never drift.
+EXPECTED_HISTORICAL_LEADS_PER_TENANT = 6
 
 
 async def _clear_demo_leads(db_session) -> None:
@@ -50,41 +58,118 @@ async def _count_leads(db_session, schema_name: str) -> int:
     ).scalar_one()
 
 
-async def test_boot_seed_inserts_no_leads(
+async def _count_null_session_leads(db_session, schema_name: str) -> int:
+    """Return the number of shared-baseline (`demo_session_id IS NULL`) leads."""
+    return (
+        await db_session.execute(
+            text(
+                f"SELECT COUNT(*) FROM {schema_name}.leads "
+                "WHERE demo_session_id IS NULL"
+            )
+        )
+    ).scalar_one()
+
+
+async def _historical_rows(db_session, schema_name: str) -> list:
+    """Return the (status, owner_username, demo_session_id) of every seeded lead."""
+    return (
+        await db_session.execute(
+            text(
+                f"SELECT status, owner_username, demo_session_id "
+                f"FROM {schema_name}.leads"
+            )
+        )
+    ).all()
+
+
+async def test_boot_seed_inserts_six_null_session_historical_leads_per_tenant(
     container_keys_session_factory, db_session
 ):
-    """After a boot seed, each tenant's `leads` table stays empty (the Epic 7 split).
+    """After a boot seed, each tenant carries 6 shared `NULL`-session historical leads.
 
-    The New-queue set moved to per-session instantiation, and the shared-historical
-    set is Epic 8, so the boot seed inserts no `leads` rows at all.
+    The shared-historical set (P1.8 Epic 8) is the read-only baseline; every row is
+    `demo_session_id IS NULL` so it is visible to all and claimable by none.
     """
     await _clear_demo_leads(db_session)
 
     await seed(db_session)
 
-    assert await _count_leads(db_session, SUNSHINE.schema_name) == 0
-    assert await _count_leads(db_session, FLORIDA.schema_name) == 0
+    for schema_name in (SUNSHINE.schema_name, FLORIDA.schema_name):
+        assert (
+            await _count_leads(db_session, schema_name)
+            == EXPECTED_HISTORICAL_LEADS_PER_TENANT
+        )
+        # Every seeded row is part of the shared `NULL` baseline.
+        assert (
+            await _count_null_session_leads(db_session, schema_name)
+            == EXPECTED_HISTORICAL_LEADS_PER_TENANT
+        )
 
 
-async def test_re_seed_still_inserts_no_leads(
+async def test_re_seed_is_a_no_op_on_the_historical_leads(
     container_keys_session_factory, db_session
 ):
-    """A second boot seed also adds no `leads` rows — the split is stable."""
+    """A second boot seed adds no further historical leads (count-based idempotency).
+
+    The shared-historical seed skips a tenant whose `leads` already holds any
+    `demo_session_id IS NULL` row, so re-running on every reboot never duplicates it.
+    """
     await _clear_demo_leads(db_session)
 
     await seed(db_session)
     await seed(db_session)
 
-    assert await _count_leads(db_session, SUNSHINE.schema_name) == 0
-    assert await _count_leads(db_session, FLORIDA.schema_name) == 0
+    for schema_name in (SUNSHINE.schema_name, FLORIDA.schema_name):
+        assert (
+            await _count_leads(db_session, schema_name)
+            == EXPECTED_HISTORICAL_LEADS_PER_TENANT
+        )
 
 
-def test_session_lead_templates_carry_four_per_tenant():
-    """The per-session templates keep the canonical 3 fillers + 1 dup-bait shape.
+async def test_seeded_historical_leads_carry_the_agreed_status_and_owner_spread(
+    container_keys_session_factory, db_session
+):
+    """Each tenant's seeded rows are 2/2/2 by status, all `NULL`, owned 3/3 by agent.
 
-    A pure-data assertion on the structure `ensure_session_leads` consumes — the
-    boot seed no longer inserts these, but the canonical set Epic 7 instantiates
-    is still the 4-per-tenant New queue.
+    Proves the boot seed wrote the canonical shape: every row in the shared `NULL`
+    baseline, the status mix 2 Working / 2 Qualified / 2 Rejected, and ownership
+    split 3/3 across the two seeded agents (resolved to their email-style usernames).
     """
-    assert len(SESSION_LEAD_TEMPLATES[SUNSHINE.slug]) == 4
-    assert len(SESSION_LEAD_TEMPLATES[FLORIDA.slug]) == 4
+    await _clear_demo_leads(db_session)
+
+    await seed(db_session)
+
+    for tenant_config in (SUNSHINE, FLORIDA):
+        rows = await _historical_rows(db_session, tenant_config.schema_name)
+        assert len(rows) == EXPECTED_HISTORICAL_LEADS_PER_TENANT
+
+        # Every row is part of the shared baseline — never a session row.
+        assert all(demo_session_id is None for _status, _owner, demo_session_id in rows)
+
+        status_counts: dict[str, int] = {}
+        owner_counts: dict[str, int] = {}
+        for status, owner_username, _demo_session_id in rows:
+            status_counts[status] = status_counts.get(status, 0) + 1
+            owner_counts[owner_username] = owner_counts.get(owner_username, 0) + 1
+
+        assert status_counts == {"Working": 2, "Qualified": 2, "Rejected": 2}
+
+        # Every row is owned by one of the two seeded agents, split 3/3.
+        domain = tenant_config.email_domain
+        assert owner_counts == {
+            f"agent.one@{domain}": 3,
+            f"agent.two@{domain}": 3,
+        }
+
+
+def test_shared_historical_leads_carry_six_per_tenant():
+    """The shared-historical set keeps the canonical 6-per-tenant shape (pure data).
+
+    A no-DB assertion on the structure the boot seed consumes — 2 Working / 2
+    Qualified / 2 Rejected per tenant.
+    """
+    assert len(SHARED_HISTORICAL_LEADS[SUNSHINE.slug]) == 6
+    assert len(SHARED_HISTORICAL_LEADS[FLORIDA.slug]) == 6
+    # The keys resolve to known tenants (guards against a slug typo in the data).
+    for tenant_slug in SHARED_HISTORICAL_LEADS:
+        assert tenant_by_slug(tenant_slug) is not None

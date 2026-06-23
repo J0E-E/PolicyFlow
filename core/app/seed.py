@@ -20,7 +20,7 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Iterable, Optional
 
 from sqlalchemy import select, text
@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .auth.passwords import hash_password
 from .config import settings
 from .db import session_factory
+from .leads.state import LeadSource, LeadStatus
 from .models import Role, Tenant, TenantDataKey, User
 from .pii.crypto import normalize_email, normalize_phone, wrap_key
 from .pii.masking import age_band_for
@@ -267,6 +268,223 @@ SESSION_LEAD_TEMPLATES: dict[str, list[dict]] = {
 }
 
 
+# The shared read-only historical lead set, keyed by tenant slug. These are the
+# worked/historical leads the boot seed stamps into each tenant's `leads` table as
+# the shared `NULL` baseline (`demo_session_id IS NULL`), so lists and dashboards
+# render non-trivially from seed alone — context every visitor sees, none can claim
+# (P1.8 Epic 8). They are the complement of `SESSION_LEAD_TEMPLATES`: that set is
+# the per-visit *claimable* New queue; this set is the shared *read-only* history.
+#
+# 6 rows per tenant — **2 Working / 2 Qualified / 2 Rejected** — all **owned**, split
+# 3/3 across `agent.one` and `agent.two` (`owner_local_part`, resolved to the seeded
+# user's id + email at seed time). There are deliberately **no unowned / `New` rows**:
+# an unowned `New` row would surface in the Unassigned-queue tab looking claimable
+# while the Epic 5 write guard silently `409`s a live-session caller acting on it, so
+# every historical row is owned and past `New`. Each **Rejected** row is a
+# `Working → Rejected` outcome and carries a `rejection_reason` (the reject path's
+# free-text), so it reads as a real worked-then-declined lead. `lead_source` is
+# `agent_entered` — these are agent-worked records, not fresh public submissions.
+#
+# `created_at_offset_days` backdates each row relative to boot (computed at seed time,
+# so the rows stay recent — spread over the last few weeks): they sort **below**
+# today's fresh session queue and read as history. Emails are distinct and clearly
+# synthetic (`example.com`); phones are distinct and **all-decimal** (the matcher-
+# collision gotcha: low-entropy contact details in the shared container DB flag
+# unrelated leads). Product-line keys come from each tenant's registry set (Sunshine's
+# Medicare/expense lines, Florida's life/health lines); dates of birth spread across
+# the age bands; `street_address` mixes present/absent.
+#
+# `age_band` is never stored here — it is derived from `date_of_birth` at seed time,
+# exactly as the create path derives it. The birth dates are far enough from any
+# plausible run date that the bands stay stable over time.
+SHARED_HISTORICAL_LEADS: dict[str, list[dict]] = {
+    "sunshine-senior-benefits": [
+        {
+            "first_name": "Gloria",
+            "last_name": "Hampton",
+            "email": "gloria.hampton@example.com",
+            "phone": "(305) 555-0201",
+            "date_of_birth": date(1951, 2, 18),
+            "zip_code": "33139",
+            "street_address": "1450 Ocean Drive",
+            "preferred_contact_method": "phone",
+            "product_lines_of_interest": ["medicare_advantage"],
+            "status": LeadStatus.WORKING,
+            "owner_local_part": "agent.one",
+            "rejection_reason": None,
+            "created_at_offset_days": 4,
+        },
+        {
+            "first_name": "Walter",
+            "last_name": "Brennan",
+            "email": "walter.brennan@example.com",
+            "phone": "(561) 555-0212",
+            "date_of_birth": date(1956, 10, 7),
+            "zip_code": "33401",
+            "street_address": None,
+            "preferred_contact_method": "email",
+            "product_lines_of_interest": ["medicare_supplement"],
+            "status": LeadStatus.WORKING,
+            "owner_local_part": "agent.two",
+            "rejection_reason": None,
+            "created_at_offset_days": 9,
+        },
+        {
+            "first_name": "Estelle",
+            "last_name": "Marchetti",
+            "email": "estelle.marchetti@example.com",
+            "phone": "(786) 555-0223",
+            "date_of_birth": date(1948, 6, 25),
+            "zip_code": "33156",
+            "street_address": "980 Brickell Avenue",
+            "preferred_contact_method": "phone",
+            "product_lines_of_interest": ["final_expense"],
+            "status": LeadStatus.QUALIFIED,
+            "owner_local_part": "agent.one",
+            "rejection_reason": None,
+            "created_at_offset_days": 13,
+        },
+        {
+            "first_name": "Raymond",
+            "last_name": "Castellano",
+            "email": "raymond.castellano@example.com",
+            "phone": "(954) 555-0234",
+            "date_of_birth": date(1953, 12, 1),
+            "zip_code": "33301",
+            "street_address": "60 Las Olas Boulevard",
+            "preferred_contact_method": "email",
+            "product_lines_of_interest": ["dental_vision_hearing", "medicare_advantage"],
+            "status": LeadStatus.QUALIFIED,
+            "owner_local_part": "agent.two",
+            "rejection_reason": None,
+            "created_at_offset_days": 17,
+        },
+        {
+            "first_name": "Doris",
+            "last_name": "Whitlock",
+            "email": "doris.whitlock@example.com",
+            "phone": "(727) 555-0245",
+            "date_of_birth": date(1959, 3, 14),
+            "zip_code": "33701",
+            "street_address": None,
+            "preferred_contact_method": "phone",
+            "product_lines_of_interest": ["medicare_supplement"],
+            "status": LeadStatus.REJECTED,
+            "owner_local_part": "agent.one",
+            "rejection_reason": "Outside service area — referred to another carrier.",
+            "created_at_offset_days": 21,
+        },
+        {
+            "first_name": "Clifford",
+            "last_name": "Yamamoto",
+            "email": "clifford.yamamoto@example.com",
+            "phone": "(813) 555-0256",
+            "date_of_birth": date(1962, 8, 30),
+            "zip_code": "33602",
+            "street_address": "415 Bayshore Boulevard",
+            "preferred_contact_method": "email",
+            "product_lines_of_interest": ["medicare_advantage"],
+            "status": LeadStatus.REJECTED,
+            "owner_local_part": "agent.two",
+            "rejection_reason": "Not yet Medicare-eligible — follow up at 65.",
+            "created_at_offset_days": 26,
+        },
+    ],
+    "florida-family-planning": [
+        {
+            "first_name": "Bianca",
+            "last_name": "Castro",
+            "email": "bianca.castro@example.com",
+            "phone": "(813) 555-0301",
+            "date_of_birth": date(1990, 5, 12),
+            "zip_code": "33602",
+            "street_address": "300 Channelside Drive",
+            "preferred_contact_method": "text",
+            "product_lines_of_interest": ["term_life"],
+            "status": LeadStatus.WORKING,
+            "owner_local_part": "agent.one",
+            "rejection_reason": None,
+            "created_at_offset_days": 5,
+        },
+        {
+            "first_name": "Andre",
+            "last_name": "Solomon",
+            "email": "andre.solomon@example.com",
+            "phone": "(904) 555-0312",
+            "date_of_birth": date(1978, 9, 3),
+            "zip_code": "32202",
+            "street_address": None,
+            "preferred_contact_method": "email",
+            "product_lines_of_interest": ["whole_life"],
+            "status": LeadStatus.WORKING,
+            "owner_local_part": "agent.two",
+            "rejection_reason": None,
+            "created_at_offset_days": 10,
+        },
+        {
+            "first_name": "Renata",
+            "last_name": "Oliveira",
+            "email": "renata.oliveira@example.com",
+            "phone": "(727) 555-0323",
+            "date_of_birth": date(1985, 1, 28),
+            "zip_code": "33701",
+            "street_address": "120 Beach Drive Northeast",
+            "preferred_contact_method": "phone",
+            "product_lines_of_interest": ["health"],
+            "status": LeadStatus.QUALIFIED,
+            "owner_local_part": "agent.one",
+            "rejection_reason": None,
+            "created_at_offset_days": 14,
+        },
+        {
+            "first_name": "Felix",
+            "last_name": "Nordquist",
+            "email": "felix.nordquist@example.com",
+            "phone": "(954) 555-0334",
+            "date_of_birth": date(1969, 11, 19),
+            "zip_code": "33301",
+            "street_address": "25 Las Olas Boulevard",
+            "preferred_contact_method": "email",
+            "product_lines_of_interest": ["critical_illness", "whole_life"],
+            "status": LeadStatus.QUALIFIED,
+            "owner_local_part": "agent.two",
+            "rejection_reason": None,
+            "created_at_offset_days": 18,
+        },
+        {
+            "first_name": "Camila",
+            "last_name": "Reyes",
+            "email": "camila.reyes@example.com",
+            "phone": "(305) 555-0345",
+            "date_of_birth": date(2003, 4, 6),
+            "zip_code": "33139",
+            "street_address": None,
+            "preferred_contact_method": "text",
+            "product_lines_of_interest": ["term_life"],
+            "status": LeadStatus.REJECTED,
+            "owner_local_part": "agent.one",
+            "rejection_reason": "Duplicate of an existing household policy.",
+            "created_at_offset_days": 22,
+        },
+        {
+            "first_name": "Hassan",
+            "last_name": "Abdullah",
+            "email": "hassan.abdullah@example.com",
+            "phone": "(561) 555-0356",
+            "date_of_birth": date(1995, 7, 24),
+            "zip_code": "33401",
+            "street_address": "78 Clematis Street",
+            "preferred_contact_method": "phone",
+            "product_lines_of_interest": ["health"],
+            "status": LeadStatus.REJECTED,
+            "owner_local_part": "agent.two",
+            "rejection_reason": "No longer interested — declined to proceed.",
+            "created_at_offset_days": 27,
+        },
+    ],
+}
+
+
 def demo_tenants() -> tuple[tuple[str, str], ...]:
     """Return the (slug, display name) pairs for the demo tenants."""
     return DEMO_TENANTS
@@ -434,6 +652,145 @@ async def seed_pii_demo_records(
     return records_inserted
 
 
+async def seed_shared_historical_leads(
+    db: AsyncSession, slug_to_tenant_id: dict[str, uuid.UUID]
+) -> int:
+    """Insert the shared read-only historical leads into each tenant's `leads` table.
+
+    For each tenant, skips entirely if that tenant's `leads` already holds any
+    shared-baseline row (`demo_session_id IS NULL`) — count-based idempotency, the
+    same shape `seed_pii_demo_records` uses, because the container re-seeds on every
+    boot and these rows have no natural unique key to conflict on. Scoping the count
+    to `demo_session_id IS NULL` keeps it from being defeated by a visitor's own
+    session-tagged rows in the shared container (those are `NOT NULL`). Otherwise it
+    resolves each row's owner (`agent.one` / `agent.two`) to a seeded user id, encrypts
+    every PII field via `encrypt_field`, computes the email/phone blind indexes over the
+    normalized value, derives the plaintext `age_band`, backdates `created_at` by the
+    row's offset, and `INSERT`s the row as a shared (`demo_session_id IS NULL`) lead
+    with its `status` / owner / `rejection_reason`. Returns the total newly inserted.
+
+    The schema identifier is interpolated **only** from the registry (never user
+    input), exactly like `seed_pii_demo_records`; every value is a bound parameter.
+    The per-tenant keys this resolves are read by `get_tenant_keys` through its **own**
+    session, so the caller must have already committed the seeded `tenant_data_keys`
+    before calling this — the same ordering `seed_pii_demo_records` relies on.
+    """
+    boot_time = datetime.now(timezone.utc)
+    leads_inserted = 0
+    for tenant_slug, tenant_id in slug_to_tenant_id.items():
+        config = tenant_by_slug(tenant_slug)
+        existing_count = (
+            await db.execute(
+                text(
+                    f"SELECT COUNT(*) FROM {config.schema_name}.leads "
+                    "WHERE demo_session_id IS NULL"
+                )
+            )
+        ).scalar_one()
+        if existing_count > 0:
+            continue
+
+        # Resolve each historical row's owner (agent.one / agent.two) to the seeded
+        # user's id and email-style username. The usernames are built from the
+        # registry email domain, exactly as `demo_users_for` builds them, so the
+        # lookup can never disagree with the seeded personas.
+        owner_username_by_local_part = {
+            local_part: f"{local_part}@{config.email_domain}"
+            for local_part in ("agent.one", "agent.two")
+        }
+        owner_id_by_username = {
+            username: user_id
+            for user_id, username in (
+                await db.execute(
+                    select(User.id, User.username).where(
+                        User.username.in_(owner_username_by_local_part.values())
+                    )
+                )
+            ).all()
+        }
+
+        for historical_lead in SHARED_HISTORICAL_LEADS.get(tenant_slug, []):
+            email_encrypted = await encrypt_field(
+                tenant_id, historical_lead["email"]
+            )
+            email_blind_index = await compute_blind_index(
+                tenant_id, normalize_email(historical_lead["email"])
+            )
+            phone_encrypted = await encrypt_field(
+                tenant_id, historical_lead["phone"]
+            )
+            phone_blind_index = await compute_blind_index(
+                tenant_id, normalize_phone(historical_lead["phone"])
+            )
+            date_of_birth_encrypted = await encrypt_field(
+                tenant_id, historical_lead["date_of_birth"].isoformat()
+            )
+            age_band = age_band_for(historical_lead["date_of_birth"])
+
+            street_address_encrypted = None
+            if historical_lead["street_address"] is not None:
+                street_address_encrypted = await encrypt_field(
+                    tenant_id, historical_lead["street_address"]
+                )
+
+            owner_username = owner_username_by_local_part[
+                historical_lead["owner_local_part"]
+            ]
+            owner_user_id = owner_id_by_username[owner_username]
+            created_at = boot_time - timedelta(
+                days=historical_lead["created_at_offset_days"]
+            )
+
+            await db.execute(
+                text(
+                    f"INSERT INTO {config.schema_name}.leads "
+                    "(id, first_name, last_name, email_encrypted, "
+                    "email_blind_index, phone_encrypted, phone_blind_index, "
+                    "date_of_birth_encrypted, age_band, zip_code, "
+                    "street_address_encrypted, product_lines_of_interest, "
+                    "preferred_contact_method, rejection_reason, lead_source, "
+                    "status, owner_user_id, owner_username, correlation_id, "
+                    "demo_session_id, created_at, updated_at) "
+                    "VALUES (:id, :first_name, :last_name, :email_encrypted, "
+                    ":email_blind_index, :phone_encrypted, :phone_blind_index, "
+                    ":date_of_birth_encrypted, :age_band, :zip_code, "
+                    ":street_address_encrypted, :product_lines_of_interest, "
+                    ":preferred_contact_method, :rejection_reason, :lead_source, "
+                    ":status, :owner_user_id, :owner_username, :correlation_id, "
+                    ":demo_session_id, :created_at, :created_at)"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "first_name": historical_lead["first_name"],
+                    "last_name": historical_lead["last_name"],
+                    "email_encrypted": email_encrypted,
+                    "email_blind_index": email_blind_index,
+                    "phone_encrypted": phone_encrypted,
+                    "phone_blind_index": phone_blind_index,
+                    "date_of_birth_encrypted": date_of_birth_encrypted,
+                    "age_band": age_band,
+                    "zip_code": historical_lead["zip_code"],
+                    "street_address_encrypted": street_address_encrypted,
+                    "product_lines_of_interest": historical_lead[
+                        "product_lines_of_interest"
+                    ],
+                    "preferred_contact_method": historical_lead[
+                        "preferred_contact_method"
+                    ],
+                    "rejection_reason": historical_lead["rejection_reason"],
+                    "lead_source": LeadSource.AGENT_ENTERED.value,
+                    "status": historical_lead["status"].value,
+                    "owner_user_id": owner_user_id,
+                    "owner_username": owner_username,
+                    "correlation_id": uuid.uuid4(),
+                    "demo_session_id": None,
+                    "created_at": created_at,
+                },
+            )
+            leads_inserted += 1
+    return leads_inserted
+
+
 async def seed(db: AsyncSession) -> None:
     """Insert any missing demo tenants and users, then commit once.
 
@@ -556,11 +913,20 @@ async def seed(db: AsyncSession) -> None:
     # --- Demo PII records: synthetic encrypted rows per tenant, in each tenant's
     # own `pii_demo` table. They encrypt on write and so need the data keys above
     # to be durable (the key load runs in its own session), which the commit above
-    # guarantees. The boot seed no longer seeds any New-queue `leads` rows: P1.8
+    # guarantees. The boot seed seeds no per-session New-queue `leads` rows: P1.8
     # Epic 7 moved that set to per-session instantiation (`SESSION_LEAD_TEMPLATES`,
-    # stamped session-tagged on `assume-persona`), and the shared-historical
-    # read-only `leads` set arrives in Epic 8.
+    # stamped session-tagged on `assume-persona`). It does seed the shared-historical
+    # read-only `leads` set below.
     pii_demo_rows_inserted = await seed_pii_demo_records(db, slug_to_tenant_id)
+
+    # --- Shared historical leads: the read-only `demo_session_id IS NULL` baseline
+    # (worked/qualified/rejected, owned) per tenant, so lists and dashboards render
+    # non-trivially from seed alone (P1.8 Epic 8). Like `seed_pii_demo_records` it
+    # encrypts on write (needs the durable data keys above) and resolves each row's
+    # owner to a seeded user committed above — both guaranteed by the commit above.
+    historical_leads_inserted = await seed_shared_historical_leads(
+        db, slug_to_tenant_id
+    )
     await db.commit()
 
     total_tenants = len(DEMO_TENANTS)
@@ -568,7 +934,8 @@ async def seed(db: AsyncSession) -> None:
     logger.info(
         "seed complete: tenants inserted=%d already-present=%d; "
         "users inserted=%d already-present=%d; settings rows inserted=%d; "
-        "data keys inserted=%d; pii_demo rows inserted=%d",
+        "data keys inserted=%d; pii_demo rows inserted=%d; "
+        "historical leads inserted=%d",
         tenants_inserted,
         total_tenants - tenants_inserted,
         users_inserted,
@@ -576,6 +943,7 @@ async def seed(db: AsyncSession) -> None:
         settings_inserted,
         keys_inserted,
         pii_demo_rows_inserted,
+        historical_leads_inserted,
     )
 
 
