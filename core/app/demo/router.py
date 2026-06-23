@@ -46,6 +46,7 @@ from ..db import get_db
 from ..models.tenant import Tenant
 from ..models.user import Role, User
 from ..tenancy.registry import TENANTS, tenant_by_slug
+from .instantiation import ensure_session_leads
 from .session import (
     DemoSessionStatus,
     ensure_demo_session,
@@ -206,9 +207,21 @@ async def assume_persona(
         if persona_identity.tenant_id is not None
         else None
     )
-    await ensure_demo_session(
+    demo_state = await ensure_demo_session(
         db, request, response, tenant_slug=visit_tenant_slug
     )
+
+    # Instantiate this visit's private, claimable New queue in the assumed tenant —
+    # idempotently, ledger-guarded — so a tenant-scoped visitor lands on their own
+    # working queue (Epic 7). Tenant-scoped personas only: the tenantless Platform
+    # Admin has no tenant queue to seed and skips it. `demo_state.id` is a plain UUID
+    # on a frozen dataclass (no ORM row survives), and `ensure_session_leads` opens
+    # its own scoped transaction via `get_public_tenant_db` and resets it on exit —
+    # so `db` is back on the default login role for `build_identity_response` below.
+    if persona_identity.tenant_id is not None and demo_state.id is not None:
+        await ensure_session_leads(
+            db, tenant_by_slug(persona_request.tenant_slug), demo_state.id
+        )
 
     return await build_identity_response(db, persona_identity)
 

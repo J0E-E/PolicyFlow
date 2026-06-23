@@ -287,6 +287,108 @@ async def test_disabled_flag_returns_403_and_mints_no_session(
     assert "pf_session" not in db_client.cookies
 
 
+# --- Epic 7 (P1.8): per-session New-queue instantiation on assume ------------
+
+
+async def _count_session_tagged_leads(database_engine, schema_name, demo_session_id):
+    """Count `<schema>.leads` rows tagged with one demo session id (read by superuser)."""
+    async with database_engine.begin() as connection:
+        return (
+            await connection.execute(
+                text(
+                    f"SELECT COUNT(*) FROM {schema_name}.leads "
+                    "WHERE demo_session_id = :demo_session_id"
+                ),
+                {"demo_session_id": demo_session_id},
+            )
+        ).scalar_one()
+
+
+async def test_first_assume_instantiates_the_private_new_queue(
+    seeded, db_client, database_engine
+):
+    """A first tenant-scoped assume instantiates the visitor's own session-tagged queue.
+
+    Assuming a Sunshine Agent mints the demo session and seeds the canonical 4-row
+    New-queue templates into Sunshine's schema, each tagged with the minted session
+    id — the visitor's private, claimable queue (Epic 7).
+    """
+    response = await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    assert response.status_code == 200
+    minted_id = uuid.UUID(db_client.cookies["pf_demo_session"])
+
+    count = await _count_session_tagged_leads(
+        database_engine, SUNSHINE.schema_name, minted_id
+    )
+    assert count == 4
+
+
+async def test_re_assume_is_idempotent_for_the_same_visit_and_tenant(
+    seeded, db_client, database_engine
+):
+    """A re-assume within the same visit/tenant inserts no new queue rows (ledger guard).
+
+    Two assumes on the same client (same `pf_demo_session` cookie reused) keep the
+    visitor at exactly their one instantiated set — the ledger marker makes the
+    second instantiation a no-op.
+    """
+    first = await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    assert first.status_code == 200
+    minted_id = uuid.UUID(db_client.cookies["pf_demo_session"])
+
+    # Re-assume (e.g. a role switch to Read-Only) reuses the same demo session.
+    second = await assume(
+        db_client, tenant_slug=SUNSHINE.slug, role=Role.READ_ONLY
+    )
+    assert second.status_code == 200
+    assert uuid.UUID(db_client.cookies["pf_demo_session"]) == minted_id
+
+    count = await _count_session_tagged_leads(
+        database_engine, SUNSHINE.schema_name, minted_id
+    )
+    assert count == 4  # still one set, not two
+
+
+async def test_second_visit_queue_is_isolated_from_the_first(
+    seeded, db_client, database_engine
+):
+    """A second visit (a fresh cookie jar) gets its own isolated, session-tagged queue.
+
+    Two independent visits each mint their own demo session and so each instantiate
+    a separate 4-row copy in Sunshine's schema, tagged by their own session id — no
+    cross-visit bleed even though the dup-bait email repeats. The first visit reuses
+    the `db_client` (which installs the container `get_db` override); the second is a
+    fresh client built against the same app so it carries no cookies from the first.
+    """
+    import httpx
+
+    from app.main import app
+
+    first = await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    assert first.status_code == 200
+    first_id = uuid.UUID(db_client.cookies["pf_demo_session"])
+
+    # A fresh client = a new visit (empty cookie jar) on the same app + get_db
+    # override `db_client` already installed.
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as second_visitor:
+        second = await assume(
+            second_visitor, tenant_slug=SUNSHINE.slug, role=Role.AGENT
+        )
+        assert second.status_code == 200
+        second_id = uuid.UUID(second_visitor.cookies["pf_demo_session"])
+
+    # Two distinct visits, each with its own full 4-row copy.
+    assert first_id != second_id
+    for minted_id in (first_id, second_id):
+        count = await _count_session_tagged_leads(
+            database_engine, SUNSHINE.schema_name, minted_id
+        )
+        assert count == 4
+
+
 # --- read-back helpers (mirror test_auth_audit.py) --------------------------
 
 

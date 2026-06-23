@@ -47,6 +47,24 @@ def test_demo_sessions_columns_and_nullability():
     assert demo_sessions.c.last_tenant_slug.nullable is True
 
 
+def test_demo_session_tenant_seed_table_is_registered_in_platform_schema():
+    """The `demo_session_tenant_seed` ledger is registered in `platform` (P1.8 Epic 7)."""
+    assert get_table("platform.demo_session_tenant_seed") is not None
+
+
+def test_demo_session_tenant_seed_has_composite_primary_key():
+    """The ledger is keyed by the composite `(demo_session_id, tenant_slug)`.
+
+    Both columns carry the primary key (the per-(visit, tenant) idempotency
+    marker); `seeded_at` is a required timestamp with a server default.
+    """
+    ledger = get_table("platform.demo_session_tenant_seed")
+
+    primary_key_columns = {column.name for column in ledger.primary_key.columns}
+    assert primary_key_columns == {"demo_session_id", "tenant_slug"}
+    assert ledger.c.seeded_at.nullable is False
+
+
 def test_role_enum_has_exactly_four_members_with_lowercase_values():
     """`Role` defines the four roles with their lowercase string values."""
     role_values = {member.name: member.value for member in Role}
@@ -143,3 +161,11 @@ def test_migration_0011_follows_0010():
 
     assert migration.revision == "0011_demo_sessions"
     assert migration.down_revision == "0010_lead_rejection_reason"
+
+
+def test_migration_0012_follows_0011():
+    """The `0012` seed-ledger migration chains onto `0011_demo_sessions`."""
+    migration = load_migration_module("0012_demo_session_tenant_seed.py")
+
+    assert migration.revision == "0012_demo_session_tenant_seed"
+    assert migration.down_revision == "0011_demo_sessions"

@@ -29,7 +29,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .auth.passwords import hash_password
 from .config import settings
 from .db import session_factory
-from .leads.state import LeadSource, LeadStatus
 from .models import Role, Tenant, TenantDataKey, User
 from .pii.crypto import normalize_email, normalize_phone, wrap_key
 from .pii.masking import age_band_for
@@ -140,33 +139,39 @@ DEMO_PII_RECORDS: dict[str, list[dict]] = {
 }
 
 
-# The synthetic demo lead rows seeded into each tenant's own `leads` table, keyed
-# by tenant slug. They make the lead queue non-empty on a fresh boot and light up
-# the duplicate scenario. Every row is a **queue lead**: `public_form` source,
-# unowned (`owner_user_id` null), born `New` — exactly the shape the unassigned
-# queue filter (Epic 11) surfaces.
+# The per-session New-queue lead templates, keyed by tenant slug. These are the
+# canonical set `app.demo.instantiation.ensure_session_leads` stamps into a
+# visitor's **own** private queue (session-tagged) on first `assume-persona` — they
+# are **not** seeded by the boot seed (P1.8 Epic 7 split them out of the shared
+# `NULL` baseline so concurrent visitors each work their own claimable queue without
+# touching shared seed; the shared-historical read-only set is Epic 8's). Every row
+# is a **queue lead**: `public_form` source, unowned (`owner_user_id` null), born
+# `New` — exactly the shape the unassigned queue filter surfaces.
 #
-# Each tenant gets 3 ordinary filler leads + 1 duplicate-bait (8 rows total). The
-# fillers are clearly synthetic — `example.com` emails, `555-01xx` phones — with
-# distinct, all-decimal phones and distinct emails (the matcher-collision gotcha:
-# low-entropy contact details in the shared container DB flag unrelated leads), a
-# spread of dates of birth across age bands, and a mix of present/absent
+# Each tenant gets 3 ordinary filler leads + 1 duplicate-bait (8 templates total).
+# The fillers are clearly synthetic — `example.com` emails, `555-01xx` phones —
+# with distinct, all-decimal phones and distinct emails (the matcher-collision
+# gotcha: low-entropy contact details in the shared container DB flag unrelated
+# leads), a spread of dates of birth across age bands, and a mix of present/absent
 # `street_address`. Product-line keys are validated against the tenant's registry
 # set (Epic 4) — Sunshine's Medicare/expense lines, Florida's life/health lines.
 #
 # The **duplicate-bait** is the *same identity* in both tenants (Jordan Rivera,
-# same email + phone), so Epic 18's "Try a duplicate scenario" prefill is one
-# payload that flags in whichever tenant the shopper submits to. Its normalized
-# email + phone are the cross-epic contract that prefill must submit. Only its
-# product line differs per tenant (each tenant's first registry key).
+# same email + phone), so the "Try a duplicate scenario" prefill is one payload
+# that flags in whichever tenant the shopper submits to. Its normalized email +
+# phone are the cross-epic contract that prefill must submit (the frontend's
+# `shopperIntakePrefills.ts` mirrors these constants verbatim). Only its product
+# line differs per tenant (each tenant's first registry key). The bait is now
+# **session-tagged** per visit (not the shared `NULL` bait), so a visitor's "Try a
+# duplicate" flags against seed ∪ their own rows only (Epic 5's matcher scoping).
 #
-# `age_band` is never stored here — it is derived from `date_of_birth` at seed
-# time, exactly as the create path derives it. The birth dates are far enough from
-# any plausible run date that the bands stay stable over time.
+# `age_band` is never stored here — it is derived from `date_of_birth` at
+# instantiation time, exactly as the create path derives it. The birth dates are
+# far enough from any plausible run date that the bands stay stable over time.
 JORDAN_RIVERA_BAIT_EMAIL = "jordan.rivera@example.com"
 JORDAN_RIVERA_BAIT_PHONE = "(407) 555-0188"
 
-DEMO_LEADS: dict[str, list[dict]] = {
+SESSION_LEAD_TEMPLATES: dict[str, list[dict]] = {
     "sunshine-senior-benefits": [
         {
             "first_name": "Eleanor",
@@ -429,108 +434,6 @@ async def seed_pii_demo_records(
     return records_inserted
 
 
-async def seed_demo_leads(
-    db: AsyncSession, slug_to_tenant_id: dict[str, uuid.UUID]
-) -> int:
-    """Insert the synthetic demo leads into each tenant's `leads` table, insert-if-absent.
-
-    For each tenant's `DEMO_LEADS`, each row is inserted only when no lead with its
-    `email_blind_index` already exists — **per-lead** idempotency, not the
-    count-based skip the `pii_demo` seed uses. That keying lets P1.8's fuller seed
-    extend `DEMO_LEADS` (adding rows) without colliding with what is already there,
-    and survives the shared container DB being re-seeded on every boot.
-
-    Each row is routed through the **same** encryption path the create endpoint uses
-    so the duplicate-bait reliably flags: `encrypt_field` for every PII column,
-    `compute_blind_index` over the `normalize_*` value for the two searchable
-    fingerprints, and `age_band_for` for the derived plaintext band. Every row is a
-    queue lead — `public_form`, unowned, born `New` — with a fresh `correlation_id`
-    and `demo_session_id` null (P1.8 owns the session lifecycle). The schema
-    identifier is interpolated **only** from the registry (never user input); every
-    value is a bound parameter. Returns the total number of leads newly inserted.
-
-    Like `seed_pii_demo_records`, the per-tenant key this resolves is read by
-    `get_tenant_keys` through its **own** session, so the caller must have already
-    committed the seeded `tenant_data_keys` before calling this.
-    """
-    leads_inserted = 0
-    for tenant_slug, tenant_id in slug_to_tenant_id.items():
-        config = tenant_by_slug(tenant_slug)
-        for demo_lead in DEMO_LEADS.get(tenant_slug, []):
-            email_blind_index = await compute_blind_index(
-                tenant_id, normalize_email(demo_lead["email"])
-            )
-            already_present = (
-                await db.execute(
-                    text(
-                        f"SELECT 1 FROM {config.schema_name}.leads "
-                        "WHERE email_blind_index = :email_blind_index LIMIT 1"
-                    ),
-                    {"email_blind_index": email_blind_index},
-                )
-            ).first()
-            if already_present is not None:
-                continue
-
-            email_encrypted = await encrypt_field(tenant_id, demo_lead["email"])
-            phone_encrypted = await encrypt_field(tenant_id, demo_lead["phone"])
-            phone_blind_index = await compute_blind_index(
-                tenant_id, normalize_phone(demo_lead["phone"])
-            )
-            date_of_birth_encrypted = await encrypt_field(
-                tenant_id, demo_lead["date_of_birth"].isoformat()
-            )
-            age_band = age_band_for(demo_lead["date_of_birth"])
-
-            street_address_encrypted = None
-            if demo_lead["street_address"] is not None:
-                street_address_encrypted = await encrypt_field(
-                    tenant_id, demo_lead["street_address"]
-                )
-
-            await db.execute(
-                text(
-                    f"INSERT INTO {config.schema_name}.leads "
-                    "(id, first_name, last_name, email_encrypted, "
-                    "email_blind_index, phone_encrypted, phone_blind_index, "
-                    "date_of_birth_encrypted, age_band, zip_code, "
-                    "street_address_encrypted, product_lines_of_interest, "
-                    "preferred_contact_method, lead_source, status, "
-                    "correlation_id) "
-                    "VALUES (:id, :first_name, :last_name, :email_encrypted, "
-                    ":email_blind_index, :phone_encrypted, :phone_blind_index, "
-                    ":date_of_birth_encrypted, :age_band, :zip_code, "
-                    ":street_address_encrypted, :product_lines_of_interest, "
-                    ":preferred_contact_method, :lead_source, :status, "
-                    ":correlation_id)"
-                ),
-                {
-                    "id": uuid.uuid4(),
-                    "first_name": demo_lead["first_name"],
-                    "last_name": demo_lead["last_name"],
-                    "email_encrypted": email_encrypted,
-                    "email_blind_index": email_blind_index,
-                    "phone_encrypted": phone_encrypted,
-                    "phone_blind_index": phone_blind_index,
-                    "date_of_birth_encrypted": date_of_birth_encrypted,
-                    "age_band": age_band,
-                    "zip_code": demo_lead["zip_code"],
-                    "street_address_encrypted": street_address_encrypted,
-                    "product_lines_of_interest": demo_lead[
-                        "product_lines_of_interest"
-                    ],
-                    "preferred_contact_method": demo_lead[
-                        "preferred_contact_method"
-                    ],
-                    "lead_source": LeadSource.PUBLIC_FORM.value,
-                    "status": LeadStatus.NEW.value,
-                    "correlation_id": uuid.uuid4(),
-                },
-            )
-            leads_inserted += 1
-    return leads_inserted
-
-
 async def seed(db: AsyncSession) -> None:
     """Insert any missing demo tenants and users, then commit once.
 
@@ -650,13 +553,14 @@ async def seed(db: AsyncSession) -> None:
     # cannot see the just-added `tenant_data_keys` rows until this commit lands.
     await db.commit()
 
-    # --- Demo PII records + demo leads: synthetic encrypted rows per tenant, in
-    # each tenant's own `pii_demo` / `leads` table. Both encrypt on write and so
-    # need the data keys above to be durable (the key load runs in its own
-    # session), which the commit above guarantees. The lead seed is per-lead
-    # insert-if-absent so P1.8 can extend `DEMO_LEADS` without colliding.
+    # --- Demo PII records: synthetic encrypted rows per tenant, in each tenant's
+    # own `pii_demo` table. They encrypt on write and so need the data keys above
+    # to be durable (the key load runs in its own session), which the commit above
+    # guarantees. The boot seed no longer seeds any New-queue `leads` rows: P1.8
+    # Epic 7 moved that set to per-session instantiation (`SESSION_LEAD_TEMPLATES`,
+    # stamped session-tagged on `assume-persona`), and the shared-historical
+    # read-only `leads` set arrives in Epic 8.
     pii_demo_rows_inserted = await seed_pii_demo_records(db, slug_to_tenant_id)
-    leads_inserted = await seed_demo_leads(db, slug_to_tenant_id)
     await db.commit()
 
     total_tenants = len(DEMO_TENANTS)
@@ -664,7 +568,7 @@ async def seed(db: AsyncSession) -> None:
     logger.info(
         "seed complete: tenants inserted=%d already-present=%d; "
         "users inserted=%d already-present=%d; settings rows inserted=%d; "
-        "data keys inserted=%d; pii_demo rows inserted=%d; leads inserted=%d",
+        "data keys inserted=%d; pii_demo rows inserted=%d",
         tenants_inserted,
         total_tenants - tenants_inserted,
         users_inserted,
@@ -672,7 +576,6 @@ async def seed(db: AsyncSession) -> None:
         settings_inserted,
         keys_inserted,
         pii_demo_rows_inserted,
-        leads_inserted,
     )
 
 
