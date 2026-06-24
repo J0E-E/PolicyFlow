@@ -1,0 +1,163 @@
+/*
+ * Workspace reset control (P1.8 Epic 11) — the Platform-Admin-only masthead
+ * affordance that wipes the visitor's own demo session, and its confirm dialog.
+ *
+ * The trigger reuses .masthead-icon-button's geometry but is a LIVE, destructive
+ * control: it overrides the inert bell cursor, earns a hover wash, and carries the
+ * --state-error hue so its intent reads at a glance. Because it renders only for
+ * Platform Admin, the masthead is always inverted to ink when it shows, so its
+ * resting + hover colors are tuned for the ink ground (--state-error-on-ink).
+ *
+ * The confirm dialog is the Guide §5 modal idiom, mirroring scenario-reference.css:
+ * a full-viewport --scrim centring a paper sheet at --surface-2 / --radius-lg /
+ * --elevation-3 (the Epic 6 token set stops at --surface-3; the plan named
+ * --surface-4 — same resolution the scenario-reference dialog already took). Tokens
+ * only; no raw hex or off-scale spacing (Guide §2–§4).
+ */
+
+/* ---- The masthead trigger: a live, destructive icon button ---- */
+
+.masthead-reset-button {
+  cursor: pointer;
+  color: var(--state-error-on-ink);
+  transition: background-color var(--motion-fast) var(--easing-standard);
+}
+
+.masthead-reset-button:hover {
+  background-color: var(--surface-ink-raised);
+}
+
+.masthead-reset-glyph {
+  display: block;
+}
+
+/* ---- The scrim: a full-viewport wash that blocks + centres the dialog ---- */
+
+.workspace-reset-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  background-color: var(--scrim);
+  animation: workspace-reset-scrim-in var(--motion-standard) var(--easing-standard);
+}
+
+@keyframes workspace-reset-scrim-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- The dialog sheet ---- */
+
+.workspace-reset-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 420px;
+  padding: var(--space-5);
+  background-color: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-3);
+  animation: workspace-reset-dialog-in var(--motion-slow) var(--easing-standard);
+}
+
+@keyframes workspace-reset-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Title role (Guide §3): 18px / 24px / 600 Public Sans — matches the peer
+   .scenario-reference-title's UI register. */
+.workspace-reset-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.workspace-reset-description {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--on-surface-variant);
+}
+
+/* The inline failure notice — quiet until it carries text, then the error hue.
+   Empty in the steady state, so it reserves no visible space (Guide §7 aria-live). */
+.workspace-reset-error {
+  margin: 0;
+  min-height: 19px;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--state-error);
+}
+
+.workspace-reset-error:empty {
+  min-height: 0;
+}
+
+/* ---- Actions: quiet Cancel + destructive Reset ---- */
+
+.workspace-reset-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+/* The Reset button is the one destructive accent — a filled button recolored to
+   the --state-error hue (the Guide has no destructive variant; this is the §2.2
+   "the only hues that signal" carve-out for a genuinely destructive action). */
+#workspace-reset-confirm.button-filled {
+  background-color: var(--state-error);
+  border-color: var(--state-error);
+  color: var(--on-ink);
+}
+
+#workspace-reset-confirm.button-filled:hover:not(:disabled) {
+  /* A touch darker on hover — the container tint would lose the destructive read,
+     so deepen the same ink instead. */
+  background-color: #8e1c24;
+  border-color: #8e1c24;
+}
+
+/* ---- Success: the confirmation + the switch-to-Agent nudge ---- */
+
+.workspace-reset-success {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.workspace-reset-success-message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--state-success);
+}
+
+.workspace-reset-success-nudge {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--on-surface-variant);
+}

@@ -23,6 +23,10 @@ import Masthead from "./Masthead.tsx";
 // DemoSessionCountdown.test.tsx.) Mocking it also keeps no unmocked network firing.
 vi.mock("../api", () => ({
   getDemoSession: vi.fn().mockResolvedValue({ status: "none" }),
+  // The Platform-Admin reset control (Epic 11) imports `resetDemoSession`; stubbed
+  // so the import resolves. It is never invoked in these masthead render tests (the
+  // reset flow itself is covered by WorkspaceResetControl.test.tsx).
+  resetDemoSession: vi.fn().mockResolvedValue({ leads_deleted: 0, ledger_deleted: 0 }),
 }));
 
 // The switcher just needs a resolving stub; the switching behavior is covered by
@@ -265,6 +269,30 @@ describe("Masthead", () => {
     expect(
       document.getElementById("app-masthead-surface-toggle"),
     ).toBeNull();
+  });
+
+  it("renders the demo-session reset control only for Platform Admin (Epic 11)", () => {
+    // A tenant-scoped persona never sees the reset control.
+    const { rerender } = render(
+      withRouter(<Masthead identity={agentIdentity} assumePersona={assumePersonaStub} onOpenScenarioReference={openScenarioReferenceStub} />),
+    );
+    expect(document.getElementById("app-masthead-reset-button")).toBeNull();
+
+    // Platform Admin gets a real (non-inert) destructive control with an
+    // accessible name, beside the DEMO SESSION countdown.
+    rerender(
+      withRouter(<Masthead
+          identity={platformAdminIdentity}
+          assumePersona={assumePersonaStub}
+          onOpenScenarioReference={openScenarioReferenceStub}
+        />),
+    );
+    const resetButton = screen.getByRole("button", { name: "Reset demo session" });
+    expect(resetButton).toBe(
+      document.getElementById("app-masthead-reset-button"),
+    );
+    expect(resetButton).not.toBeDisabled();
+    expect(resetButton).not.toHaveAttribute("aria-disabled");
   });
 
   it("shows the VIEW ONLY tag only for the Read-Only persona", () => {

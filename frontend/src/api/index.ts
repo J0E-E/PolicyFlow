@@ -13,6 +13,7 @@ export {
   listTenants,
   qualifyLead,
   rejectLead,
+  resetDemoSession,
   resolveDuplicate,
   revealLeadField,
   signOut,
@@ -21,6 +22,7 @@ export {
 export type {
   Capability,
   CreateLeadRequest,
+  DemoSessionResetResult,
   DemoSessionState,
   DemoSessionStatus,
   DuplicateResolution,

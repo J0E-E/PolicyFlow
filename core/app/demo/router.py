@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..audit.records import EventType, Outcome
 from ..audit.service import record_audit_event
+from ..auth.dependencies import require_platform_admin
 from ..auth.identity import build_identity_response
 from ..auth.provider import Identity
 from ..auth.sessions import (
@@ -47,8 +48,11 @@ from ..models.tenant import Tenant
 from ..models.user import Role, User
 from ..tenancy.registry import TENANTS, tenant_by_slug
 from .instantiation import ensure_session_leads
+from .purge import Session as PurgeSession
+from .purge import purge_sessions
 from .session import (
     DemoSessionStatus,
+    current_demo_session,
     ensure_demo_session,
     read_demo_session_state,
 )
@@ -125,6 +129,41 @@ async def get_demo_session(
     if state.last_tenant_slug is not None:
         body["last_tenant_slug"] = state.last_tenant_slug
     return body
+
+
+@router.post("/demo/session/reset")
+async def reset_demo_session(
+    request: Request,
+    _admin: Identity = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Wipe the caller's own demo-session overlay to a clean slate, keeping the session.
+
+    The visitor's role-switched **Platform Admin** self-service reset: it purges this
+    one demo session's leads (across every tenant schema) and its seed-ledger markers,
+    but **keeps** the `demo_sessions` row, the `pf_demo_session` cookie, and the
+    expiry — so the visit (and its live masthead countdown) continues. Re-seeding is
+    deferred to the next `assume-persona` (the ledger is now cleared, so it re-runs).
+
+    Gated by `require_platform_admin` — it inherits the `401 "not authenticated"` and
+    `403 "insufficient permissions"` paths. With a live session it resolves the
+    caller's session id from the `pf_demo_session` cookie (read-only) and runs the
+    Epic 9 purge engine at `Session` scope with `delete_session_row=False`; with no
+    live demo session it refuses with `409 {"detail": "no active demo session"}`.
+
+    Returns the small `{leads_deleted, ledger_deleted}` summary of what was removed.
+    """
+    state = await current_demo_session(request, db)
+    if state is None or state.id is None:
+        raise HTTPException(status_code=409, detail="no active demo session")
+
+    counts = await purge_sessions(
+        PurgeSession(state.id), delete_session_row=False
+    )
+    return {
+        "leads_deleted": counts.total_leads_deleted,
+        "ledger_deleted": counts.ledger_deleted,
+    }
 
 
 @router.post("/demo/assume-persona")

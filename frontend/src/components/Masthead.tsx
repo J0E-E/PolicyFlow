@@ -3,6 +3,7 @@ import type { Identity, Role } from "../api";
 import TenantSealMark from "./TenantSealMark.tsx";
 import RoleSwitcher from "./RoleSwitcher.tsx";
 import DemoSessionCountdown from "./DemoSessionCountdown.tsx";
+import WorkspaceResetControl from "./WorkspaceResetControl.tsx";
 import ViewOnlyTag from "./ViewOnlyTag.tsx";
 import ExplainerPopover from "./ExplainerPopover.tsx";
 import SurfaceToggle from "./SurfaceToggle.tsx";
@@ -159,6 +160,12 @@ export default function Masthead({
               plain "DEMO SESSION" overline stamp (keeping the stable
               `app-masthead-session-stamp` id). */}
           <DemoSessionCountdown />
+          {/* Platform-Admin workspace reset (P1.8 Epic 11) — beside the DEMO
+              SESSION countdown (the session UI it resets), rendered ONLY for the
+              Platform Admin persona. Self-contained: it owns its own confirm modal,
+              the `POST /api/demo/session/reset` call, and all its feedback, so the
+              masthead stays props-only. */}
+          {isPlatformAdmin && <WorkspaceResetControl />}
           {/* Session-model explainer (Epic 19) — after the DEMO SESSION stamp,
               explaining the sandboxed demo session (no CRM PARALLEL section). */}
           <ExplainerPopover

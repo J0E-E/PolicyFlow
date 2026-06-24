@@ -10,6 +10,7 @@
 
 import type {
   CreateLeadRequest,
+  DemoSessionResetResult,
   DemoSessionState,
   Identity,
   MaskedLead,
@@ -147,6 +148,20 @@ export function assumePersona(
  */
 export function getDemoSession(): Promise<DemoSessionState> {
   return request<DemoSessionState>("GET", "/api/demo/session");
+}
+
+/**
+ * Reset the caller's own demo session via `POST /api/demo/session/reset`.
+ *
+ * The Platform-Admin-only workspace reset: it wipes this demo session's leads
+ * (across every tenant schema) and its seed-ledger markers, but keeps the session
+ * row, the `pf_demo_session` cookie, and the countdown alive — re-seeding is
+ * deferred to the next persona switch. Returns the `{ leads_deleted, ledger_deleted }`
+ * summary of what was removed; the `pf_demo_session` cookie rides the call via
+ * `credentials: "include"`.
+ */
+export function resetDemoSession(): Promise<DemoSessionResetResult> {
+  return request<DemoSessionResetResult>("POST", "/api/demo/session/reset");
 }
 
 /** Sign out via `POST /api/auth/logout`; the response body is ignored. */

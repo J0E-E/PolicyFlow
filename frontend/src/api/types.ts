@@ -271,3 +271,14 @@ export interface DemoSessionState {
   /** The last tenant slug the visit assumed — present when known, else absent. */
   last_tenant_slug?: string;
 }
+
+/**
+ * The summary returned by `POST /api/demo/session/reset` — how many rows the reset
+ * removed. `leads_deleted` totals the caller's session-tagged leads across every
+ * tenant schema; `ledger_deleted` counts the seed-ledger markers cleared (so the
+ * next persona switch re-seeds a fresh queue).
+ */
+export interface DemoSessionResetResult {
+  leads_deleted: number;
+  ledger_deleted: number;
+}
