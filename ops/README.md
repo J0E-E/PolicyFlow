@@ -64,6 +64,18 @@ CI/CD recipe files used by the AWS build and deploy services.
   No `ApplicationStop` hook: the first deploy has no prior revision, and `up -d`
   recreates only the containers whose image or config changed.
 
+### Privileged DB roles need no deploy-time creds
+
+`demo_purge` (and the older `outbox_relay` / `audit_writer`) are `NOLOGIN`
+roles — they have no password and cannot connect. A migration `GRANT`s each to
+the single login role, which reaches them at runtime via `SET LOCAL ROLE`. The
+`demo_purge` grant ships in migration `0013`, and migrations run on every deploy
+(core's entrypoint runs `alembic upgrade head` in `application_start.sh`, above),
+so the role is wired the moment the deploy migrates. There are therefore **no
+per-role passwords in SSM/Terraform for any privileged role** — `after_install.sh`
+fetches only the two service-account passwords (`postgres`, `rabbitmq`). Adding a
+privileged role is a migration change, never a deploy-config one.
+
 ### One-time host bootstrap order
 
 The deploy regenerates `/opt/policyflow/.env` on every run, so there is nothing to

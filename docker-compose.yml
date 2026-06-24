@@ -42,6 +42,15 @@ services:
       # .env.example stays unchanged. Services are reached by compose name.
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       RABBITMQ_URL: amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@rabbitmq:5672/
+      # Demo/session lifecycle knobs (Epic 13). Each falls back to the same
+      # default config.py reads, so local dev is unchanged; the deploy-time .env
+      # (seeded from ops/deploy/prod.env.defaults) overrides them in the demo env.
+      # Only named vars reach the container — not env_file's whole .env.
+      SESSION_LIFETIME_SECONDS: ${SESSION_LIFETIME_SECONDS:-28800}
+      DEMO_SESSION_LIFETIME_SECONDS: ${DEMO_SESSION_LIFETIME_SECONDS:-86400}
+      DEMO_PURGE_INTERVAL_SECONDS: ${DEMO_PURGE_INTERVAL_SECONDS:-300}
+      DEMO_NIGHTLY_RESET_HOUR_UTC: ${DEMO_NIGHTLY_RESET_HOUR_UTC:-4}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
     depends_on:
       postgres:
         condition: service_healthy
