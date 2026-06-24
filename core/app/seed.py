@@ -17,6 +17,7 @@ entrypoint the container relies on.
 """
 
 import asyncio
+import json
 import logging
 import os
 import uuid
@@ -29,6 +30,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .auth.passwords import hash_password
 from .config import settings
 from .db import session_factory
+from .events.catalog import (
+    ENRICHMENT_STUB,
+    SCHEMA_VERSION,
+    EventType,
+    consumers_for_event_type,
+)
+from .events.enrichment import enrichment_result_summary
 from .leads.state import LeadSource, LeadStatus
 from .models import Role, Tenant, TenantDataKey, User
 from .pii.crypto import normalize_email, normalize_phone, wrap_key
@@ -741,6 +749,13 @@ async def seed_shared_historical_leads(
                 days=historical_lead["created_at_offset_days"]
             )
 
+            # The lead's id and correlation_id are minted here and reused by both
+            # the lead INSERT below and the synthesized event trail, so every event
+            # carries the lead's own trace id — exactly as the live writers reuse
+            # the row's `correlation_id` across `lead.created` and every later event.
+            lead_id = uuid.uuid4()
+            correlation_id = uuid.uuid4()
+
             await db.execute(
                 text(
                     f"INSERT INTO {config.schema_name}.leads "
@@ -760,7 +775,7 @@ async def seed_shared_historical_leads(
                     ":demo_session_id, :created_at, :created_at)"
                 ),
                 {
-                    "id": uuid.uuid4(),
+                    "id": lead_id,
                     "first_name": historical_lead["first_name"],
                     "last_name": historical_lead["last_name"],
                     "email_encrypted": email_encrypted,
@@ -782,13 +797,134 @@ async def seed_shared_historical_leads(
                     "status": historical_lead["status"].value,
                     "owner_user_id": owner_user_id,
                     "owner_username": owner_username,
-                    "correlation_id": uuid.uuid4(),
+                    "correlation_id": correlation_id,
                     "demo_session_id": None,
                     "created_at": created_at,
                 },
             )
             leads_inserted += 1
+
+            # Synthesize this lead's status-derived event trail (P1.9 Epic 5) so a
+            # baseline lead opens with a coherent, non-empty timeline that matches
+            # its status — the same fan-out a live delivery would have produced.
+            await _seed_lead_event_trail(
+                db,
+                schema_name=config.schema_name,
+                tenant_id=tenant_id,
+                lead_id=lead_id,
+                correlation_id=correlation_id,
+                status=historical_lead["status"],
+                created_at=created_at,
+            )
     return leads_inserted
+
+
+def _synthesized_lead_events(
+    status: LeadStatus, created_at: datetime
+) -> list[tuple[EventType, datetime]]:
+    """Return one baseline lead's status-derived `(event_type, occurred_at)` trail.
+
+    The sequence mirrors the live lifecycle writers, oldest-first: `lead.created`
+    always (at the lead's backdated `created_at`); `+ lead.assigned` at +1h because
+    every baseline lead is owned (it carries an `owner_local_part`); then the
+    terminal `lead.qualified` / `lead.rejected` at +2h for a Qualified / Rejected
+    lead. A Working lead stops after `lead.assigned`. Because `created_at` is days
+    in the past, every stamp stays comfortably before now.
+    """
+    events: list[tuple[EventType, datetime]] = [
+        (EventType.LEAD_CREATED, created_at),
+        (EventType.LEAD_ASSIGNED, created_at + timedelta(hours=1)),
+    ]
+    if status is LeadStatus.QUALIFIED:
+        events.append((EventType.LEAD_QUALIFIED, created_at + timedelta(hours=2)))
+    elif status is LeadStatus.REJECTED:
+        events.append((EventType.LEAD_REJECTED, created_at + timedelta(hours=2)))
+    return events
+
+
+async def _seed_lead_event_trail(
+    db: AsyncSession,
+    *,
+    schema_name: str,
+    tenant_id: uuid.UUID,
+    lead_id: uuid.UUID,
+    correlation_id: uuid.UUID,
+    status: LeadStatus,
+    created_at: datetime,
+) -> None:
+    """Insert one baseline lead's synthesized `outbox` + `processed_events` trail.
+
+    For each status-derived event (`_synthesized_lead_events`): one `outbox` row —
+    a fresh `event_id`, the lead's own `correlation_id`, `demo_session_id NULL`,
+    `published_at = occurred_at` (so the timeline read derives a *terminal*
+    reaction, not pending), and a payload of `{"entity_id": <lead id>}` plus
+    `"entity_type": "lead"` on `lead.created` only (mirroring the live writers; the
+    timeline read filters on `entity_id` alone). Then, for each consumer the catalog
+    fans the event out to (`consumers_for_event_type`, registry-ordered), one
+    `processed_events` row — the row's existence *is* `done` in the read-time
+    derivation, `processed_at` = the event's `occurred_at` + 1 min, and a
+    `result_summary` of `enrichment_result_summary(event_id)` for `enrichment.stub`
+    (reused, never re-derived, so the seeded score equals a live delivery's) or
+    NULL for `sync.logger`. Both writes use the schema-qualified raw `text()` INSERT
+    idiom the surrounding seed uses — not the search-path-bound ORM `enqueue_event`,
+    which would leave `published_at` NULL.
+    """
+    for event_type, occurred_at in _synthesized_lead_events(status, created_at):
+        event_id = uuid.uuid4()
+        payload: dict[str, str] = {"entity_id": str(lead_id)}
+        if event_type is EventType.LEAD_CREATED:
+            payload["entity_type"] = "lead"
+
+        await db.execute(
+            text(
+                f"INSERT INTO {schema_name}.outbox "
+                "(id, event_id, event_type, schema_version, tenant_id, "
+                "correlation_id, causation_id, actor_user_id, actor_role, "
+                "demo_session_id, payload, occurred_at, published_at) "
+                "VALUES (:id, :event_id, :event_type, :schema_version, "
+                ":tenant_id, :correlation_id, NULL, NULL, NULL, NULL, "
+                "CAST(:payload AS jsonb), :occurred_at, :published_at)"
+            ),
+            {
+                "id": uuid.uuid4(),
+                "event_id": event_id,
+                "event_type": event_type.value,
+                "schema_version": SCHEMA_VERSION,
+                "tenant_id": tenant_id,
+                "correlation_id": correlation_id,
+                "payload": json.dumps(payload),
+                "occurred_at": occurred_at,
+                "published_at": occurred_at,
+            },
+        )
+
+        processed_at = occurred_at + timedelta(minutes=1)
+        for consumer_name in consumers_for_event_type(event_type.value):
+            result_summary = (
+                enrichment_result_summary(event_id)
+                if consumer_name == ENRICHMENT_STUB
+                else None
+            )
+            await db.execute(
+                text(
+                    f"INSERT INTO {schema_name}.processed_events "
+                    "(id, consumer_name, event_id, tenant_id, event_type, "
+                    "correlation_id, processed_at, result_summary) "
+                    "VALUES (:id, :consumer_name, :event_id, :tenant_id, "
+                    ":event_type, :correlation_id, :processed_at, "
+                    ":result_summary)"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "consumer_name": consumer_name,
+                    "event_id": event_id,
+                    "tenant_id": tenant_id,
+                    "event_type": event_type.value,
+                    "correlation_id": correlation_id,
+                    "processed_at": processed_at,
+                    "result_summary": result_summary,
+                },
+            )
 
 
 async def seed(db: AsyncSession) -> None:
