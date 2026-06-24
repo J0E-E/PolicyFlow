@@ -290,8 +290,9 @@ export type ReactionStatus = "pending" | "processing" | "done" | "failed";
  * `event_type` / `event_id` / `correlation_id`, the `consumer_name` (the raw dotted
  * bus actor, e.g. `enrichment.stub`), and a derived `status` that drives a bright
  * on-ink stamp. `occurred_at` is the reaction's `processed_at` ISO string, or `null`
- * while it has not been processed. `result_summary` is `null` this epic — Epic 3
- * computes and renders it.
+ * while it has not been processed. `result_summary` is the reaction's one-line result —
+ * the enrichment quality score, computed deterministically on the consumer write-path;
+ * `sync.logger` yields none, so its summary stays `null` (rendered as an omitted sub-line).
  */
 export interface TimelineReactionRow {
   kind: "reaction";
@@ -306,7 +307,8 @@ export interface TimelineReactionRow {
   event_id: string;
   /** The parent event's raw correlation UUID string. */
   correlation_id: string;
-  /** The one-line reaction result, or `null` this epic (Epic 3 fills it). */
+  /** The one-line reaction result (e.g. the enrichment quality score), or `null` when the
+   *  reaction produces no result (the sync logger). A null summary renders no sub-line. */
   result_summary: string | null;
 }
 

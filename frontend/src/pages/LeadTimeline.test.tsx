@@ -260,6 +260,57 @@ describe("LeadTimeline", () => {
     expect(document.getElementById(`${stampId}-spinner`)).toBeNull();
   });
 
+  it("renders the result summary as a sub-line on a reaction that carries one", async () => {
+    // The done enrichment reaction carries its deterministic quality-score summary; it
+    // renders verbatim as the indented mono sub-line under the consumer name (Epic 3).
+    getLeadTimelineMock.mockResolvedValue([
+      makeRow({ event_id: "00000000-0000-0000-0000-0000000000ee" }),
+      makeReactionRow({
+        event_id: "00000000-0000-0000-0000-0000000000ee",
+        consumer_name: "enrichment.stub",
+        status: "done",
+        result_summary: "Quality score 73/100 · Medium",
+      }),
+    ]);
+
+    render(<LeadTimeline id="timeline" leadId="lead-1" />);
+
+    await waitFor(() => {
+      expect(document.getElementById("timeline-list")).toBeInTheDocument();
+    });
+
+    const summary = document.getElementById(
+      "timeline-reaction-00000000-0000-0000-0000-0000000000ee-enrichment.stub-summary",
+    );
+    expect(summary?.textContent).toBe("Quality score 73/100 · Medium");
+  });
+
+  it("omits the summary sub-line when the reaction has a null result_summary", async () => {
+    // The sync logger yields no analytic result (null summary) even when done — the
+    // sub-line is omitted entirely, the status stamp alone disambiguates the state.
+    getLeadTimelineMock.mockResolvedValue([
+      makeRow({ event_id: "00000000-0000-0000-0000-0000000000ff" }),
+      makeReactionRow({
+        event_id: "00000000-0000-0000-0000-0000000000ff",
+        consumer_name: "sync.logger",
+        status: "done",
+        result_summary: null,
+      }),
+    ]);
+
+    render(<LeadTimeline id="timeline" leadId="lead-1" />);
+
+    await waitFor(() => {
+      expect(document.getElementById("timeline-list")).toBeInTheDocument();
+    });
+
+    expect(
+      document.getElementById(
+        "timeline-reaction-00000000-0000-0000-0000-0000000000ff-sync.logger-summary",
+      ),
+    ).toBeNull();
+  });
+
   it("renders a single sync.logger reaction for a non-created lead event", async () => {
     // lead.assigned matches no enrichment routing key → only the `#` sync logger reacts.
     getLeadTimelineMock.mockResolvedValue([

@@ -17,8 +17,11 @@ interface LeadTimelineReactionRowProperties {
 // from the event's Public Sans name, reinforcing the parent/child split beyond the
 // connector. A bright on-ink status stamp (vs. the event's neutral OCCURRED) carries the
 // derived status; the `processing` stamp adds the inline spinner (reusing `.button-spinner`,
-// frozen under reduced motion by base.css). The result_summary is NOT rendered here —
-// that is Epic 3.
+// frozen under reduced motion by base.css). When the reaction carries a `result_summary`
+// (the enrichment quality score — sync.logger's is always null), it renders as an indented
+// mono sub-line under the consumer name (`--on-ink-variant`, Guide §6.1 trace style); a null
+// summary omits the line entirely — the status stamp already disambiguates the state (P1.9
+// Epic 3).
 export default function LeadTimelineReactionRow({
   id,
   row,
@@ -55,6 +58,14 @@ export default function LeadTimelineReactionRow({
       >
         {stamp.label}
       </StampTag>
+      {row.result_summary !== null && (
+        <span
+          id={`${id}-summary`}
+          className="lead-timeline-reaction-summary"
+        >
+          {row.result_summary}
+        </span>
+      )}
     </li>
   );
 }

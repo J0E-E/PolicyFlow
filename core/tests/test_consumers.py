@@ -37,8 +37,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.events import consumers as consumers_module
 from app.events.broker import EVENT_EXCHANGE, declare_topology, publish_envelope
-from app.events.catalog import ENRICHMENT_STUB, EventType
-from app.events.consumers import handle_enrichment
+from app.events.catalog import ENRICHMENT_STUB, SYNC_LOGGER, EventType
+from app.events.consumers import handle_enrichment, handle_sync_logger
+from app.events.enrichment import enrichment_result_summary
 from app.events.envelope import EventEnvelope, build_envelope
 from app.seed import seed
 from app.tenancy.registry import SUNSHINE
@@ -51,6 +52,9 @@ TENANT = SUNSHINE
 # The enrichment stub's main queue and its DLQ (the `<name>.dlq` topology shape).
 ENRICHMENT_QUEUE = ENRICHMENT_STUB
 ENRICHMENT_DEAD_LETTER_QUEUE = f"{ENRICHMENT_STUB}.dlq"
+
+# The sync logger's main queue — it binds `#`, so every published event reaches it.
+SYNC_LOGGER_QUEUE = SYNC_LOGGER
 
 
 # --- Substrate: fixtures + helpers -------------------------------------------
@@ -150,6 +154,55 @@ async def count_processed_events(
             await connection.execute(
                 text(
                     f"SELECT count(*) FROM {schema_name}.processed_events "
+                    "WHERE consumer_name = :consumer_name AND event_id = :event_id"
+                ),
+                {"consumer_name": consumer_name, "event_id": event_id},
+            )
+        ).scalar_one()
+
+
+async def deliver_message_for_event(
+    broker_channel, queue_name: str, event_id: uuid.UUID
+):
+    """Deliver *this test's* message off `queue_name`, discarding any stale ones.
+
+    The container RabbitMQ is session-scoped and never reset, and the sync logger
+    binds `#` so its queue accumulates a copy of **every** event published across
+    the whole session — a single `deliver_one` would pull the oldest *stale*
+    message, not this test's. This walks the queue with the ack outstanding,
+    **acks and discards** any message whose `message_id` is not this `event_id`
+    (`publish_envelope` stamps `message_id = str(event_id)`), and returns the first
+    one that matches with its ack still pending — so the handler under test acks it.
+    Returns `None` if the queue empties without a match.
+    """
+    queue = await broker_channel.get_queue(queue_name)
+    while True:
+        message = await queue.get(no_ack=False, fail=False)
+        if message is None:
+            return None
+        if message.message_id == str(event_id):
+            return message
+        await message.ack()
+
+
+async def read_result_summary(
+    database_engine,
+    schema_name: str,
+    consumer_name: str,
+    event_id: uuid.UUID,
+):
+    """Read the `result_summary` for `(consumer_name, event_id)` in `schema_name`.
+
+    Uses the SELECT-capable superuser engine connection (the test reads outside any
+    role switch), schema-qualified — the same faithful-reader substrate as
+    `count_processed_events`. The dedupe unique means this matches at most one row;
+    returns the column value (a string or `None`).
+    """
+    async with database_engine.connect() as connection:
+        return (
+            await connection.execute(
+                text(
+                    f"SELECT result_summary FROM {schema_name}.processed_events "
                     "WHERE consumer_name = :consumer_name AND event_id = :event_id"
                 ),
                 {"consumer_name": consumer_name, "event_id": event_id},
@@ -258,6 +311,105 @@ async def test_redelivery_is_idempotent_one_row_one_effect(
     )
     assert row_count == 1
     assert effect_call_count == 1
+
+
+# --- Phase 1: result summary on the fresh dedupe row (Epic 3) -----------------
+
+
+@pytest.mark.asyncio
+async def test_enrichment_writes_deterministic_result_summary(
+    database_engine,
+    container_consumers_session_factory,
+    container_keys_session_factory,
+    broker_channel,
+):
+    """The enrichment stub writes the deterministic quality-score summary on insert.
+
+    Consume one event through `handle_enrichment`; the fresh `processed_events` row's
+    `result_summary` must equal the pure shared derivation for that event id — the
+    same string Epic 5's seed reproduces.
+    """
+    tenant_id = await seed_and_get_tenant_id(
+        container_consumers_session_factory, TENANT.slug
+    )
+    await declare_topology(broker_channel)
+    envelope = build_consumer_envelope(tenant_id)
+
+    await publish_envelope(broker_channel, envelope)
+    message = await deliver_message_for_event(
+        broker_channel, ENRICHMENT_QUEUE, envelope.event_id
+    )
+    assert message is not None
+    await handle_enrichment(message)
+
+    stored_summary = await read_result_summary(
+        database_engine, TENANT.schema_name, ENRICHMENT_STUB, envelope.event_id
+    )
+    assert stored_summary == enrichment_result_summary(envelope.event_id)
+
+
+@pytest.mark.asyncio
+async def test_sync_logger_writes_null_result_summary(
+    database_engine,
+    container_consumers_session_factory,
+    container_keys_session_factory,
+    broker_channel,
+):
+    """The sync logger writes a NULL `result_summary` even on its fresh row.
+
+    A logger yields no analytic result, so its `processed_events` row carries no
+    result line — `result_summary IS NULL` even though the reaction is terminal.
+    """
+    tenant_id = await seed_and_get_tenant_id(
+        container_consumers_session_factory, TENANT.slug
+    )
+    await declare_topology(broker_channel)
+    envelope = build_consumer_envelope(tenant_id)
+
+    await publish_envelope(broker_channel, envelope)
+    message = await deliver_message_for_event(
+        broker_channel, SYNC_LOGGER_QUEUE, envelope.event_id
+    )
+    assert message is not None
+    await handle_sync_logger(message)
+
+    stored_summary = await read_result_summary(
+        database_engine, TENANT.schema_name, SYNC_LOGGER, envelope.event_id
+    )
+    assert stored_summary is None
+
+
+@pytest.mark.asyncio
+async def test_redelivery_does_not_rewrite_result_summary(
+    database_engine,
+    container_consumers_session_factory,
+    container_keys_session_factory,
+    broker_channel,
+):
+    """A redelivery leaves the original `result_summary` untouched (ON CONFLICT).
+
+    The summary lands atomically on the fresh INSERT; the conflicting second insert
+    does nothing, so the stored summary after two deliveries still equals the
+    deterministic derivation for that event id.
+    """
+    tenant_id = await seed_and_get_tenant_id(
+        container_consumers_session_factory, TENANT.slug
+    )
+    await declare_topology(broker_channel)
+    envelope = build_consumer_envelope(tenant_id)
+
+    for _ in range(2):
+        await publish_envelope(broker_channel, envelope)
+        message = await deliver_message_for_event(
+            broker_channel, ENRICHMENT_QUEUE, envelope.event_id
+        )
+        assert message is not None
+        await handle_enrichment(message)
+
+    stored_summary = await read_result_summary(
+        database_engine, TENANT.schema_name, ENRICHMENT_STUB, envelope.event_id
+    )
+    assert stored_summary == enrichment_result_summary(envelope.event_id)
 
 
 # --- Phase 2: failure path — nack-without-requeue → DLQ -----------------------

@@ -178,6 +178,22 @@
   word-break: break-all;
 }
 
+/* The reaction's one-line result summary (e.g. the enrichment quality score) — an
+   indented mono sub-line under the consumer name (Guide §6.1 trace style). Rendered only
+   when `result_summary` is non-null (P1.9 Epic 3); the dimmer `--on-ink-variant` tone marks
+   it as a trace detail, not the row's subject. `flex-basis: 100%` forces it onto its own
+   line within the wrapping reaction row, and the left padding aligns it past the `└─`
+   connector, under the consumer name. */
+.lead-timeline-reaction-summary {
+  flex-basis: 100%;
+  padding-left: var(--space-5);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-ink-variant);
+  word-break: break-all;
+}
+
 /* ---- Bright on-ink reaction-status stamp overrides ----
    The reaction stamp is a state signal (vs. the event's neutral OCCURRED fact), so it
    wears a bright hue — but the stamp-tag.css paper-ground containers are invisible on

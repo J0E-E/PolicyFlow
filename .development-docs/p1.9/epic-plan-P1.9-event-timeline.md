@@ -41,12 +41,19 @@ Source TDD: [./tdd-P1.9-event-timeline.md](./tdd-P1.9-event-timeline.md)
   - Status is **derived at read time** from real bus state, never stored (pure read surface, no new audit/log). `failed` is in the type/vocabulary but dormant — derivation never emits it (M3).
   - The timeline endpoint returns a **bare `dict`, no `response_model`** — so the doc-only `TimelineResponse`/`TimelineEventRow` Pydantic schemas in `app/leads/schemas.py` are **NOT wired**; reaction rows reach the client unfiltered. **Epic 3+** touching them must treat them as docs, not a runtime contract.
 
-## Epic 3 — Result summary on the enrichment reaction [UI]
+## Epic 3 — Result summary on the enrichment reaction [UI] — **COMPLETED** (31m · 17.5M tok · 558k tok/min)
 - **Goal:** When a reaction flips to `done`, the enrichment row shows a one-line result summary (a deterministic canned quality score), proving the M3-forward-compatible result path.
 - **Rough scope:** The enrichment stub computes a deterministic summary (stable across redeliveries, derived from `event_id`) and writes it to `result_summary` on the fresh-insert path; `sync.logger` writes its own one-liner or null. The endpoint returns it verbatim; reaction rows render it. (Column already added in Epic 1's migration.)
-- **Open questions / decisions for stakeholders:** Exact shape/wording of the canned summary string; how a null summary renders.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time (rung-3 grill):
+  - **Enrichment summary string:** `Quality score <N>/100 · <Band>` — `N` is **0–100, deterministic from `event_id`** (stable across redeliveries; Epic 5's seed reuses the *same* derivation), `Band` = **Low (0–59) / Medium (60–79) / High (80–100)**. Rendered mono — the showcase payoff (acceptance #1, "watch the quality score appear").
+  - **sync.logger summary:** **null even when `done`** — a logger yields no analytic result; this teaches "not every reaction produces a result" and exercises the null-render on a *terminal* row, not just transient ones.
+  - **Summary placement:** an **indented mono sub-line** under the consumer name (`--on-ink-variant`), Guide §6.1 trace style — keeps the `└─ consumer [STAMP]` line clean.
+  - **Null render:** **omit the sub-line** when `result_summary` is null; the status stamp already disambiguates pending/processing/done, so an absent line is never ambiguous.
 - **Depends on:** Epic 2.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - The enrichment summary derivation is a **pure shared function of `event_id`** in `core/app/events/enrichment.py` (`enrichment_result_summary`); score = `SHA-256(event_id.bytes) % 101` — process-stable so seed == live. **Epic 5**'s seed must **import/reuse it** (never re-derive) so seeded leads carry the *same* score a live delivery would; **sync.logger seeds null** to match its live behavior.
+  - Write path threads a **per-consumer summary callable** through `_consume → _record_processed_event`; the summary lands **atomically on the fresh `ON CONFLICT DO NOTHING` INSERT**, so redelivery never rewrites it. No new migration (0014 already has the column + grant).
+  - **Test-substrate gotcha (carry-forward):** the session-scoped RabbitMQ container is never reset and **sync.logger binds `#`**, so its queue accumulates a copy of every event — a plain `deliver_one` pulls a *stale* message. `test_consumers.py`'s `deliver_message_for_event(queue, event_id)` keys delivery on `message_id`; any later consumer test delivering off a queue must do the same, never "the next message".
 
 ## Epic 4 — Live polling: the watchable moment [UI]
 - **Goal:** The timeline updates live without manual refresh — a freshly created lead's enrichment reaction visibly advances `Pending → Processing → Done` on screen (walkthrough step 4).

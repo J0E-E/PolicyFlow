@@ -54,6 +54,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app.db import session_factory
 from app.events.catalog import ENRICHMENT_STUB, SYNC_LOGGER
+from app.events.enrichment import enrichment_result_summary
 from app.events.envelope import EventEnvelope, from_message_body
 from app.models.processed_event import ProcessedEvent
 from app.tenancy.registry import EVENT_CONSUMER_ROLE, is_known_schema
@@ -93,9 +94,15 @@ async def handle_enrichment(message) -> None:
 
     The frozen handler entrypoint Epic 7's lifespan wires to the
     ``enrichment.stub`` queue (TDD §5.3). A thin wrapper over the shared consume
-    core with this consumer's name and its enrichment canned effect.
+    core with this consumer's name, its enrichment canned effect, and the
+    deterministic enrichment result summary written onto the fresh dedupe row.
     """
-    await _consume(message, ENRICHMENT_STUB, _run_enrichment_effect)
+    await _consume(
+        message,
+        ENRICHMENT_STUB,
+        _run_enrichment_effect,
+        _enrichment_summary,
+    )
 
 
 async def handle_sync_logger(message) -> None:
@@ -103,9 +110,11 @@ async def handle_sync_logger(message) -> None:
 
     The frozen handler entrypoint Epic 7's lifespan wires to the ``sync.logger``
     queue (TDD §5.3). A thin wrapper over the shared consume core with this
-    consumer's name and its sync-logger canned effect.
+    consumer's name and its sync-logger canned effect. The sync logger yields no
+    analytic result, so its summary is always ``None`` (`_no_summary`) — a terminal
+    reaction with no result line, by design (P1.9 Epic 3).
     """
-    await _consume(message, SYNC_LOGGER, _run_sync_logger_effect)
+    await _consume(message, SYNC_LOGGER, _run_sync_logger_effect, _no_summary)
 
 
 # The consumer registry — each queue name paired with the handler that reads it.
@@ -120,14 +129,15 @@ CONSUMER_HANDLERS = (
 )
 
 
-async def _consume(message, consumer_name: str, run_effect) -> None:
+async def _consume(message, consumer_name: str, run_effect, build_summary) -> None:
     """Parse, record the dedupe row, run the effect if fresh, then ack — or DLQ.
 
     The shared consume core both handlers delegate to. On the happy path it parses
-    the body into an `EventEnvelope`, records the tenant-scoped dedupe row, runs the
-    canned `run_effect` **only when the row was freshly inserted** (a redelivery of
-    the same event finds the row already there and skips the effect — idempotent),
-    and acks.
+    the body into an `EventEnvelope`, records the tenant-scoped dedupe row (writing
+    this consumer's `build_summary` result onto the fresh row — see
+    `_record_processed_event`), runs the canned `run_effect` **only when the row was
+    freshly inserted** (a redelivery of the same event finds the row already there
+    and skips both the summary write and the effect — idempotent), and acks.
 
     On **any** failure — an unparseable body or an `UnknownEventTenant` — it logs
     the failure and **nacks without requeue**, so the broker dead-letters the
@@ -138,7 +148,9 @@ async def _consume(message, consumer_name: str, run_effect) -> None:
     """
     try:
         envelope = from_message_body(message.body)
-        is_fresh = await _record_processed_event(consumer_name, envelope)
+        is_fresh = await _record_processed_event(
+            consumer_name, envelope, build_summary
+        )
         if is_fresh:
             run_effect(envelope)
         await message.ack()
@@ -150,7 +162,9 @@ async def _consume(message, consumer_name: str, run_effect) -> None:
         await message.nack(requeue=False)
 
 
-async def _record_processed_event(consumer_name: str, envelope: EventEnvelope) -> bool:
+async def _record_processed_event(
+    consumer_name: str, envelope: EventEnvelope, build_summary
+) -> bool:
     """Record the dedupe row for `(consumer_name, event_id)`, return whether it is fresh.
 
     Resolves the envelope's `tenant_id` to its schema (raising `UnknownEventTenant`
@@ -161,6 +175,13 @@ async def _record_processed_event(consumer_name: str, envelope: EventEnvelope) -
     actually inserted (the event is **fresh** — process it) and ``False`` on a
     conflict (the event was **already processed** — skip the effect).
 
+    `build_summary(envelope)` is this consumer's one-line `result_summary` — the
+    deterministic enrichment quality score, or ``None`` for the sync logger. It is
+    computed once and written **atomically on the fresh INSERT** via ``ON CONFLICT
+    DO NOTHING``, so a redelivery never rewrites it (the conflict leaves the
+    original row untouched). No new migration: the `result_summary` column and the
+    `event_consumer` INSERT grant already exist from migration ``0014``.
+
     The `id` is set client-side (`uuid.uuid4()`) and `processed_at` is omitted so
     the column's ``now()`` server default sets it. The Core ``insert`` construct
     emits no implicit ``RETURNING``, so it sidesteps Epic 3's INSERT-only-role
@@ -168,6 +189,7 @@ async def _record_processed_event(consumer_name: str, envelope: EventEnvelope) -
     double-safe.
     """
     schema_name = await _get_tenant_schema(envelope.tenant_id)
+    result_summary = build_summary(envelope)
     async with session_factory() as session:
         await session.begin()
         # `EVENT_CONSUMER_ROLE` and `schema_name` are a fixed registry constant and
@@ -185,6 +207,7 @@ async def _record_processed_event(consumer_name: str, envelope: EventEnvelope) -
                 tenant_id=envelope.tenant_id,
                 event_type=envelope.event_type,
                 correlation_id=envelope.correlation_id,
+                result_summary=result_summary,
             )
             .on_conflict_do_nothing(index_elements=["consumer_name", "event_id"])
         )
@@ -264,3 +287,24 @@ def _run_sync_logger_effect(envelope: EventEnvelope) -> None:
         envelope.tenant_id,
         envelope.correlation_id,
     )
+
+
+def _enrichment_summary(envelope: EventEnvelope) -> str:
+    """The enrichment stub's `result_summary` — the deterministic quality score.
+
+    Delegates to the pure, shared `enrichment_result_summary` (keyed on
+    `event_id`), so the score is stable across redeliveries and Epic 5's seed
+    reproduces the *same* string by importing that one function. Written onto the
+    fresh dedupe row by `_record_processed_event` (P1.9 Epic 3).
+    """
+    return enrichment_result_summary(envelope.event_id)
+
+
+def _no_summary(_envelope: EventEnvelope) -> None:
+    """The sync logger's `result_summary` — always ``None``.
+
+    A logger yields no analytic result, so its reaction row carries no result line
+    even when ``done`` — teaching "not every reaction produces a result" and
+    exercising the null-render on a *terminal* row (P1.9 Epic 3).
+    """
+    return None
