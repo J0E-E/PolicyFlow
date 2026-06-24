@@ -24,6 +24,7 @@ are owned by ``0006``).
 
 import uuid
 from datetime import datetime
+from typing import Optional
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Mapped, mapped_column
@@ -56,3 +57,7 @@ class ProcessedEvent(Base):
         nullable=False,
         server_default=sa.text("now()"),
     )
+    # Nullable one-line reaction result (e.g. the enrichment quality score), filled
+    # by the Epic 3 summary on the fresh-insert path; older rows read NULL. The
+    # schema-less twin declares the column; migration ``0014`` owns the DB object.
+    result_summary: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)

@@ -1,0 +1,145 @@
+/*
+ * The per-lead EVENT TIMELINE ink console (P1.9 Epic 1, the tracer slice; Guide §6.1).
+ * The demo's second inverted ink console after the "How it's built" architecture panel
+ * — it reuses that treatment (an --surface-ink card, structure from a hairline not a
+ * shadow, on-ink text tokens) so the two read as one family. This file owns only the
+ * timeline's own register: the console card, the stamp overline, the vertical hairline
+ * + per-row tick markers, the raw event name + mono event_id, and the calm on-ink state
+ * notes (loading / error / empty).
+ *
+ * Tokens only; no raw hex (Guide §2). AA contrast on ink (Guide §7). The neutral
+ * OCCURRED stamp is recolored to the on-ink-variant tone — a domain event is a fact,
+ * not a state signal (Guide §2.2 "information is not a signal"), so it is deliberately
+ * NOT a state bright. Reaction sibling rows, their `└─` connectors, the Simulated badge,
+ * and live slide-in all land in later epics onto this same console.
+ */
+
+/* ---- The inverted ink-console card (Guide §2.1, §6.1) ---- */
+
+.lead-timeline-console {
+  /* Iron-gall ink ground, structure from a hairline rule not a shadow (Guide §2.1),
+     matching the architecture console. Sits at the very bottom of the lead detail
+     page, after the actions section. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--outline-ink);
+  border-radius: var(--radius-md);
+  background-color: var(--surface-ink);
+  color: var(--on-ink);
+}
+
+/* The stamp overline titling the console — the StampTag overline recolored for ink
+   (its paper default --on-surface-variant is invisible here), matching the
+   architecture console's overline treatment. */
+.lead-timeline-console .stamp-tag-overline {
+  color: var(--on-ink-variant);
+}
+
+/* ---- The calm on-ink state notes (loading / error / empty) ---- */
+
+.lead-timeline-note {
+  /* The console always renders; an empty / loading / errored timeline shows a calm
+     secondary-ink note rather than a hidden console or a blank (Guide §6.1 "never a
+     blank"). */
+  margin: 0;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--on-ink-variant);
+}
+
+/* ---- The event list: a vertical hairline the tick markers sit on ---- */
+
+.lead-timeline-list {
+  /* The hairline runs down the left as a border; rows hang to its right, each with a
+     tick marker straddling it. A description-list-free <ol> (the events are an ordered
+     sequence — oldest first — so the ordered list is the honest structure). */
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  border-left: 1px solid var(--outline-ink);
+}
+
+.lead-timeline-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The per-row tick marker — a small filled square straddling the vertical hairline,
+   in the secondary-ink tone (a neutral marker, never a state bright). Pulled left by
+   half its size plus the list's padding so it centers on the hairline. */
+.lead-timeline-tick {
+  position: absolute;
+  left: calc(-1 * var(--space-4) - 3px);
+  top: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-sm);
+  background-color: var(--on-ink-variant);
+}
+
+.lead-timeline-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* The headline line: the raw event name + the neutral OCCURRED stamp, baseline-aligned. */
+.lead-timeline-row-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* The raw dotted event name (e.g. "lead.created") in Public Sans — the UI face, the
+   truthful bus vocabulary read as words (Guide §6.1 "event names in Public Sans"). */
+.lead-timeline-event-type {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--on-ink);
+}
+
+/* The neutral OCCURRED stamp recolored for ink — the on-ink-variant tone, NOT a state
+   bright (Guide §2.2: a domain event is a fact, not a signal). An additive override
+   scoped under the console, layered on the unchanged StampTag neutral stamp; the stamp
+   geometry comes from stamp-tag.css. */
+.lead-timeline-console .stamp-tag-neutral {
+  background-color: transparent;
+  color: var(--on-ink-variant);
+  border-color: var(--outline-ink);
+}
+
+/* The meta line: the relative time + the mono event_id, secondary-ink. */
+.lead-timeline-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+
+/* The full-words relative time ("2 hours ago"); absolute UTC rides the hover title. */
+.lead-timeline-time {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-ink-variant);
+}
+
+/* The event_id in the mono register, secondary-ink (Guide §6.1 "every event_id in mono
+   --on-ink-variant"). Breaks anywhere so a long UUID never overflows the console. */
+.lead-timeline-event-id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--on-ink-variant);
+  word-break: break-all;
+}

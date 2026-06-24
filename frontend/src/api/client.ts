@@ -22,6 +22,7 @@ import type {
   RevealLeadResponse,
   Role,
   Tenant,
+  TimelineRow,
 } from "./types";
 
 /**
@@ -222,6 +223,21 @@ export async function getLead(leadId: string): Promise<MaskedLead> {
     `/api/leads/${leadId}`,
   );
   return responseBody.lead;
+}
+
+/**
+ * Get one lead's event timeline from `GET /api/leads/{id}/timeline`, unwrapping the
+ * `{ rows }` envelope into the oldest-first row array. The rows are the lead's own
+ * domain events (P1.9 Epic 1 tracer — events only). Throws an `ApiError` with
+ * `status` `404` for a missing, cross-tenant, or cross-session lead (the same guard
+ * as `getLead`). An empty array is a valid result — a lead with no events yet.
+ */
+export async function getLeadTimeline(leadId: string): Promise<TimelineRow[]> {
+  const responseBody = await request<{ rows: TimelineRow[] }>(
+    "GET",
+    `/api/leads/${leadId}/timeline`,
+  );
+  return responseBody.rows;
 }
 
 /**

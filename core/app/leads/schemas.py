@@ -46,6 +46,8 @@ __all__ = [
     "RejectLeadRequest",
     "ResolveDuplicateRequest",
     "RevealLeadRequest",
+    "TimelineEventRow",
+    "TimelineResponse",
 ]
 
 # The light email shape the public route accepts: one or more non-`@`, non-space
@@ -272,3 +274,39 @@ class RevealLeadRequest(BaseModel):
     """
 
     field: str
+
+
+class TimelineEventRow(BaseModel):
+    """One domain-event row in the per-lead timeline (P1.9 Epic 1, the tracer slice).
+
+    Unlike the create bodies above (request schemas FastAPI validates *in*), this is
+    a **response** schema: it names the shape `GET /api/leads/{id}/timeline` returns
+    so the contract is typed in one place and FastAPI documents it. The rows are
+    built by `app.leads.timeline.get_lead_timeline_rows`; this model mirrors that
+    dict 1:1.
+
+    A domain event is a neutral *fact*, so every event row is `kind="event"` /
+    `status="occurred"` (never a bright state signal — that split belongs to Epic 2's
+    reaction rows). `event_type` is the raw dotted bus value verbatim (`lead.created`),
+    `occurred_at` is ISO-8601, and `event_id` / `correlation_id` are canonical UUID
+    strings. Later epics add reaction sibling rows discriminated by a different `kind`.
+    """
+
+    kind: Literal["event"]
+    status: Literal["occurred"]
+    event_type: str
+    occurred_at: str
+    event_id: str
+    correlation_id: str
+
+
+class TimelineResponse(BaseModel):
+    """The `GET /api/leads/{id}/timeline` envelope: the lead's oldest-first event rows.
+
+    The named-envelope style every other lead route uses (`{"lead": …}` /
+    `{"leads": […]}`), here `{"rows": […]}`. The rows are oldest-first; an empty list
+    is a valid response (a lead with no events yet) — the frontend console always
+    renders, showing a calm empty note rather than hiding.
+    """
+
+    rows: list[TimelineEventRow]

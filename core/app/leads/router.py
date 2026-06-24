@@ -83,6 +83,7 @@ from ..tenancy.registry import tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
 from .intake import create_lead
 from .masking import build_masked_lead
+from .timeline import get_lead_timeline_rows
 from .visibility import visible_to_session
 from .schemas import (
     CreateLeadRequest,
@@ -347,6 +348,47 @@ async def get_lead(
     return {
         "lead": await build_masked_lead(identity.tenant_id, lead, demo_session_id)
     }
+
+
+@router.get("/{lead_id}/timeline")
+async def get_lead_timeline(
+    lead_id: uuid.UUID,
+    request: Request,
+    identity: Identity = Depends(require_authenticated),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Return one lead's own domain events as an oldest-first timeline.
+
+    The P1.9 tracer slice (Epic 1): a pure read/visibility surface over the lead's
+    own `outbox` events. It guards the lead **exactly** as `get_lead` does — same
+    load, same `_guard_loaded_lead_for_session(refuse_seed=False)` — so a missing,
+    cross-tenant, or cross-session lead is the same `404 "lead not found"` as the
+    detail read, and no caller can read or probe for a lead they cannot already see.
+    Any authenticated tenant user may read it (the same `require_authenticated` as the
+    detail read), with no tenant parameter — `get_tenant_db` scopes the outbox query
+    to the caller's own schema.
+
+    Once the lead is visible, `get_lead_timeline_rows` selects its outbox rows
+    (keyed on `payload->>'entity_id'`, which every lead event carries) oldest-first
+    and shapes them into neutral `kind="event"` / `status="occurred"` rows. The rows
+    are returned under the `{"rows": […]}` envelope (an empty list when the lead has
+    no events yet — the frontend console still renders, showing a calm empty note).
+    Reaction sibling rows are a later epic's job; this tracer returns events only.
+    """
+    lead = (
+        await db.execute(select(Lead).where(Lead.id == lead_id))
+    ).scalar_one_or_none()
+
+    if lead is None:
+        raise HTTPException(status_code=404, detail="lead not found")
+
+    # Reuse the detail read's isolation guard verbatim: a foreign session's row is a
+    # 404, identical to the cross-tenant / missing not-found. `refuse_seed=False` — the
+    # timeline is a read, so it may see shared seed rows (seed leads are empty until
+    # Epic 5 seeds their trails).
+    await _guard_loaded_lead_for_session(lead, request, db, refuse_seed=False)
+
+    return {"rows": await get_lead_timeline_rows(db, lead_id)}
 
 
 @router.post("/{lead_id}/claim")

@@ -252,6 +252,28 @@ export interface PublicIntakeResult {
   ok: boolean;
 }
 
+/**
+ * One domain-event row in a lead's timeline, from `GET /api/leads/{id}/timeline`,
+ * mirroring the backend `TimelineEventRow` (`core/app/leads/timeline.py`). This is
+ * the P1.9 Epic 1 tracer shape: events only. A domain event is a neutral *fact*, so
+ * `kind` is always `"event"` and `status` always `"occurred"` (never a bright state
+ * signal — reaction rows with derived statuses arrive in a later epic). `event_type`
+ * is the raw dotted bus value verbatim (e.g. `lead.created`); `occurred_at` is an ISO
+ * 8601 timestamp string; `event_id` / `correlation_id` are raw UUID strings.
+ */
+export interface TimelineRow {
+  kind: "event";
+  status: "occurred";
+  /** The raw dotted bus event type, verbatim — e.g. `lead.created`. */
+  event_type: string;
+  /** ISO 8601 timestamp string of when the event occurred. */
+  occurred_at: string;
+  /** Raw event UUID string. */
+  event_id: string;
+  /** Raw correlation UUID string — shared by every event of one lead's flow. */
+  correlation_id: string;
+}
+
 /** The status of the current demo session — mirrors the backend `DemoSessionStatus`. */
 export type DemoSessionStatus = "active" | "expired" | "none";
 

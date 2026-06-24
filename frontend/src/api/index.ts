@@ -9,6 +9,7 @@ export {
   getCurrentIdentity,
   getDemoSession,
   getLead,
+  getLeadTimeline,
   listLeads,
   listTenants,
   qualifyLead,
@@ -42,4 +43,5 @@ export type {
   RevealLeadResponse,
   Role,
   Tenant,
+  TimelineRow,
 } from "./types";

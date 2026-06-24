@@ -189,20 +189,31 @@ async def test_event_consumer_can_insert_and_select_but_not_update_or_delete(
 
 
 @pytest.mark.asyncio
-async def test_tenant_role_has_insert_only_on_its_own_outbox(database_engine):
-    """A tenant role can INSERT its own outbox but cannot SELECT/UPDATE/DELETE it."""
+async def test_tenant_role_has_insert_and_select_on_its_own_outbox(database_engine):
+    """A tenant role can INSERT **and** SELECT its own outbox, but not UPDATE/DELETE it.
+
+    ``0008`` tightened the tenant role to INSERT-only on its own ``outbox`` (it revoked
+    SELECT/UPDATE/DELETE), since at the time the request session only ever *wrote*
+    outbox rows. ``0014`` re-granted **SELECT** so the P1.9 per-record timeline endpoint
+    (which runs under this same role) can read the lead's own events; UPDATE/DELETE stay
+    revoked — the timeline only reads, and the relay owns the publish stamp. This asserts
+    the post-``0014`` grant shape (the migrations apply in order to ``head``).
+    """
     async with database_engine.connect() as connection:
         for tenant in TENANTS:
             outbox_table = f"{tenant.schema_name}.outbox"
 
-            assert (
-                await has_privilege(
-                    connection, tenant.db_role, outbox_table, "INSERT"
+            # INSERT (0008's transactional write) + SELECT (0014's timeline read).
+            for granted_privilege in ("INSERT", "SELECT"):
+                assert (
+                    await has_privilege(
+                        connection, tenant.db_role, outbox_table, granted_privilege
+                    )
+                    is True
                 )
-                is True
-            )
 
-            for forbidden_privilege in ("SELECT", "UPDATE", "DELETE"):
+            # UPDATE/DELETE stay revoked — the tenant role never mutates its outbox.
+            for forbidden_privilege in ("UPDATE", "DELETE"):
                 assert (
                     await has_privilege(
                         connection,

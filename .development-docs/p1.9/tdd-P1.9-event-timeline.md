@@ -142,11 +142,19 @@ polls it; a tiny migration; a one-line consumer change; and a seed extension.
 5. Poll idle-stops once every row is terminal.
 
 **Isolation** — primary gate is the lead-guard (caller must already be able to see the
-lead). Defense-in-depth: the outbox query filters `entity_type='lead'` AND
-`entity_id = :lead_id`, and a lead's events can only carry that lead's own
-`demo_session_id` (or `NULL` for seed), so reactions joined via `event_id` inherit the
-same visibility. No row from another tenant (schema-isolated) or another session can
-appear. Re-proven by test (§8).
+lead). Defense-in-depth: the outbox query filters `payload->>'entity_id' = :lead_id`,
+and a lead's events can only carry that lead's own `demo_session_id` (or `NULL` for
+seed), so reactions joined via `event_id` inherit the same visibility. No row from
+another tenant (schema-isolated) or another session can appear. Re-proven by test (§8).
+
+> **Amended 2026-06-24 (Epic 1 impl):** the filter is `entity_id` **alone**, not the
+> originally-written `entity_type='lead' AND entity_id`. Only `lead.created` carries
+> `payload.entity_type="lead"`; `assigned`/`qualified`/`rejected`/`duplicate_detected`
+> (and the envelope) carry **no** `entity_type`, so the AND clause would silently drop
+> every event but `lead.created` — breaking the Goal and Epic 5's coherent trail. Every
+> lead event reliably carries `entity_id = str(lead.id)` (a UUID, no cross-entity
+> collision), the query is per-tenant (schema-scoped), and the lead-guard is the primary
+> gate — so dropping the `entity_type` clause loses no isolation.
 
 **Seeded history** — for each baseline lead, derive its event sequence from `status`
 (`lead.created` always; `+ lead.assigned` if claimed; `+ lead.qualified` /
@@ -278,8 +286,8 @@ ship with each item.
      (nullable); update the ORM twin; keep `alembic check` green.
 2. **Timeline endpoint (tracer): domain-event rows only.**
    - `GET /api/leads/{id}/timeline` — guard the lead, select its `outbox` events
-     (`entity_type='lead'`, `entity_id`), return oldest-first event rows
-     (`status="occurred"`, timestamps). `getLeadTimeline` in the API client.
+     (`payload->>'entity_id' = :lead_id`; see the §5 amendment), return oldest-first
+     event rows (`status="occurred"`, timestamps). `getLeadTimeline` in the API client.
 3. **Frontend: render the event rows on lead detail.**
    - `LeadTimeline` component below the detail cards; chronological rows with relative
      timestamp + absolute on hover; unique `id` per element. Single fetch on open.

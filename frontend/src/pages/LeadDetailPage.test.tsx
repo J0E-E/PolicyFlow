@@ -20,6 +20,7 @@ import type { Capability, Identity, MaskedLead, Tenant } from "../api";
 vi.mock("../api", () => ({
   listTenants: vi.fn(),
   getLead: vi.fn(),
+  getLeadTimeline: vi.fn(),
   getDemoSession: vi.fn(),
   revealLeadField: vi.fn(),
   qualifyLead: vi.fn(),
@@ -44,6 +45,7 @@ import {
   ApiError,
   getDemoSession,
   getLead,
+  getLeadTimeline,
   listTenants,
   qualifyLead,
   rejectLead,
@@ -54,6 +56,7 @@ import { useCapability, useSession } from "../session";
 
 const listTenantsMock = vi.mocked(listTenants);
 const getLeadMock = vi.mocked(getLead);
+const getLeadTimelineMock = vi.mocked(getLeadTimeline);
 const getDemoSessionMock = vi.mocked(getDemoSession);
 const revealLeadFieldMock = vi.mocked(revealLeadField);
 const qualifyLeadMock = vi.mocked(qualifyLead);
@@ -141,6 +144,7 @@ function capabilitySet(held: Capability[]) {
 beforeEach(() => {
   listTenantsMock.mockReset();
   getLeadMock.mockReset();
+  getLeadTimelineMock.mockReset();
   getDemoSessionMock.mockReset();
   revealLeadFieldMock.mockReset();
   qualifyLeadMock.mockReset();
@@ -154,6 +158,11 @@ beforeEach(() => {
   );
   listTenantsMock.mockResolvedValue([sunshineTenant]);
   getLeadMock.mockResolvedValue(makeLead({}));
+  // The timeline console does its own single fetch on mount; default it to an empty
+  // trail so the existing page assertions are unaffected (the console still renders,
+  // showing its calm empty note). The dedicated timeline tests live in
+  // LeadTimeline.test.tsx.
+  getLeadTimelineMock.mockResolvedValue([]);
   // Default the demo-session probe to `active` so a plain 404 reads as a genuine
   // missing/cross-tenant lead (the graceful-expiry gate is Epic 12, opted into
   // per-test by resolving `expired`/`none`).
