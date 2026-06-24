@@ -17,6 +17,8 @@ import { leadDate, leadPreferredContactLabel } from "./leadDetailPresentation.ts
 import RevealableLeadField from "./RevealableLeadField.tsx";
 import LeadActionsSection from "./LeadActionsSection.tsx";
 import LeadDuplicatePanel from "./LeadDuplicatePanel.tsx";
+import DemoSessionGate from "../components/DemoSessionGate.tsx";
+import { getDemoSession } from "../api";
 
 // The authenticated lead detail page at `/app/leads/:id` (Epic 21). It renders
 // INSIDE the AppShell chrome (masthead + left nav), so it carries its OWN Guide §5
@@ -44,12 +46,30 @@ type TenantLoadState =
   | { kind: "error" };
 
 /** What the lead fetch is doing. A 404 is its own state (the lead is missing or
- *  belongs to another tenant); any other failure is a retryable error. */
+ *  belongs to another tenant); any other failure is a retryable error. A 404 also
+ *  cross-checks the demo session: when it is no longer active, `showGate` is true so
+ *  the graceful-expiry notice renders instead of the plain not-found (Epic 12). */
 type LeadLoadState =
   | { kind: "loading" }
   | { kind: "loaded"; lead: MaskedLead }
-  | { kind: "not-found" }
+  | { kind: "not-found"; showGate: boolean }
   | { kind: "error" };
+
+/**
+ * On a lead 404, decide whether the graceful-expiry gate should show (Epic 12). It
+ * shows only when the demo session is no longer active — `expired` (it ended) or
+ * `none` (there is none). An `active` session means a genuine missing/cross-tenant
+ * lead, so keep the plain not-found. If the probe itself fails we never trap the
+ * visitor — fall back to the plain not-found.
+ */
+async function shouldShowExpiryGate(): Promise<boolean> {
+  try {
+    const session = await getDemoSession();
+    return session.status !== "active";
+  } catch {
+    return false;
+  }
+}
 
 export default function LeadDetailPage() {
   const { identity } = useSession();
@@ -95,7 +115,7 @@ export default function LeadDetailPage() {
   // other failure is a retryable error.
   const loadLead = useCallback(() => {
     if (leadId === undefined) {
-      setLeadLoad({ kind: "not-found" });
+      setLeadLoad({ kind: "not-found", showGate: false });
       return;
     }
     setLeadLoad({ kind: "loading" });
@@ -106,15 +126,21 @@ export default function LeadDetailPage() {
           setLeadLoad({ kind: "loaded", lead });
         }
       })
-      .catch((error: unknown) => {
+      .catch(async (error: unknown) => {
         if (!isActive) {
           return;
         }
-        setLeadLoad(
-          error instanceof ApiError && error.status === 404
-            ? { kind: "not-found" }
-            : { kind: "error" },
-        );
+        if (!(error instanceof ApiError && error.status === 404)) {
+          setLeadLoad({ kind: "error" });
+          return;
+        }
+        // A 404 cross-checks the demo session: a non-active session means the
+        // visitor's data was reset out from under them, so show the graceful
+        // notice instead of the plain not-found (Epic 12).
+        const showGate = await shouldShowExpiryGate();
+        if (isActive) {
+          setLeadLoad({ kind: "not-found", showGate });
+        }
       });
     return () => {
       isActive = false;
@@ -148,6 +174,17 @@ export default function LeadDetailPage() {
   }
 
   if (leadLoad.kind === "not-found") {
+    // When the 404 is really an expired/gone demo session, the graceful-expiry
+    // gate (Epic 12) replaces the plain not-found: a calm notice with one click to
+    // a fresh session. An active session (a genuine missing/cross-tenant lead) keeps
+    // today's plain message.
+    if (leadLoad.showGate) {
+      return (
+        <div id="lead-detail-page" className="lead-detail-page">
+          <DemoSessionGate />
+        </div>
+      );
+    }
     return (
       <div id="lead-detail-page" className="lead-detail-page">
         <p id="lead-detail-not-found" className="lead-detail-status" role="status">

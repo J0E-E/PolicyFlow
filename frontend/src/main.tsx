@@ -25,6 +25,7 @@ import "./styles/shopper-intake.css";
 import "./styles/agent-intake.css";
 import "./styles/leads-list.css";
 import "./styles/lead-detail.css";
+import "./styles/demo-session-gate.css";
 import "./styles/surface-toggle.css";
 import "./styles/pages.css";
 

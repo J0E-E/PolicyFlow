@@ -1,0 +1,86 @@
+/*
+ * Demo session gate (P1.8 Epic 12) — the graceful-expiry info Banner shown on the
+ * lead-detail page when a deep-link 404s while the demo session is no longer active.
+ *
+ * A calm, full-width contextual strip (Guide §4 Banner / §6.5): a left info icon,
+ * the explanatory message, and a "Start a fresh session" action. INFORMATIONAL ONLY
+ * (Guide §6.8) — it rides the neutral surface tones, NEVER the --state-error hue, so
+ * an expired session reads as a quiet, expected reset rather than a failure. Tokens
+ * only; no raw hex or off-scale spacing (Guide §2–§4).
+ */
+
+.demo-session-gate {
+  display: block;
+}
+
+/* The banner strip: info icon + message + action on one row, wrapping to stack on
+   narrow widths so the action never crowds the message. */
+.demo-session-gate-banner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  background-color: var(--surface-1);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  /* A quiet fade-in — the strip arrives, it never alarms. */
+  animation: demo-session-gate-in var(--motion-standard) var(--easing-standard);
+}
+
+@keyframes demo-session-gate-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* The left status icon rides the muted ink (Guide §4 — informational tone, not an
+   alert hue). It sits flush with the first line of the message. */
+.demo-session-gate-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 2px;
+  color: var(--on-surface-variant);
+}
+
+/* The message column flexes to fill the strip, pushing the action to the far end. */
+.demo-session-gate-body {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.demo-session-gate-message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface);
+}
+
+/* The inline failure notice — quiet until it carries text, then the error hue.
+   Empty in the steady state, so it reserves no visible space (Guide §7 aria-live). */
+.demo-session-gate-error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--state-error);
+}
+
+.demo-session-gate-error:empty {
+  display: none;
+}
+
+/* Honor prefers-reduced-motion: the fade-in is decorative, so drop it entirely for
+   visitors who ask for less motion (Guide quality floor). */
+@media (prefers-reduced-motion: reduce) {
+  .demo-session-gate-banner {
+    animation: none;
+  }
+}

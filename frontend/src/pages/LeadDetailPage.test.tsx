@@ -20,6 +20,7 @@ import type { Capability, Identity, MaskedLead, Tenant } from "../api";
 vi.mock("../api", () => ({
   listTenants: vi.fn(),
   getLead: vi.fn(),
+  getDemoSession: vi.fn(),
   revealLeadField: vi.fn(),
   qualifyLead: vi.fn(),
   rejectLead: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock("../session", () => ({
 
 import {
   ApiError,
+  getDemoSession,
   getLead,
   listTenants,
   qualifyLead,
@@ -52,6 +54,7 @@ import { useCapability, useSession } from "../session";
 
 const listTenantsMock = vi.mocked(listTenants);
 const getLeadMock = vi.mocked(getLead);
+const getDemoSessionMock = vi.mocked(getDemoSession);
 const revealLeadFieldMock = vi.mocked(revealLeadField);
 const qualifyLeadMock = vi.mocked(qualifyLead);
 const rejectLeadMock = vi.mocked(rejectLead);
@@ -138,6 +141,7 @@ function capabilitySet(held: Capability[]) {
 beforeEach(() => {
   listTenantsMock.mockReset();
   getLeadMock.mockReset();
+  getDemoSessionMock.mockReset();
   revealLeadFieldMock.mockReset();
   qualifyLeadMock.mockReset();
   rejectLeadMock.mockReset();
@@ -150,6 +154,10 @@ beforeEach(() => {
   );
   listTenantsMock.mockResolvedValue([sunshineTenant]);
   getLeadMock.mockResolvedValue(makeLead({}));
+  // Default the demo-session probe to `active` so a plain 404 reads as a genuine
+  // missing/cross-tenant lead (the graceful-expiry gate is Epic 12, opted into
+  // per-test by resolving `expired`/`none`).
+  getDemoSessionMock.mockResolvedValue({ status: "active" });
 });
 
 afterEach(() => {
@@ -213,6 +221,88 @@ describe("LeadDetailPage loading + loaded view", () => {
       "href",
       "/app/leads",
     );
+  });
+
+  it("shows the graceful-expiry gate when a 404 lands on an expired session (Epic 12)", async () => {
+    getLeadMock.mockRejectedValue(new ApiError(404, "lead not found"));
+    getDemoSessionMock.mockResolvedValue({
+      status: "expired",
+      last_tenant_slug: "sunshine-senior-benefits",
+    });
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.getElementById("demo-session-gate")).toBeInTheDocument();
+    });
+    // The plain not-found yields to the gate.
+    expect(document.getElementById("lead-detail-not-found")).toBeNull();
+    expect(
+      document.getElementById("demo-session-gate-message"),
+    ).toHaveTextContent("Your demo session ended.");
+  });
+
+  it("shows the graceful-expiry gate when a 404 lands with no session (Epic 12)", async () => {
+    getLeadMock.mockRejectedValue(new ApiError(404, "lead not found"));
+    getDemoSessionMock.mockResolvedValue({ status: "none" });
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.getElementById("demo-session-gate")).toBeInTheDocument();
+    });
+  });
+
+  it("falls back to the plain not-found when the session probe itself fails (Epic 12)", async () => {
+    getLeadMock.mockRejectedValue(new ApiError(404, "lead not found"));
+    getDemoSessionMock.mockRejectedValue(new Error("network down"));
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.getElementById("lead-detail-not-found")).toBeInTheDocument();
+    });
+    expect(document.getElementById("demo-session-gate")).toBeNull();
+  });
+
+  it("re-assumes the current persona and reloads on 'Start a fresh session' (Epic 12)", async () => {
+    getLeadMock.mockRejectedValue(new ApiError(404, "lead not found"));
+    getDemoSessionMock.mockResolvedValue({ status: "expired" });
+    const assumePersona = vi.fn().mockResolvedValue(undefined);
+    useSessionMock.mockReturnValue({
+      ...sessionFor(agentIdentity),
+      assumePersona,
+    });
+    // jsdom does not implement navigation — stub assign so the reload is observable.
+    const assign = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...originalLocation, assign },
+    });
+
+    try {
+      renderPage();
+      await waitFor(() => {
+        expect(
+          document.getElementById("demo-session-gate-start-button"),
+        ).toBeInTheDocument();
+      });
+      fireEvent.click(
+        document.getElementById("demo-session-gate-start-button")!,
+      );
+
+      await waitFor(() => {
+        expect(assign).toHaveBeenCalledWith("/app/leads");
+      });
+      // The current persona is re-assumed (agent on the home tenant slug).
+      expect(assumePersona).toHaveBeenCalledWith(
+        "sunshine-senior-benefits",
+        "agent",
+      );
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
   });
 
   it("shows a retryable error for a non-404 failure", async () => {
