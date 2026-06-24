@@ -6,7 +6,7 @@
 // indented siblings with the correct bright stamp/hue per status, the fan-out, and the
 // spinner on `processing`.
 
-import { render, waitFor } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import LeadTimeline from "./LeadTimeline.tsx";
@@ -14,9 +14,17 @@ import type { TimelineEventRow, TimelineReactionRow } from "../api";
 
 vi.mock("../api", () => ({
   getLeadTimeline: vi.fn(),
+  // The real ApiError so `error instanceof ApiError` and `.status` work in the poll.
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.status = status;
+    }
+  },
 }));
 
-import { getLeadTimeline } from "../api";
+import { ApiError, getLeadTimeline } from "../api";
 
 const getLeadTimelineMock = vi.mocked(getLeadTimeline);
 
@@ -336,5 +344,235 @@ describe("LeadTimeline", () => {
       document.querySelectorAll(".lead-timeline-reaction-consumer"),
     ).map((node) => node.textContent);
     expect(consumerNodes).toEqual(["sync.logger"]);
+  });
+
+  // Epic 4 — the watchable moment: the armed poll re-fetches on a 1500 ms cadence while a
+  // reaction is still advancing, and idle-stops once every reaction is terminal.
+  describe("live poll", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // Flushes the pending fetch-promise microtask chain (and the React render it triggers)
+    // without advancing the 1500 ms poll timer — used to settle the mount fetch.
+    async function flushFetch() {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    // Drives the fake timers and flushes the fetch promise microtasks together so a tick's
+    // re-fetch settles before the assertion. Real timers stay off for the duration.
+    async function advancePoll() {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+    }
+
+    function reactionStamp(eventId: string, consumer: string): string {
+      return `timeline-reaction-${eventId}-${consumer}-status`;
+    }
+
+    it("advances a reaction pending → processing → done across ticks, then idle-stops", async () => {
+      const eventId = "00000000-0000-0000-0000-0000000000a1";
+      const pending = [
+        makeRow({ event_id: eventId }),
+        makeReactionRow({
+          event_id: eventId,
+          consumer_name: "enrichment.stub",
+          status: "pending",
+        }),
+      ];
+      const processing = [
+        makeRow({ event_id: eventId }),
+        makeReactionRow({
+          event_id: eventId,
+          consumer_name: "enrichment.stub",
+          status: "processing",
+        }),
+      ];
+      const done = [
+        makeRow({ event_id: eventId }),
+        makeReactionRow({
+          event_id: eventId,
+          consumer_name: "enrichment.stub",
+          status: "done",
+        }),
+      ];
+      getLeadTimelineMock
+        .mockResolvedValueOnce(pending)
+        .mockResolvedValueOnce(processing)
+        .mockResolvedValueOnce(done);
+
+      render(<LeadTimeline id="timeline" leadId="lead-1" />);
+
+      const stampId = reactionStamp(eventId, "enrichment.stub");
+
+      // First fetch settles to `pending` (neutral) — the loop is armed. Flush the mount
+      // fetch's microtasks without advancing the 1500 ms timer.
+      await flushFetch();
+      expect(document.getElementById(`${stampId}-label`)?.textContent).toBe(
+        "Pending",
+      );
+
+      // Tick → the re-fetch lands `processing` (blue, spinner).
+      await advancePoll();
+      expect(document.getElementById(`${stampId}-label`)?.textContent).toBe(
+        "Processing",
+      );
+
+      // Tick → the re-fetch lands `done` (green, terminal).
+      await advancePoll();
+      expect(document.getElementById(`${stampId}-label`)?.textContent).toBe(
+        "Done",
+      );
+
+      const callsAtTerminal = getLeadTimelineMock.mock.calls.length;
+      expect(callsAtTerminal).toBe(3);
+
+      // Once terminal the loop idle-stops: further ticks issue no more fetches.
+      await advancePoll();
+      await advancePoll();
+      expect(getLeadTimelineMock.mock.calls.length).toBe(callsAtTerminal);
+    });
+
+    it("does not poll again when the first fetch is already all-terminal", async () => {
+      const eventId = "00000000-0000-0000-0000-0000000000a2";
+      getLeadTimelineMock.mockResolvedValue([
+        makeRow({ event_id: eventId }),
+        makeReactionRow({
+          event_id: eventId,
+          consumer_name: "sync.logger",
+          status: "done",
+        }),
+      ]);
+
+      render(<LeadTimeline id="timeline" leadId="lead-1" />);
+
+      await flushFetch();
+      expect(document.getElementById("timeline-list")).toBeInTheDocument();
+      expect(getLeadTimelineMock).toHaveBeenCalledTimes(1);
+
+      // No reaction is in flight, so the loop never arms a second fetch.
+      await advancePoll();
+      await advancePoll();
+      expect(getLeadTimelineMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("re-arms the idle poll when the re-arm key changes (a qualify/reject)", async () => {
+      const eventId = "00000000-0000-0000-0000-0000000000a3";
+      const terminal = [
+        makeRow({ event_id: eventId }),
+        makeReactionRow({
+          event_id: eventId,
+          consumer_name: "sync.logger",
+          status: "done",
+        }),
+      ];
+      const reArmed = [
+        makeRow({ event_id: eventId }),
+        makeReactionRow({
+          event_id: eventId,
+          consumer_name: "sync.logger",
+          status: "done",
+        }),
+        makeRow({
+          event_type: "lead.qualified",
+          event_id: "00000000-0000-0000-0000-0000000000b3",
+        }),
+        makeReactionRow({
+          event_type: "lead.qualified",
+          event_id: "00000000-0000-0000-0000-0000000000b3",
+          consumer_name: "sync.logger",
+          status: "pending",
+        }),
+      ];
+      getLeadTimelineMock.mockResolvedValue(terminal);
+
+      const { rerender } = render(
+        <LeadTimeline id="timeline" leadId="lead-1" reArmKey="t0" />,
+      );
+
+      // The first key settles all-terminal → the loop idle-stops at one fetch.
+      await flushFetch();
+      expect(getLeadTimelineMock).toHaveBeenCalledTimes(1);
+      await advancePoll();
+      expect(getLeadTimelineMock).toHaveBeenCalledTimes(1);
+
+      // A qualify bumps `updated_at` → the re-arm key changes, restarting the loop. The
+      // re-fetch now carries a fresh pending reaction, so the loop keeps polling.
+      getLeadTimelineMock.mockResolvedValue(reArmed);
+      rerender(<LeadTimeline id="timeline" leadId="lead-1" reArmKey="t1" />);
+
+      await flushFetch();
+      expect(getLeadTimelineMock).toHaveBeenCalledTimes(2);
+      // The new pending reaction keeps the loop armed across the next tick.
+      await advancePoll();
+      expect(getLeadTimelineMock).toHaveBeenCalledTimes(3);
+    });
+
+    it("stops the poll and fires onSessionExpired on a 404, showing its calm note", async () => {
+      const eventId = "00000000-0000-0000-0000-0000000000a4";
+      // First fetch arms the loop (a pending reaction); the next poll 404s (gone session).
+      getLeadTimelineMock
+        .mockResolvedValueOnce([
+          makeRow({ event_id: eventId }),
+          makeReactionRow({
+            event_id: eventId,
+            consumer_name: "enrichment.stub",
+            status: "pending",
+          }),
+        ])
+        .mockRejectedValueOnce(new ApiError(404, "Not found"));
+      const onSessionExpired = vi.fn();
+
+      render(
+        <LeadTimeline
+          id="timeline"
+          leadId="lead-1"
+          onSessionExpired={onSessionExpired}
+        />,
+      );
+
+      // Mount fetch lands the pending reaction — armed.
+      await flushFetch();
+      expect(document.getElementById("timeline-list")).toBeInTheDocument();
+
+      // Next tick 404s: the page is notified and the console falls back to its calm note.
+      await advancePoll();
+      expect(onSessionExpired).toHaveBeenCalledTimes(1);
+      expect(document.getElementById("timeline-empty")?.textContent).toBe(
+        "No events recorded for this lead yet.",
+      );
+
+      // The poll is stopped — no further fetches even though a reaction was mid-flight.
+      const callsAfter404 = getLeadTimelineMock.mock.calls.length;
+      await advancePoll();
+      await advancePoll();
+      expect(getLeadTimelineMock.mock.calls.length).toBe(callsAfter404);
+    });
+
+    it("keeps the retryable error note on a non-404 failure (no expiry signal)", async () => {
+      getLeadTimelineMock.mockRejectedValue(new ApiError(500, "boom"));
+      const onSessionExpired = vi.fn();
+
+      render(
+        <LeadTimeline
+          id="timeline"
+          leadId="lead-1"
+          onSessionExpired={onSessionExpired}
+        />,
+      );
+
+      await flushFetch();
+      // A server error is the calm retryable error note, not an expiry — never the gate.
+      expect(document.getElementById("timeline-error")).toBeInTheDocument();
+      expect(onSessionExpired).not.toHaveBeenCalled();
+    });
   });
 });

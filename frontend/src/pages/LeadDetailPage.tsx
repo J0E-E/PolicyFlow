@@ -157,6 +157,17 @@ export default function LeadDetailPage() {
     setLeadLoad({ kind: "loaded", lead: updated });
   };
 
+  // The timeline poll hit a `404` — the lead read is gone for this session (P1.9 Epic 4).
+  // Reuse the EXISTING Epic 12 expiry probe: a non-active session (expired / none) flips
+  // the page to the graceful-expiry gate; an active session means a genuine delete, so the
+  // page stays put and the timeline console shows its own calm note. Never trap the visitor.
+  const handleTimelineSessionExpired = useCallback(async () => {
+    const showGate = await shouldShowExpiryGate();
+    if (showGate) {
+      setLeadLoad({ kind: "not-found", showGate: true });
+    }
+  }, []);
+
   // ---- Block the page until both reads land (labels need the tenant) ----
 
   if (tenantLoad.kind === "loading" || leadLoad.kind === "loading") {
@@ -268,7 +279,12 @@ export default function LeadDetailPage() {
       {/* The EVENT TIMELINE ink console sits at the VERY BOTTOM of the page, after the
           actions (Guide §6.1; P1.9 Epic 1) — the agent's read→act flow stays first and
           the dark console anchors the page end. It does its own single fetch on open. */}
-      <LeadTimeline id="lead-detail-timeline" leadId={lead.id} />
+      <LeadTimeline
+        id="lead-detail-timeline"
+        leadId={lead.id}
+        reArmKey={lead.updated_at}
+        onSessionExpired={handleTimelineSessionExpired}
+      />
     </div>
   );
 }

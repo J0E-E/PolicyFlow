@@ -348,6 +348,49 @@ describe("LeadDetailPage loading + loaded view", () => {
   });
 });
 
+describe("LeadDetailPage timeline session-expiry (P1.9 Epic 4)", () => {
+  // The lead read succeeds, so the page loads; the timeline poll then 404s. The page
+  // reuses the EXISTING Epic 12 expiry probe to decide: a non-active session → the
+  // page-level DemoSessionGate; an active session (a genuine delete) → the page stays and
+  // the timeline shows its calm empty note. Either way the poll has stopped.
+
+  it("shows the graceful-expiry gate when the timeline poll 404s on an expired session", async () => {
+    getLeadMock.mockResolvedValue(makeLead({}));
+    getLeadTimelineMock.mockRejectedValue(new ApiError(404, "lead not found"));
+    getDemoSessionMock.mockResolvedValue({
+      status: "expired",
+      last_tenant_slug: "sunshine-senior-benefits",
+    });
+    renderPage();
+
+    // The page loaded first, then the timeline 404 flips it to the gate via the Epic 12
+    // probe — no new gate component, the same one the lead-read 404 uses.
+    await waitFor(() => {
+      expect(document.getElementById("demo-session-gate")).toBeInTheDocument();
+    });
+    expect(document.getElementById("lead-detail-title")).toBeNull();
+  });
+
+  it("keeps the page and the timeline's calm note when the poll 404s on an active session", async () => {
+    getLeadMock.mockResolvedValue(makeLead({}));
+    getLeadTimelineMock.mockRejectedValue(new ApiError(404, "lead not found"));
+    getDemoSessionMock.mockResolvedValue({ status: "active" });
+    renderPage();
+
+    // The page stays put (active session = a genuine delete, not an expiry)…
+    await waitFor(() => {
+      expect(document.getElementById("lead-detail-title")).toBeInTheDocument();
+    });
+    // …and the timeline falls back to its own calm empty note, never the page gate.
+    await waitFor(() => {
+      expect(
+        document.getElementById("lead-detail-timeline-empty"),
+      ).toBeInTheDocument();
+    });
+    expect(document.getElementById("demo-session-gate")).toBeNull();
+  });
+});
+
 describe("LeadDetailPage PII reveal (§6.4)", () => {
   it("reveals a field through the inline confirm and marks it audited", async () => {
     revealLeadFieldMock.mockResolvedValue({

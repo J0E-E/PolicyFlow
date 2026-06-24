@@ -1,9 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import StampTag from "../components/StampTag.tsx";
-import { getLeadTimeline } from "../api";
+import { ApiError, getLeadTimeline } from "../api";
 import type { TimelineRow } from "../api";
 import LeadTimelineRow from "./LeadTimelineRow.tsx";
 import LeadTimelineReactionRow from "./LeadTimelineReactionRow.tsx";
+
+// The live-poll cadence while armed (P1.9 Epic 4). 1500 ms is inside the TDD's 1–2s
+// band but tighter than the ~2s example, so the ~1s relay's narrow `processing` window
+// is usually caught on a freshly created lead — the watchable moment.
+const POLL_INTERVAL_MS = 1500;
 
 interface LeadTimelineProperties {
   /** Required so every rendered element is uniquely targetable (CLAUDE.md). The
@@ -11,6 +16,28 @@ interface LeadTimelineProperties {
   id: string;
   /** The lead whose own domain events the console shows. */
   leadId: string;
+  /** A re-arm key (the lead's `updated_at`). A successful qualify/reject bumps it via the
+   *  page's in-place `setLead`, restarting the idle poll so the new event's reaction
+   *  visibly advances (P1.9 Epic 4). A lead-id change / remount also arms. Optional so a
+   *  bare `<LeadTimeline>` (a non-action context) still polls on mount. */
+  reArmKey?: string;
+  /** Fired when a poll `404`s — the lead read is gone for this session. The poll stops
+   *  either way; the page decides what to do with it via the existing Epic 12
+   *  `shouldShowExpiryGate`: a non-active (expired) session → the page-level
+   *  `DemoSessionGate`; an active session (a genuine delete) → the page stays and this
+   *  console falls back to its calm note (P1.9 Epic 4). */
+  onSessionExpired?: () => void;
+}
+
+// A reaction is still in flight while `pending` or `processing`; `done`/`failed` are
+// terminal (event rows are always terminal). The poll stays armed while any reaction is
+// non-terminal and idle-stops once every reaction has settled (P1.9 Epic 4).
+function hasPendingReaction(rows: TimelineRow[]): boolean {
+  return rows.some(
+    (row) =>
+      row.kind === "reaction" &&
+      (row.status === "pending" || row.status === "processing"),
+  );
 }
 
 // What the single timeline fetch is doing. Each state renders once inside the always-
@@ -34,29 +61,70 @@ type TimelineLoadState =
 // Tokens only, AA on ink (Guide §7); the ink-console treatment lives in
 // styles/lead-timeline.css, mirroring the ArchitectureConsole / how-its-built.css
 // pattern — the Guide wins all conflicts (no new aesthetic).
-export default function LeadTimeline({ id, leadId }: LeadTimelineProperties) {
+export default function LeadTimeline({
+  id,
+  leadId,
+  reArmKey,
+  onSessionExpired,
+}: LeadTimelineProperties) {
   const [load, setLoad] = useState<TimelineLoadState>({ kind: "loading" });
 
-  // Single fetch on open: load the lead's events once when the console mounts (or the
-  // lead id changes). No polling — live updates are Epic 4.
+  // Hold the expiry callback in a ref so the poll effect never re-runs (and never
+  // re-arms) just because the page passed a fresh closure — only `leadId` / `reArmKey`
+  // arm the loop. The poll reads the latest callback through the ref when a 404 lands.
+  const onSessionExpiredRef = useRef(onSessionExpired);
+  onSessionExpiredRef.current = onSessionExpired;
+
+  // The armed live poll (P1.9 Epic 4). On mount (or lead-id change) the console fetches
+  // once, then re-fetches every POLL_INTERVAL_MS while a reaction is still advancing.
+  // Once every reaction is terminal it idle-stops — no wasted requests on a settled
+  // timeline. A live qualify/reject restarts the loop (Phase 2 re-arm key).
   useEffect(() => {
     setLoad({ kind: "loading" });
     let isActive = true;
-    getLeadTimeline(leadId)
-      .then((rows) => {
-        if (isActive) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const poll = () => {
+      getLeadTimeline(leadId)
+        .then((rows) => {
+          if (!isActive) {
+            return;
+          }
           setLoad({ kind: "loaded", rows });
-        }
-      })
-      .catch(() => {
-        if (isActive) {
+          // Re-arm only while a reaction is still in flight; otherwise idle-stop.
+          if (hasPendingReaction(rows)) {
+            timer = setTimeout(poll, POLL_INTERVAL_MS);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!isActive) {
+            return;
+          }
+          // A `404` means the lead read is gone for this session (expired session, or a
+          // genuine delete). Stop the poll — no re-arm — and hand the decision to the
+          // page via `onSessionExpired`; the console itself falls back to its calm
+          // empty note (an active-session delete keeps the page, this note is its rest
+          // state). Any other failure stays the retryable error note.
+          if (error instanceof ApiError && error.status === 404) {
+            setLoad({ kind: "loaded", rows: [] });
+            onSessionExpiredRef.current?.();
+            return;
+          }
           setLoad({ kind: "error" });
-        }
-      });
+        });
+    };
+
+    poll();
+
     return () => {
       isActive = false;
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
     };
-  }, [leadId]);
+    // `reArmKey` (the lead's `updated_at`) restarts the loop after a qualify/reject so the
+    // new event's reaction advances on screen; `leadId` re-arms on a lead change / remount.
+  }, [leadId, reArmKey]);
 
   return (
     <section

@@ -55,12 +55,18 @@ Source TDD: [./tdd-P1.9-event-timeline.md](./tdd-P1.9-event-timeline.md)
   - Write path threads a **per-consumer summary callable** through `_consume → _record_processed_event`; the summary lands **atomically on the fresh `ON CONFLICT DO NOTHING` INSERT**, so redelivery never rewrites it. No new migration (0014 already has the column + grant).
   - **Test-substrate gotcha (carry-forward):** the session-scoped RabbitMQ container is never reset and **sync.logger binds `#`**, so its queue accumulates a copy of every event — a plain `deliver_one` pulls a *stale* message. `test_consumers.py`'s `deliver_message_for_event(queue, event_id)` keys delivery on `message_id`; any later consumer test delivering off a queue must do the same, never "the next message".
 
-## Epic 4 — Live polling: the watchable moment [UI]
+## Epic 4 — Live polling: the watchable moment [UI] — **COMPLETED** (18m · 13.7M tok · 747k tok/min)
 - **Goal:** The timeline updates live without manual refresh — a freshly created lead's enrichment reaction visibly advances `Pending → Processing → Done` on screen (walkthrough step 4).
 - **Rough scope:** Client re-fetches the timeline on a short cadence (~2s) while mounted, idle-stops once every row is terminal, and re-arms on a viewer action. Reuse the existing Epic 12 session-expiry gate so an expired-session `404` stops the poll gracefully rather than trapping.
-- **Open questions / decisions for stakeholders:** Final poll cadence tuned against the ~1s relay so `processing` is usually observable (TDD risk); re-arm trigger.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time (rung-3 grill):
+  - **Poll cadence:** **1500 ms** while armed — inside the TDD's sanctioned 1–2s band but tighter than the ~2s example, so the ~1s relay's narrow `processing` window is *usually* caught (the stated goal outranks the example value); request volume is a non-issue on a small-volume demo. A skipped `processing` tick stays honest — all three states are real.
+  - **Re-arm trigger:** the poll **idle-stops** once every reaction row is terminal (`done`/`failed`; event rows are always terminal) and **re-arms on a re-arm key = the lead's `updated_at`** — qualify/reject bump it via the page's in-place `setLead`, flowing into `LeadTimeline` to restart the loop. Lead-id change / remount also arms. No re-arm on noise (focus/scroll) — only the actions that actually emit new events.
+  - **Session-expiry 404 from the child poll:** a `/timeline` poll `404` **stops the poll** and fires an `onSessionExpired` callback; `LeadDetailPage` runs the **existing Epic 12 `shouldShowExpiryGate()`** — non-active session → render the page-level `DemoSessionGate` (faithful Epic 12 reuse); active session (a genuine delete) → page stays, timeline shows its calm note. Never traps, never hijacks the page on a non-expiry 404.
 - **Depends on:** Epic 3.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Frontend-only** — the read endpoint + status derivation already shipped (Epics 1–2); Epic 4 only adds the poll loop, re-arm, and expiry wiring to `LeadTimeline` (+ tests). No backend or migration change.
+  - **Session-expiry reuse:** `LeadTimeline` gains an `onSessionExpired` callback; `LeadDetailPage` handles it through the **existing** Epic 12 `shouldShowExpiryGate`/`DemoSessionGate` — no new gate. **Epic 7** covers this expiry-stop + the live progression in its acceptance suite.
+  - **Re-arm seam:** the poll arms on the re-arm key (lead `updated_at`) and idle-stops when no reaction row is `pending`/`processing`; the `onSessionExpired` callback is held in a **ref** so a fresh page closure never re-arms the loop — it must stay **out of the effect deps** (only `leadId`/`reArmKey` arm it). **Epic 7**'s live-moment test drives this loop.
 
 ## Epic 5 — Seeded history: coherent trails on baseline leads
 - **Goal:** Historical/seed leads open with a populated, coherent chronological timeline (never empty), matching their status.
