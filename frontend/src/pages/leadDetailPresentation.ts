@@ -6,6 +6,9 @@
 // isUnresolvedDuplicate) are reused verbatim from leadsListPresentation.ts — this
 // module only holds what is new to the detail surface.
 
+import type { StampStatus } from "../components/StampTag.tsx";
+import type { ReactionStatus } from "../api";
+
 /** The human label for a stored preferred-contact-method value, or `null` when
  *  the lead set no preference. Mirrors the intake forms' CONTACT_METHOD_OPTIONS
  *  (schemas.py `_ALLOWED_CONTACT_METHODS`). An unknown value falls back to itself
@@ -83,6 +86,47 @@ export function leadEventRelativeTime(
 function pluralizedAgo(count: number, unit: string): string {
   const pluralUnit = count === 1 ? unit : `${unit}s`;
   return `${count} ${pluralUnit} ago`;
+}
+
+// ---- Reaction-row status stamp (P1.9 Epic 2) --------------------------------
+//
+// A reaction's derived status maps onto the five frozen StampTag hues (P1.6
+// gate-locked the set — no new member). The mapping is the resolved decision: a
+// reaction that has not started is calm grey (information is not a signal, Guide
+// §2.2); an active/processing one is the blue `pending` hue (the token's
+// documented "enriching/active" meaning); a finished one is green `success`; a
+// failed one is red `error` (in the vocabulary but dormant this epic). The
+// `isProcessing` flag drives the inline spinner on the active stamp.
+
+/** The presentation of one reaction status: which StampTag hue, its label, and
+ *  whether it carries the inline "working…" spinner. */
+export interface ReactionStatusStamp {
+  /** Which of the five frozen StampTag hues the stamp wears. */
+  status: StampStatus;
+  /** The natural-case label (CSS uppercases it) — what the reaction is doing. */
+  label: string;
+  /** True only for `processing`, so the stamp shows the inline spinner. */
+  isProcessing: boolean;
+}
+
+/** Map a derived reaction status onto its stamp presentation (hue + label +
+ *  spinner). The five frozen hues carry the three live statuses plus the dormant
+ *  `failed`; an unknown value falls back to the calm neutral stamp so the row
+ *  never blanks on drift. */
+export function reactionStatusStamp(status: ReactionStatus): ReactionStatusStamp {
+  const REACTION_STATUS_STAMPS: Record<ReactionStatus, ReactionStatusStamp> = {
+    pending: { status: "neutral", label: "Pending", isProcessing: false },
+    processing: { status: "pending", label: "Processing", isProcessing: true },
+    done: { status: "success", label: "Done", isProcessing: false },
+    failed: { status: "error", label: "Failed", isProcessing: false },
+  };
+  return (
+    REACTION_STATUS_STAMPS[status] ?? {
+      status: "neutral",
+      label: "Pending",
+      isProcessing: false,
+    }
+  );
 }
 
 /**

@@ -25,6 +25,7 @@ __all__ = [
     "SYNC_LOGGER",
     "ConsumerBinding",
     "CONSUMER_BINDINGS",
+    "consumers_for_event_type",
 ]
 
 
@@ -81,3 +82,22 @@ CONSUMER_BINDINGS: tuple[ConsumerBinding, ...] = (
     ),
     ConsumerBinding(name=SYNC_LOGGER, routing_keys=("#",)),
 )
+
+
+def consumers_for_event_type(event_type: str) -> tuple[str, ...]:
+    """Return the consumer names that react to ``event_type``, in registry order.
+
+    The single source of truth for the bus fan-out, kept next to the
+    ``CONSUMER_BINDINGS`` data it reads. A consumer reacts when one of its
+    ``routing_keys`` matches the event type: either a literal equality (e.g.
+    ``lead.created``) or the catch-all ``#`` (the sync logger binds every event).
+    The result preserves ``CONSUMER_BINDINGS`` order, so callers synthesising the
+    expected reactions per event get a stable, registry-ordered fan-out — the same
+    binding source the timeline read, the seed, and the isolation test all ride,
+    never re-deriving the routing rule.
+    """
+    return tuple(
+        binding.name
+        for binding in CONSUMER_BINDINGS
+        if event_type in binding.routing_keys or "#" in binding.routing_keys
+    )

@@ -88,10 +88,10 @@ async def test_timeline_returns_all_event_types_oldest_first(seeded, db_client):
     assert response.status_code == 200
 
     rows = response.json()["rows"]
-    event_types = [row["event_type"] for row in rows]
+    event_types = [row["event_type"] for row in rows if row["kind"] == "event"]
     # Both of this lead's events appear, oldest-first (created before qualified).
     assert event_types == ["lead.created", "lead.qualified"]
-    # All events of one lead share a single correlation id (one trace).
+    # All rows of one lead share a single correlation id (one trace).
     assert len({row["correlation_id"] for row in rows}) == 1
 
 
@@ -124,7 +124,7 @@ async def test_timeline_includes_assigned_for_a_claimed_lead(
     assert response.status_code == 200
 
     rows = response.json()["rows"]
-    assert [row["event_type"] for row in rows] == [
+    assert [row["event_type"] for row in rows if row["kind"] == "event"] == [
         "lead.assigned",
         "lead.qualified",
     ]
@@ -140,8 +140,9 @@ async def test_timeline_event_row_shape(seeded, db_client):
     assert response.status_code == 200
 
     rows = response.json()["rows"]
-    assert len(rows) == 1
-    row = rows[0]
+    event_rows = [row for row in rows if row["kind"] == "event"]
+    assert len(event_rows) == 1
+    row = event_rows[0]
     assert row["kind"] == "event"
     assert row["status"] == "occurred"
     assert row["event_type"] == "lead.created"

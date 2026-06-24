@@ -26,12 +26,20 @@ Source TDD: [./tdd-P1.9-event-timeline.md](./tdd-P1.9-event-timeline.md)
   - Migration `0014` adds `processed_events.result_summary` (nullable, **unused until Epic 3**) alongside the grant, as one additive migration; **Epic 3** fills the column with no new migration.
   - **Epic 4's polling layers onto `LeadTimeline`'s single-fetch `useEffect`** — extend it, don't rebuild.
 
-## Epic 2 — Reaction rows + status derivation [UI]
+## Epic 2 — Reaction rows + status derivation [UI] — **COMPLETED** (50m · 26.4M tok · 521k tok/min)
 - **Goal:** Show each sidecar reaction the catalog fires (`enrichment.stub` on `lead.created`, `sync.logger` on every event) as a sibling row carrying a derived status — `pending → processing → done` (with `failed` present in the vocabulary but dormant).
 - **Rough scope:** Synthesize the expected reactions per event from `CONSUMER_BINDINGS`, LEFT JOIN `processed_events` on `event_id`, and derive status from real bus state (no processed row + unpublished = pending; published, no processed row = processing; processed row present = done). Endpoint merge logic + reaction-row rendering as siblings of event rows.
-- **Open questions / decisions for stakeholders:** Visual distinction of reaction rows vs. event rows and how the three statuses read at a glance (pill/label styling), within the Guide.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time (rung-3 grill):
+  - **Status hues (the `pending`-token collision):** map the three derived statuses onto the **five frozen `StampTag` hues — no new component member** (P1.6 gate-locked the set). `pending`→**neutral** grey (calm; §2.2 "information is not a signal" — nothing has happened yet); `processing`→**blue** `--state-pending-on-ink` (the token's documented "enriching/active" meaning fits *processing*, not business-pending); `done`→**green** `--state-success-on-ink`. `failed`→**red** `--state-error-on-ink`, **in the vocabulary/type but dormant** — derivation never emits it this epic (M3 forward-compat).
+  - **Reaction/consumer-name register:** the consumer name (`enrichment.stub` / `sync.logger`) renders in **mono** — a system actor / trace token, deliberately distinct from the event's Public-Sans name, reinforcing the parent/child split beyond the connector.
+  - **Processing affordance:** the `processing` stamp carries a **spinner**, reusing the existing `.button-spinner` ring (spun from `currentColor`); base.css's global reduced-motion rule already freezes it — **no per-component override**.
+  - **Reaction vs. event distinction:** per Guide §6.1 — reactions **indent under their parent** with a mono `└─` box-drawing connector + an on-ink bright stamp (vs. the event's neutral OCCURRED).
 - **Depends on:** Epic 1.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Synthesis seam:** `consumers_for_event_type(event_type)` in `app/events/catalog.py` is the single fan-out source (registry-ordered, literal-or-`#` match) — **Epic 5**'s seed and **Epic 7**'s isolation test must ride it, not re-derive the routing.
+  - `result_summary` is passed through verbatim from the processed row, **null until Epic 3** fills the column on the consumer write-path — so **Epic 3** needs no timeline-read change, only the consumer write + the reaction-row JSX (frontend row already carries the field, does not render it).
+  - Status is **derived at read time** from real bus state, never stored (pure read surface, no new audit/log). `failed` is in the type/vocabulary but dormant — derivation never emits it (M3).
+  - The timeline endpoint returns a **bare `dict`, no `response_model`** — so the doc-only `TimelineResponse`/`TimelineEventRow` Pydantic schemas in `app/leads/schemas.py` are **NOT wired**; reaction rows reach the client unfiltered. **Epic 3+** touching them must treat them as docs, not a runtime contract.
 
 ## Epic 3 — Result summary on the enrichment reaction [UI]
 - **Goal:** When a reaction flips to `done`, the enrichment row shows a one-line result summary (a deterministic canned quality score), proving the M3-forward-compatible result path.

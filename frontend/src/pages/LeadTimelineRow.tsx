@@ -1,5 +1,5 @@
 import StampTag from "../components/StampTag.tsx";
-import type { TimelineRow } from "../api";
+import type { TimelineEventRow } from "../api";
 import {
   leadEventAbsoluteUtc,
   leadEventRelativeTime,
@@ -9,8 +9,8 @@ interface LeadTimelineRowProperties {
   /** Required so every rendered element is uniquely targetable (CLAUDE.md). The
    *  tick / name / id / time / stamp ids all derive from it. */
   id: string;
-  /** One domain-event row from the timeline read. */
-  row: TimelineRow;
+  /** One domain-event row from the timeline read (its reactions render separately). */
+  row: TimelineEventRow;
 }
 
 // One event row in the lead timeline ink console (P1.9 Epic 1, Guide §6.1). A single

@@ -143,3 +143,75 @@
   color: var(--on-ink-variant);
   word-break: break-all;
 }
+
+/* ---- Reaction sibling rows (P1.9 Epic 2, Guide §6.1) ---- */
+
+/* A sidecar reaction indents under its parent event, joined by a mono `└─` connector —
+   trace output bound into a policy file (Guide §6.1). A flex row baseline-aligning the
+   connector, the mono consumer name, and the bright status stamp; the left indent sets
+   it visually below its parent on the hairline. */
+.lead-timeline-reaction-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  padding-left: var(--space-4);
+}
+
+/* The mono `└─` box-drawing connector (aria-hidden — decoration; the consumer name
+   carries the meaning). Secondary-ink so it reads as a quiet trace glyph, not a signal. */
+.lead-timeline-reaction-connector {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-ink-variant);
+}
+
+/* The consumer name (e.g. "enrichment.stub") in mono — a system actor / trace token,
+   deliberately distinct from the event's Public Sans name, reinforcing the parent/child
+   split beyond the connector. On-ink (the primary on-ink tone — it is the row's subject). */
+.lead-timeline-reaction-consumer {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-ink);
+  word-break: break-all;
+}
+
+/* ---- Bright on-ink reaction-status stamp overrides ----
+   The reaction stamp is a state signal (vs. the event's neutral OCCURRED fact), so it
+   wears a bright hue — but the stamp-tag.css paper-ground containers are invisible on
+   the ink card. These additive overrides, scoped under the console, recolor the three
+   live hues to their on-ink brights (AA on ink, Guide §7): a transparent ground, the
+   on-ink bright as text + border. `pending` (blue) carries `processing`; `success`
+   carries `done`; `error` carries the dormant `failed`. The console already overrides
+   neutral (the `pending` status) above. Tokens only; the Guide wins. */
+.lead-timeline-console .stamp-tag-pending {
+  background-color: transparent;
+  color: var(--state-pending-on-ink);
+  border-color: var(--state-pending-on-ink);
+}
+
+.lead-timeline-console .stamp-tag-success {
+  background-color: transparent;
+  color: var(--state-success-on-ink);
+  border-color: var(--state-success-on-ink);
+}
+
+.lead-timeline-console .stamp-tag-error {
+  background-color: transparent;
+  color: var(--state-error-on-ink);
+  border-color: var(--state-error-on-ink);
+}
+
+/* The inline "working…" spinner on the `processing` stamp — the SAME ring as the
+   button's (a currentColor border with one transparent side, spun by the shared
+   `button-spinner-rotation` keyframe), so it inherits the stamp's blue on-ink hue
+   from `currentColor` and base.css's global prefers-reduced-motion rule freezes it
+   (no per-component motion override). Sized down from the button's 14px to sit on
+   the 11px stamp line without stretching it. */
+.lead-timeline-reaction-row .button-spinner {
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+}

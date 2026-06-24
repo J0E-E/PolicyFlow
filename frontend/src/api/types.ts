@@ -253,15 +253,15 @@ export interface PublicIntakeResult {
 }
 
 /**
- * One domain-event row in a lead's timeline, from `GET /api/leads/{id}/timeline`,
- * mirroring the backend `TimelineEventRow` (`core/app/leads/timeline.py`). This is
- * the P1.9 Epic 1 tracer shape: events only. A domain event is a neutral *fact*, so
- * `kind` is always `"event"` and `status` always `"occurred"` (never a bright state
- * signal — reaction rows with derived statuses arrive in a later epic). `event_type`
- * is the raw dotted bus value verbatim (e.g. `lead.created`); `occurred_at` is an ISO
- * 8601 timestamp string; `event_id` / `correlation_id` are raw UUID strings.
+ * One domain-event row in a lead's timeline (`GET /api/leads/{id}/timeline`),
+ * mirroring the backend event-row shape (`core/app/leads/timeline.py`). A domain
+ * event is a neutral *fact*, so `kind` is always `"event"` and `status` always
+ * `"occurred"` (never a bright state signal — that belongs to its reaction rows).
+ * `event_type` is the raw dotted bus value verbatim (e.g. `lead.created`);
+ * `occurred_at` is an ISO 8601 timestamp string; `event_id` / `correlation_id` are
+ * raw UUID strings.
  */
-export interface TimelineRow {
+export interface TimelineEventRow {
   kind: "event";
   status: "occurred";
   /** The raw dotted bus event type, verbatim — e.g. `lead.created`. */
@@ -273,6 +273,49 @@ export interface TimelineRow {
   /** Raw correlation UUID string — shared by every event of one lead's flow. */
   correlation_id: string;
 }
+
+/**
+ * The derived status of a sidecar reaction (P1.9 Epic 2), read off real bus state,
+ * never stored. `pending` — the parent event is not yet published; `processing` —
+ * published but the consumer has not recorded a result; `done` — the consumer
+ * processed it. `failed` is in the vocabulary but dormant (M3 lights it up — the
+ * read never emits it this phase).
+ */
+export type ReactionStatus = "pending" | "processing" | "done" | "failed";
+
+/**
+ * One reaction sibling row under a domain event (P1.9 Epic 2), mirroring the
+ * backend reaction-row shape (`core/app/leads/timeline.py`). A reaction is a
+ * consumer's response to its parent event, so it carries the parent's
+ * `event_type` / `event_id` / `correlation_id`, the `consumer_name` (the raw dotted
+ * bus actor, e.g. `enrichment.stub`), and a derived `status` that drives a bright
+ * on-ink stamp. `occurred_at` is the reaction's `processed_at` ISO string, or `null`
+ * while it has not been processed. `result_summary` is `null` this epic — Epic 3
+ * computes and renders it.
+ */
+export interface TimelineReactionRow {
+  kind: "reaction";
+  status: ReactionStatus;
+  /** The raw dotted consumer name — e.g. `enrichment.stub`, `sync.logger`. */
+  consumer_name: string;
+  /** The parent event's raw dotted bus event type, verbatim. */
+  event_type: string;
+  /** The reaction's `processed_at` as an ISO 8601 string, or `null` while unprocessed. */
+  occurred_at: string | null;
+  /** The parent event's raw UUID string — reactions share their parent's `event_id`. */
+  event_id: string;
+  /** The parent event's raw correlation UUID string. */
+  correlation_id: string;
+  /** The one-line reaction result, or `null` this epic (Epic 3 fills it). */
+  result_summary: string | null;
+}
+
+/**
+ * One row in a lead's timeline — a `kind`-discriminated union of a domain-event row
+ * and its reaction sibling rows. The read returns them oldest-first, each event
+ * immediately followed by its own reactions.
+ */
+export type TimelineRow = TimelineEventRow | TimelineReactionRow;
 
 /** The status of the current demo session — mirrors the backend `DemoSessionStatus`. */
 export type DemoSessionStatus = "active" | "expired" | "none";

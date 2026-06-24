@@ -3,6 +3,7 @@ import StampTag from "../components/StampTag.tsx";
 import { getLeadTimeline } from "../api";
 import type { TimelineRow } from "../api";
 import LeadTimelineRow from "./LeadTimelineRow.tsx";
+import LeadTimelineReactionRow from "./LeadTimelineReactionRow.tsx";
 
 interface LeadTimelineProperties {
   /** Required so every rendered element is uniquely targetable (CLAUDE.md). The
@@ -109,15 +110,27 @@ function LeadTimelineBody({
     );
   }
 
+  // Each row dispatches on its `kind`: an event row renders the neutral OCCURRED
+  // headline, a reaction row renders an indented sibling with a bright status stamp.
+  // The list key is composite — reactions share their parent's `event_id`, so the
+  // key folds in `kind` and (for reactions) the `consumer_name` to stay unique.
   return (
     <ol id={`${id}-list`} className="lead-timeline-list">
-      {load.rows.map((row) => (
-        <LeadTimelineRow
-          key={row.event_id}
-          id={`${id}-row-${row.event_id}`}
-          row={row}
-        />
-      ))}
+      {load.rows.map((row) =>
+        row.kind === "reaction" ? (
+          <LeadTimelineReactionRow
+            key={`reaction-${row.event_id}-${row.consumer_name}`}
+            id={`${id}-reaction-${row.event_id}-${row.consumer_name}`}
+            row={row}
+          />
+        ) : (
+          <LeadTimelineRow
+            key={`event-${row.event_id}`}
+            id={`${id}-row-${row.event_id}`}
+            row={row}
+          />
+        ),
+      )}
     </ol>
   );
 }

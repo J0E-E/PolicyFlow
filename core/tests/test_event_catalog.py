@@ -15,6 +15,7 @@ from app.events.catalog import (
     SCHEMA_VERSION,
     SYNC_LOGGER,
     EventType,
+    consumers_for_event_type,
 )
 
 # Independent transcription of the TDD §5.3 event-type values, member name ->
@@ -70,3 +71,27 @@ def test_consumers_are_exactly_the_expected_set():
     """The registry lists every expected consumer and no extra or missing ones."""
     consumer_names = {binding.name for binding in CONSUMER_BINDINGS}
     assert consumer_names == set(EXPECTED_CONSUMER_BINDINGS)
+
+
+def test_lead_created_fans_out_to_enrichment_then_sync_logger():
+    """`lead.created` reacts via the enrichment stub (literal) *and* the sync logger (`#`).
+
+    The order is registry order — enrichment before the logger — so the synthesized
+    reaction rows are stable and the literal match and the `#` catch-all both fire.
+    """
+    assert consumers_for_event_type("lead.created") == (ENRICHMENT_STUB, SYNC_LOGGER)
+
+
+def test_other_lead_events_fan_out_to_sync_logger_only_via_catch_all():
+    """Lead events the enrichment stub does not bind reach the sync logger alone.
+
+    `lead.assigned` / `qualified` / `rejected` match no enrichment routing key, so only
+    the `#`-binding sync logger reacts — the faithful fan-out (one consumer per event).
+    """
+    for event_type in ("lead.assigned", "lead.qualified", "lead.rejected"):
+        assert consumers_for_event_type(event_type) == (SYNC_LOGGER,), event_type
+
+
+def test_unknown_event_type_still_reaches_the_catch_all_logger():
+    """An event type bound by no literal still fans out to the `#` sync logger."""
+    assert consumers_for_event_type("some.unmapped.event") == (SYNC_LOGGER,)

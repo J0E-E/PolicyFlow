@@ -42,6 +42,9 @@ export type {
   RevealLeadRequest,
   RevealLeadResponse,
   Role,
+  ReactionStatus,
   Tenant,
+  TimelineEventRow,
+  TimelineReactionRow,
   TimelineRow,
 } from "./types";

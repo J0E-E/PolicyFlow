@@ -9,6 +9,7 @@ import {
   leadEventAbsoluteUtc,
   leadEventRelativeTime,
   leadPreferredContactLabel,
+  reactionStatusStamp,
 } from "./leadDetailPresentation.ts";
 
 describe("leadPreferredContactLabel", () => {
@@ -46,6 +47,35 @@ describe("leadEventRelativeTime", () => {
   it("falls back to 'just now' for a future or unparseable timestamp", () => {
     expect(leadEventRelativeTime("2026-06-24T12:05:00Z", now)).toBe("just now");
     expect(leadEventRelativeTime("not-a-date", now)).toBe("just now");
+  });
+});
+
+describe("reactionStatusStamp", () => {
+  it("maps each derived status onto its frozen hue, label, and spinner flag", () => {
+    // pending → calm neutral grey, no spinner (information is not a signal, Guide §2.2).
+    expect(reactionStatusStamp("pending")).toEqual({
+      status: "neutral",
+      label: "Pending",
+      isProcessing: false,
+    });
+    // processing → the blue `pending` hue + the inline spinner (the active affordance).
+    expect(reactionStatusStamp("processing")).toEqual({
+      status: "pending",
+      label: "Processing",
+      isProcessing: true,
+    });
+    // done → green success, no spinner.
+    expect(reactionStatusStamp("done")).toEqual({
+      status: "success",
+      label: "Done",
+      isProcessing: false,
+    });
+    // failed → red error, dormant this epic but present in the mapping.
+    expect(reactionStatusStamp("failed")).toEqual({
+      status: "error",
+      label: "Failed",
+      isProcessing: false,
+    });
   });
 });
 
