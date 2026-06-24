@@ -452,7 +452,7 @@ ordered so the system stays runnable/deployable after each.
   per-record event timeline (**P1.9**). **Next move:** **P1.8 (Seed data, demo-session
   lifecycle & reset)**.
 
-#### P1.8 — Seed data, demo-session lifecycle & reset
+#### P1.8 — Seed data, demo-session lifecycle & reset — **COMPLETE**
 
 - **Goal:** Per-tenant seed data, demo-session sandboxing + tagging, 24h expiry purge,
   nightly reset, session indicator + graceful expired-session handling.
@@ -462,6 +462,40 @@ ordered so the system stays runnable/deployable after each.
 - **Isolation note:** session records layered over shared read-only seed; purge
   cascades across core and (later) sidecar stores by `demo_session_id` + `tenant_id`.
 - **Size:** L.
+- **Status:** **COMPLETE** (2026-06-24). All 14 epics shipped behind a green gate (full
+  backend suite **624 collected/passed** on the real Postgres + RabbitMQ substrate; full
+  frontend suite green across 40 files; `tsc -b && vite build` clean). Built simplest-first
+  behind a tracer bullet: the mint→carry→tag→observe identity thread (Epic 1), the live
+  masthead countdown (2), public-intake auto-mint + tagging (3), read isolation (4), matcher
+  scoping + seed-row write guard (5), masked-read session markers (6), per-session seed
+  instantiation + ledger (7), the richer shared-historical baseline (8), the purge engine +
+  `demo_purge` role + operator CLI (9), the in-process scheduler + nightly reset (10),
+  session-scoped reset + workspace control (11), graceful expiry (12), deploy-config
+  alignment (13), and the named acceptance suite (14). Acceptance met end-to-end: a
+  server-side `platform.demo_sessions` row carried in its own `pf_demo_session` cookie
+  identifies each visit; both intake routes tag their lead row **and** `lead.created` event
+  with `demo_session_id`; each tenant-scoped persona gets a private, idempotently-instantiated
+  (ledger-marked) claimable queue while a shared `demo_session_id IS NULL` historical baseline
+  (6 worked/historical leads per tenant) makes lists/dashboards render non-trivially; the
+  visibility predicate keeps one visitor from ever seeing or mutating another's rows (foreign
+  session ⇒ 404, seed row ⇒ 409, both gated on a live session); the purge engine deletes
+  exactly its scope (`Session`/`Expired`/`All`) across both tenant schemas under a dedicated
+  NOLOGIN `demo_purge` role, leaving the `NULL` baseline intact, driven by a background
+  scheduler (frequent expiry sweep + once-nightly reset, no boot catch-up), a Platform-Admin
+  workspace reset control, and a hand CLI; and an expired/unknown session degrades to a calm
+  "your session ended — resets every 24h" notice with one-click fresh-mint that preserves the
+  tenant. Migrations `0011` (`demo_sessions`), `0012` (per-session seed ledger), `0013`
+  (`demo_purge` role + `leads.demo_session_id` index). The named acceptance suite
+  (`test_demo_session_acceptance.py`) proves the whole contract on the real substrate in five
+  chained phases — write-tagging through the broker (envelope `demo_session_id` on the drained
+  AMQP message), `GET /api/demo/session` active/expired/none, ledger idempotency, cross-session
+  read isolation, and the three purge scopes across both schemas with the `NULL` baseline
+  surviving. **Tenant-isolation / PII invariant held throughout.** Epic plan:
+  `./p1.8/epic-plan-P1.8-seed-data-demo-session-lifecycle-reset.md`. **Faked / deferred per
+  plan:** the sidecar-store purge cascade (**M3**, Risk #5); the public fresh-mint endpoint +
+  shell-wide/unauthenticated graceful-expiry gate (backlog #2); `PII_MASTER_KEY` /
+  `SEED_USER_PASSWORD` SSM injection (backlog #3, the Epic 13 env-plumbing seam is the
+  prerequisite). **Next move:** **P1.9 (Per-record event timeline `[UI]`)**.
 
 #### P1.9 — Per-record event timeline `[UI]`
 
@@ -519,7 +553,7 @@ M0  P0.1 ✓ Walking Skeleton & Pipeline        (exit test PASSED 2026-06-12 —
         |
 M1  P1.1 ✓ Auth/RBAC → P1.2 ✓ Tenant schemas → P1.3 ✓ Encryption → P1.4 ✓ Audit
         → P1.5 ✓ Event bus+stubs → P1.6 ✓ Demo shell [UI]
-        → P1.7 ✓ Intake/queue/qualify/dup [UI] → P1.8 Seed+sessions → P1.9 Timeline [UI]
+        → P1.7 ✓ Intake/queue/qualify/dup [UI] → P1.8 ✓ Seed+sessions → P1.9 Timeline [UI]
         |
 M2  P2.1 Conversion → P2.2 Pipeline [UI] → P2.3 Quote→App→Policy
         → P2.4 Renewals+cross-sell → P2.5 Timeline/trace [UI]
@@ -569,7 +603,7 @@ Terraform/CI surprise during P0.1 as a finding to record, not a re-architecture.
 | 2 | TLS at nginx on a single EC2 without an ALB | P0.1 ✓ **retired 2026-06-12** (certbot issued; no ALB needed) | If certbot cannot issue/renew for the host, fall back to ACM+ALB and accept the added cost/infra. |
 | 3 | Schema-per-tenant + app-layer encryption coexisting without breaking blind-index search | P1.3 ✓ **retired 2026-06-14** | If blind-index exact-match can't run within a tenant schema, revisit per-tenant key derivation before building intake. |
 | 4 | Stub→real sidecar swap staying invisible | P1.5 / M3 | If M3 cannot replace a stub without changing callers, the envelope contract was wrong — fix the contract, not the callers. |
-| 5 | Demo-session purge cascading across core + sidecar stores | P1.8 / M3 | If session purge leaves orphaned sidecar records, tighten the `demo_session_id` propagation before M4. |
+| 5 | Demo-session purge cascading across core + sidecar stores | P1.8 (core ✓ **2026-06-24**) / M3 | If session purge leaves orphaned sidecar records, tighten the `demo_session_id` propagation before M4. **Core purge proven** (leads + ledger + session rows across both schemas, `NULL` baseline intact); the sidecar cascade rides the event `demo_session_id` tag and is retired when **M3** real sidecars honor it. |
 
 ---
 
@@ -811,3 +845,28 @@ deferred per plan:** the full per-tenant seed + demo-session lifecycle/purge (**
 per-record event timeline (**P1.9**). **Not yet committed** — Epic 22's test file + these doc
 edits are staged in the working tree; the manual `9-document-code-changes` → `commit-epic`
 step lands them. **Next move:** **P1.8 (Seed data, demo-session lifecycle & reset)**.
+
+**2026-06-24** — **P1.8 COMPLETE — the demo is now a self-cleaning, multi-visitor sandbox.**
+All 14 epics shipped behind a green gate (full backend suite **624** on the real Postgres +
+RabbitMQ substrate; full frontend suite green across 40 files; production build clean), built
+simplest-first behind a tracer bullet: the mint→carry→tag→observe session-identity thread, the
+live masthead countdown, public-intake auto-mint, read isolation + matcher scoping + seed-row
+write guard, masked-read "YOUR SESSION"/"SHARED SAMPLE" markers, per-session seed instantiation
++ ledger, the richer shared-historical baseline, the scope-parameterized purge engine + a
+dedicated NOLOGIN `demo_purge` role + operator CLI, the in-process scheduler (frequent expiry
+sweep + once-nightly reset, no boot catch-up), the Platform-Admin workspace reset, graceful
+expiry, deploy-config alignment, and the named acceptance suite. A server-side
+`platform.demo_sessions` row in its own `pf_demo_session` cookie now identifies every visit;
+both intake routes tag the lead row **and** the `lead.created` event with `demo_session_id`;
+concurrent visitors each work a private idempotently-seeded queue over a shared read-only
+`NULL` baseline that never collides; the purge deletes exactly its scope across both tenant
+schemas leaving that baseline intact; and an expired/unknown session degrades to a calm
+24h-reset notice with one-click tenant-preserving fresh-mint. Migrations `0011`/`0012`/`0013`.
+The named acceptance suite (`test_demo_session_acceptance.py`) proves the contract end-to-end
+in five chained phases, including the `demo_session_id` round-tripped on the wire through the
+broker. **Risk #5 core-side proven** (sidecar cascade still rides the event tag → M3).
+Tenant-isolation / PII invariant held throughout. Epic plan:
+`./p1.8/epic-plan-P1.8-seed-data-demo-session-lifecycle-reset.md`. **Faked / deferred per
+plan:** sidecar-store purge cascade (**M3**); public fresh-mint endpoint + shell-wide graceful
+gate (backlog #2); `PII_MASTER_KEY`/`SEED_USER_PASSWORD` SSM injection (backlog #3). **Next
+move:** **P1.9 (Per-record event timeline `[UI]`)** — the last Milestone-1 phase.
