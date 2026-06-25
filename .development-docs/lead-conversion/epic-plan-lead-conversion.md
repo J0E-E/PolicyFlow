@@ -88,9 +88,9 @@ Source TDD: [./tdd-lead-conversion.md](./tdd-lead-conversion.md)
 - **Depends on:** Epics 4, 8.
 - **Implementation notes:** none — `purge.py` sweeps all 5 tables per session (`PurgeCounts` gains 4 count maps; `demo_purge` SELECT+DELETE from 0015); `resolve-duplicate` 409s a `Converted` lead before its flag check; household search confirmed `visible_to_session`-scoped. A NULL-baseline household linked by a session contact survives the purge (filter is on `demo_session_id`).
 
-## Epic 11 — Acceptance suite
+## Epic 11 — Acceptance suite — **COMPLETED** (4m12s)
 - **Goal:** Prove the whole phase end-to-end on the real substrate: happy-path conversion (all entities + freeze + four event types incl. `opportunity.created` ×N, shared `correlation_id`), duplicate pre-select + new-Contact, forced-failure rollback (monkeypatch a mid-convert step), cross-session isolation + purge; plus the FE acceptance block for the convert flow + frozen panel.
 - **Rough scope:** the named `test_lead_conversion_acceptance.py`; a frontend acceptance block for the convert flow + frozen panel.
-- **Open questions / decisions for stakeholders:** none expected.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epics 1–10.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** none — test-only: `test_lead_conversion_acceptance.py` (happy path, dup pre-select + new contact, forced-failure rollback, cross-session isolation + purge) + FE `ConvertFlowAcceptance.test.tsx` (detail → convert → commit → frozen panel). No production code.
