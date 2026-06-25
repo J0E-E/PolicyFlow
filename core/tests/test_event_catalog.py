@@ -28,6 +28,10 @@ EXPECTED_EVENT_TYPES: dict[str, str] = {
     "LEAD_ASSIGNED": "lead.assigned",
     "LEAD_QUALIFIED": "lead.qualified",
     "LEAD_REJECTED": "lead.rejected",
+    "LEAD_CONVERTED": "lead.converted",
+    "CONTACT_CREATED": "contact.created",
+    "HOUSEHOLD_CREATED": "household.created",
+    "OPPORTUNITY_CREATED": "opportunity.created",
 }
 
 # Independent transcription of the TDD §5.3 / §5.4 consumer→binding registry,
@@ -89,6 +93,22 @@ def test_other_lead_events_fan_out_to_sync_logger_only_via_catch_all():
     the `#`-binding sync logger reacts — the faithful fan-out (one consumer per event).
     """
     for event_type in ("lead.assigned", "lead.qualified", "lead.rejected"):
+        assert consumers_for_event_type(event_type) == (SYNC_LOGGER,), event_type
+
+
+def test_conversion_events_fan_out_to_sync_logger_only():
+    """The four P2.1 conversion events reach the sync logger alone (no enrichment bind).
+
+    `enrichment.stub` binds only `record.created` / `lead.created`, so each conversion
+    event matches the `#` catch-all only — the lead timeline shows `lead.converted`
+    plus its single sync-logger reaction, never a stub enrichment reaction.
+    """
+    for event_type in (
+        "lead.converted",
+        "contact.created",
+        "household.created",
+        "opportunity.created",
+    ):
         assert consumers_for_event_type(event_type) == (SYNC_LOGGER,), event_type
 
 

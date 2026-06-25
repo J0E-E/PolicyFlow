@@ -34,8 +34,12 @@ class EventType(StrEnum):
 
     Each string value is the dotted name that doubles as the message's routing
     key on the topic exchange. The `record.*` / `pii.*` pair is transcribed
-    verbatim from the TDD §5.3 *Interfaces*; the `lead.*` members are the P1.7
-    lead-lifecycle events from the TDD §5.4 *Interfaces*.
+    verbatim from the TDD §5.3 *Interfaces*; the `lead.*` lifecycle members are
+    the P1.7 events from the TDD §5.4 *Interfaces*; the four conversion members
+    (`lead.converted`, `contact.created`, `household.created`,
+    `opportunity.created`) are the P2.1 events the convert action emits. None of
+    the conversion members is bound by the enrichment stub, so each fans out to
+    the `#`-binding `sync.logger` alone (`CONSUMER_BINDINGS` is unchanged).
     """
 
     RECORD_CREATED = "record.created"
@@ -45,6 +49,10 @@ class EventType(StrEnum):
     LEAD_ASSIGNED = "lead.assigned"
     LEAD_QUALIFIED = "lead.qualified"
     LEAD_REJECTED = "lead.rejected"
+    LEAD_CONVERTED = "lead.converted"
+    CONTACT_CREATED = "contact.created"
+    HOUSEHOLD_CREATED = "household.created"
+    OPPORTUNITY_CREATED = "opportunity.created"
 
 
 # The contract's schema version, stamped onto every envelope (TDD §5.3,

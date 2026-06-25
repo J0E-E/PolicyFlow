@@ -25,12 +25,12 @@ Source TDD: [./tdd-lead-conversion.md](./tdd-lead-conversion.md)
   - **Masked read carries the converted-refs; FE type lags** — `build_masked_lead` now returns `converted_contact_id` / `converted_opportunity_ids` (raw uuid / uuid[], `null` until converted), but the FE `MaskedLead` type doesn't have them yet — Epics 5/7 add the FE fields when they consume the panel.
   - **`Converted` is a terminal with no outgoing edges** — `assert_transition` already 409s claim/qualify/reject from `Converted`; Epic 10 still owes the `resolve-duplicate` frozen guard (that path doesn't route through `assert_transition`).
 
-## Epic 3 — Event vocabulary for conversion
+## Epic 3 — Event vocabulary for conversion — **COMPLETED** (2m52s)
 - **Goal:** Add the four conversion event types to the catalog so the conversion action can emit them; consumer bindings stay as-is (`sync.logger`'s `#` auto-reacts, `enrichment.stub` does not), keeping the lead timeline honest.
 - **Rough scope:** four new `EventType` members (`lead.converted`, `contact.created`, `household.created`, `opportunity.created`); extend the `test_event_catalog` expectation. `CONSUMER_BINDINGS` unchanged.
-- **Open questions / decisions for stakeholders:** none expected.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** none — added the four conversion `EventType` members (fan out to `sync.logger` only) + catalog test; `CONSUMER_BINDINGS` unchanged.
 
 ## Epic 4 — Atomic convert action (new-household path)
 - **Goal:** The core customer-value transaction. `POST /api/leads/{id}/convert` turns a held Qualified lead into a new Household + Contact + one Opportunity per confirmed product line + a note-Task (when the lead has notes), freezes the lead `Converted`, and emits the four event types — all in one request transaction (atomic, no commit), every created entity carrying the lead's `correlation_id` + `demo_session_id`.
