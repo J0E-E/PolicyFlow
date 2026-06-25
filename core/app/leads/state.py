@@ -15,8 +15,10 @@ machine, so they are frozen by the spec, not invented. `tests/test_lead_state.py
 asserts every member and every transition against an independent hand-written
 expectation so the vocabulary can never silently drift out from under the phase.
 
-`Converted` is intentionally absent: P1.7 ends at `Qualified` / `Rejected`. The
-`Qualified → Converted` status and transition are P2.1's to add.
+`Converted` is the **terminal** lead state (added in P2.1): a lead reaches it via
+the one `Qualified → Converted` edge and has **no outgoing edges**, so claim,
+qualify, reject, and any other status move out of it all fail `assert_transition`
+(the edge layer maps that to 409). The conversion action itself owns the freeze.
 
 `InvalidLeadTransition` is deliberately framework-free (a plain `Exception`, not
 an `HTTPException`). The endpoint epics (12–14) catch it at the edge and map it
@@ -37,15 +39,16 @@ __all__ = [
 class LeadStatus(StrEnum):
     """One member per lead status (TDD §5.2 data-model table / §5.3 machine).
 
-    Each string value is the exact stored/wire spelling. `Working` and
-    `Qualified` / `Rejected` are the terminal-of-this-phase states; `Converted`
-    is reserved for P2.1 and so is intentionally not a member here.
+    Each string value is the exact stored/wire spelling. `Rejected` and
+    `Converted` are the terminal states (no outgoing edges); a `Qualified` lead
+    can still move on — to `Converted` via the conversion action.
     """
 
     NEW = "New"
     WORKING = "Working"
     QUALIFIED = "Qualified"
     REJECTED = "Rejected"
+    CONVERTED = "Converted"
 
 
 class LeadSource(StrEnum):
@@ -69,6 +72,7 @@ ALLOWED_TRANSITIONS: frozenset[tuple[LeadStatus, LeadStatus]] = frozenset(
         (LeadStatus.NEW, LeadStatus.REJECTED),  # duplicate-resolution reject
         (LeadStatus.WORKING, LeadStatus.QUALIFIED),  # qualify
         (LeadStatus.WORKING, LeadStatus.REJECTED),  # reject
+        (LeadStatus.QUALIFIED, LeadStatus.CONVERTED),  # convert (P2.1)
     }
 )
 

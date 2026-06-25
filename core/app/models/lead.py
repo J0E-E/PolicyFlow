@@ -16,8 +16,10 @@ without decryption; the derived plaintext ``age_band``; the ``product_lines_of_i
 key array; the ``lead_source`` / ``status`` text columns (plain text, validated
 app-side by ``StrEnum`` — **not** PG enums, the P1.1 lesson); the owner and
 duplicate-linkage bookkeeping; the optional free-text ``rejection_reason`` captured
-at reject (added by migration ``0010``, kept separate from intake ``notes``); and
-the ``correlation_id`` / ``demo_session_id`` event-trace columns.
+at reject (added by migration ``0010``, kept separate from intake ``notes``); the
+``converted_contact_id`` / ``converted_opportunity_ids`` converted-ref columns a
+P2.1 freeze sets (added by migration ``0015``, null until ``Converted``); and the
+``correlation_id`` / ``demo_session_id`` event-trace columns.
 
 The two blind-index indexes (``ix_leads_email_blind_index`` /
 ``ix_leads_phone_blind_index``) are **owned by migration 0009**, not declared on
@@ -92,6 +94,16 @@ class Lead(Base):
     )
     duplicate_resolution: Mapped[Optional[str]] = mapped_column(
         sa.Text, nullable=True
+    )
+    # The converted-ref columns a freeze sets (migration 0015): the new Contact and
+    # the one-or-more new Opportunities the lead became. Null until the lead is
+    # `Converted`. `converted_opportunity_ids` is a `uuid[]` (the
+    # `product_lines_of_interest` `text[]` precedent).
+    converted_contact_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        sa.Uuid, nullable=True
+    )
+    converted_opportunity_ids: Mapped[Optional[list[uuid.UUID]]] = mapped_column(
+        sa.ARRAY(sa.Uuid), nullable=True
     )
     correlation_id: Mapped[uuid.UUID] = mapped_column(
         sa.Uuid, nullable=False

@@ -83,7 +83,12 @@ export interface Tenant {
 }
 
 /** A lead's lifecycle status — mirrors the backend `LeadStatus` values. */
-export type LeadStatus = "New" | "Working" | "Qualified" | "Rejected";
+export type LeadStatus =
+  | "New"
+  | "Working"
+  | "Qualified"
+  | "Rejected"
+  | "Converted";
 
 /** Where a lead came from — mirrors the backend `LeadSource` values. */
 export type LeadSource = "public_form" | "agent_entered";

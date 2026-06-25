@@ -7,6 +7,9 @@
 // The hue choices follow Guide §2.2 ("the only hues that signal"): a brand-new
 // lead is neutral (information, not a signal), a Working lead is pending (an open
 // thread someone owns), a Qualified lead is success, a Rejected lead is error.
+// A Converted lead is the positive terminal outcome, so it also reads as success
+// (the label distinguishes it from Qualified) — Guide §2.2 offers no other
+// positive hue, and no new hue is invented.
 
 import type { LeadStatus } from "../api";
 import type { StampStatus } from "./StampTag.tsx";
@@ -27,12 +30,13 @@ const LEAD_STATUS_STAMPS: Record<LeadStatus, LeadStatusStamp> = {
   Working: { status: "pending", label: "Working" },
   Qualified: { status: "success", label: "Qualified" },
   Rejected: { status: "error", label: "Rejected" },
+  Converted: { status: "success", label: "Converted" },
 };
 
 /**
  * Map a lead's lifecycle status to its Stamp presentation (hue + label). Pure and
  * total over the `LeadStatus` union. `New → neutral`, `Working → pending`,
- * `Qualified → success`, `Rejected → error`.
+ * `Qualified → success`, `Rejected → error`, `Converted → success`.
  */
 export function leadStatusStamp(status: LeadStatus): LeadStatusStamp {
   return LEAD_STATUS_STAMPS[status];

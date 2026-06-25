@@ -16,7 +16,8 @@ Three rules govern the shape (all locked at the gate):
 
 - **Plaintext as-is** — the non-sensitive columns (`id`, names, `age_band`,
   `zip_code`, the product-line keys, `notes`, `rejection_reason`, `lead_source`,
-  `status`, the owner and duplicate-linkage bookkeeping, the timestamps) are
+  `status`, the owner and duplicate-linkage bookkeeping, the converted-ref columns
+  `converted_contact_id` / `converted_opportunity_ids`, the timestamps) are
   returned unchanged. The
   stored plaintext `age_band` is shown directly — it is **not** recomputed from
   the (never-decrypted-here) date of birth.
@@ -126,6 +127,12 @@ async def build_masked_lead(
         "owner_username": lead.owner_username,
         "duplicate_of_lead_id": lead.duplicate_of_lead_id,
         "duplicate_resolution": lead.duplicate_resolution,
+        # The converted-ref columns, returned raw: the response encoder stringifies
+        # the uuid and the uuid[] (a JSON array of strings), exactly as `id` and
+        # `product_lines_of_interest` are handled. Both `null` until the lead is
+        # `Converted`.
+        "converted_contact_id": lead.converted_contact_id,
+        "converted_opportunity_ids": lead.converted_opportunity_ids,
         "created_at": lead.created_at,
         "updated_at": lead.updated_at,
         "is_seed": is_seed,

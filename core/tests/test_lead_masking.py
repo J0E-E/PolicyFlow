@@ -106,6 +106,8 @@ def build_lead(**overrides) -> Lead:
         "owner_username": "agent.smith",
         "duplicate_of_lead_id": uuid.uuid4(),
         "duplicate_resolution": "linked",
+        "converted_contact_id": None,
+        "converted_opportunity_ids": None,
         "correlation_id": uuid.uuid4(),
         "demo_session_id": None,
         "created_at": now,
@@ -190,6 +192,8 @@ async def test_happy_path_emits_the_full_expected_field_set():
         "owner_username",
         "duplicate_of_lead_id",
         "duplicate_resolution",
+        "converted_contact_id",
+        "converted_opportunity_ids",
         "created_at",
         "updated_at",
         "is_seed",
@@ -246,6 +250,41 @@ async def test_optional_fields_render_null_when_unset():
     assert masked["owner_username"] is None
     assert masked["duplicate_of_lead_id"] is None
     assert masked["duplicate_resolution"] is None
+
+
+# --- (b2) Converted-ref columns (P2.1) ------------------------------------
+
+
+async def test_converted_refs_render_null_for_an_unconverted_lead():
+    """A lead that hasn't been converted carries `null` for both converted refs."""
+    lead = build_lead(
+        converted_contact_id=None, converted_opportunity_ids=None
+    )
+    masked = await build_masked_lead(TENANT_ID, lead)
+
+    assert masked["converted_contact_id"] is None
+    assert masked["converted_opportunity_ids"] is None
+
+
+async def test_converted_refs_pass_through_raw_for_a_converted_lead():
+    """A converted lead returns the raw uuid and uuid list — the encoder stringifies.
+
+    The builder does no casting: `converted_contact_id` is the raw `uuid.UUID` and
+    `converted_opportunity_ids` is the raw `list[uuid.UUID]` (the response encoder
+    turns them into a string and a JSON array of strings, as it does for `id` and
+    `product_lines_of_interest`).
+    """
+    contact_id = uuid.uuid4()
+    opportunity_ids = [uuid.uuid4(), uuid.uuid4()]
+    lead = build_lead(
+        status="Converted",
+        converted_contact_id=contact_id,
+        converted_opportunity_ids=opportunity_ids,
+    )
+    masked = await build_masked_lead(TENANT_ID, lead)
+
+    assert masked["converted_contact_id"] == contact_id
+    assert masked["converted_opportunity_ids"] == opportunity_ids
 
 
 # --- (c) Exclusions -------------------------------------------------------

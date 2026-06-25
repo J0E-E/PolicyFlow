@@ -33,12 +33,20 @@ describe("leadStatusStamp", () => {
     });
   });
 
+  it("maps Converted to a success stamp", () => {
+    expect(leadStatusStamp("Converted")).toEqual({
+      status: "success",
+      label: "Converted",
+    });
+  });
+
   it("is total over every LeadStatus (no status returns undefined)", () => {
     const everyStatus: LeadStatus[] = [
       "New",
       "Working",
       "Qualified",
       "Rejected",
+      "Converted",
     ];
     for (const status of everyStatus) {
       expect(leadStatusStamp(status)).toBeDefined();

@@ -16,13 +16,14 @@ Source TDD: [./tdd-lead-conversion.md](./tdd-lead-conversion.md)
 - **Implementation notes:**
   - **Column contract for Epic 2's ORM twins** — `0015` shipped the four tables with **owner/assignee fields nullable**, `opportunities.origin` NOT NULL (no default), `stage` DEFAULT `'New'`, `tasks.body` NOT NULL, **no cross-table FKs**; Epic 2's twins must mirror these. `env.py include_object` already excludes the four (so Epic 2 adds only models).
 
-## Epic 2 — ORM twins, terminal `Converted` status, masked read
+## Epic 2 — ORM twins, terminal `Converted` status, masked read — **COMPLETED** (16m19s)
 - **Goal:** Stand up the four schema-less ORM models over the new tables, add the terminal `Converted` lead status (`Qualified → Converted`, no outgoing edges so claim/qualify/reject all 409), and surface the two converted-ref fields on the masked lead read; mirror the new status in the frontend `LeadStatus` union. No conversion action yet — this is the model + read vocabulary the action will use.
 - **Rough scope:** four ORM twins (schema-less, excluded from `alembic check`); `LeadStatus.CONVERTED` + the `assert_transition` edge; `Lead` model + `build_masked_lead` gain the two converted fields; FE `LeadStatus` union adds `"Converted"`.
-- **Open questions / decisions for stakeholders:** confirm `converted_opportunity_ids` (`uuid[]`) serializes as a JSON array of strings on the masked read.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 1.
 - **Implementation notes:**
-  - **No `env.py` change needed** — Epic 1 already added the four tables to `include_object`'s exclusion set, so adding the ORM twins here introduces no `alembic check` drift.
+  - **Masked read carries the converted-refs; FE type lags** — `build_masked_lead` now returns `converted_contact_id` / `converted_opportunity_ids` (raw uuid / uuid[], `null` until converted), but the FE `MaskedLead` type doesn't have them yet — Epics 5/7 add the FE fields when they consume the panel.
+  - **`Converted` is a terminal with no outgoing edges** — `assert_transition` already 409s claim/qualify/reject from `Converted`; Epic 10 still owes the `resolve-duplicate` frozen guard (that path doesn't route through `assert_transition`).
 
 ## Epic 3 — Event vocabulary for conversion
 - **Goal:** Add the four conversion event types to the catalog so the conversion action can emit them; consumer bindings stay as-is (`sync.logger`'s `#` auto-reacts, `enrichment.stub` does not), keeping the lead timeline honest.

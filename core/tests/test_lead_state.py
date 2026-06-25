@@ -21,12 +21,13 @@ from app.leads.state import (
 
 # Independent transcription of the TDD §5.2 status values, member name ->
 # expected string. Hand-built here on purpose, separate from `LeadStatus`.
-# `Converted` is intentionally absent (reserved for P2.1).
+# `Converted` is the P2.1 terminal state.
 EXPECTED_LEAD_STATUSES: dict[str, str] = {
     "NEW": "New",
     "WORKING": "Working",
     "QUALIFIED": "Qualified",
     "REJECTED": "Rejected",
+    "CONVERTED": "Converted",
 }
 
 # Independent transcription of the TDD §5.2 lead-source values, member name ->
@@ -43,6 +44,7 @@ EXPECTED_LEGAL_TRANSITIONS: set[tuple[str, str]] = {
     ("New", "Rejected"),  # duplicate-resolution reject
     ("Working", "Qualified"),  # qualify
     ("Working", "Rejected"),  # reject
+    ("Qualified", "Converted"),  # convert (P2.1)
 }
 
 # A representative set of illegal moves the machine must reject: self-loops,
@@ -50,8 +52,10 @@ EXPECTED_LEGAL_TRANSITIONS: set[tuple[str, str]] = {
 ILLEGAL_TRANSITIONS: list[tuple[LeadStatus, LeadStatus]] = [
     (LeadStatus.NEW, LeadStatus.NEW),  # self-loop
     (LeadStatus.WORKING, LeadStatus.NEW),  # backwards
-    (LeadStatus.QUALIFIED, LeadStatus.REJECTED),  # exit from terminal
+    (LeadStatus.QUALIFIED, LeadStatus.REJECTED),  # not a legal move (no such edge)
     (LeadStatus.REJECTED, LeadStatus.WORKING),  # exit from terminal
+    (LeadStatus.CONVERTED, LeadStatus.WORKING),  # exit from terminal (P2.1)
+    (LeadStatus.CONVERTED, LeadStatus.QUALIFIED),  # exit from terminal (P2.1)
     (LeadStatus.NEW, LeadStatus.QUALIFIED),  # skips a stage
 ]
 
@@ -63,10 +67,7 @@ def test_every_lead_status_has_the_expected_string_value():
 
 
 def test_lead_status_members_are_exactly_the_expected_set():
-    """`LeadStatus` has every expected member and no extra or missing ones.
-
-    Guards in particular against `Converted` slipping in early (it is P2.1's).
-    """
+    """`LeadStatus` has every expected member and no extra or missing ones."""
     assert {member.name for member in LeadStatus} == set(EXPECTED_LEAD_STATUSES)
 
 
@@ -85,7 +86,7 @@ def test_allowed_transitions_are_exactly_the_expected_set():
     """`ALLOWED_TRANSITIONS` holds every legal move and no extra or missing ones.
 
     The exact-set discipline the enum members get, applied to the transitions:
-    an accidentally-added fifth move (e.g. a premature `Qualified -> Converted`)
+    an accidentally-added move (e.g. a stray `Converted -> Working` un-freeze)
     is caught here rather than silently widening the machine.
     """
     actual_transitions = {
