@@ -1,0 +1,58 @@
+/* The review-and-confirm convert screen (P2.1 Epic 6). The page shell reuses the
+   authenticated form-page classes (`agent-intake-page` / header / status / error)
+   and the `card` container; only the convert-specific body bits live here. Tokens
+   only — no new aesthetic (Guide §5). */
+
+.convert-lead-intro {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface-variant);
+}
+
+/* The two stacked cards (contact summary + what-to-open) under the header. */
+.convert-lead-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* The read-only contact summary: a label/value list, one row per field. */
+.convert-lead-contact-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.convert-lead-contact-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.convert-lead-contact-row dt {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+}
+
+.convert-lead-contact-row dd {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface);
+}
+
+/* The commit / cancel action row under the product-line picker. */
+.convert-lead-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}

@@ -50,12 +50,13 @@ Source TDD: [./tdd-lead-conversion.md](./tdd-lead-conversion.md)
   - **Minimal confirm lives in `LeadConvertSection.tsx`** — an inline confirm on the lead detail page that sends `product_lines: lead.product_lines_of_interest` (no picker). Epic 6 replaces this with the dedicated `/app/leads/:id/convert` review-and-confirm route (where the Convert button navigates instead of opening the inline confirm); reuse the `convertLead` client + the page gating as-is.
   - **FE `MaskedLead` still lacks the converted-ref fields** — not needed here (Epic 5 only reflects `status`); Epic 7 adds them when the "Converted to" panel reads them.
 
-## Epic 6 — Review-and-confirm screen [UI]
+## Epic 6 — Review-and-confirm screen [UI] — **COMPLETED** (9m49s)
 - **Goal:** Replace the minimal confirm with the real `/app/leads/:id/convert` review-and-confirm page: read-only mapped contact details, product-line confirm/choose (the lead's lines pre-checked; when the lead has none the agent picks ≥1; commit blocked at zero), new-household default.
 - **Rough scope:** the dedicated convert route; reuse the masked lead read for display; product-line confirm/choose UI with the ≥1-or-blocked rule; commit → `POST /convert` → frozen lead.
-- **Open questions / decisions for stakeholders:** none expected.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 5.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **`ConvertLeadPage` is the integration point for Epics 8 + 9** — it currently fixes `household` to `{mode:"new"}` (a default note). Epic 8 adds the create-new-vs-link household picker here (and widens the `convertLead` body); Epic 9 adds the duplicate pre-select (pre-checks the prior's household in that picker). The product-line `CheckboxGroup` + commit flow stay as-is.
 
 ## Epic 7 — "Converted to" summary panel [UI]
 - **Goal:** Prove the created customer is visible without building detail pages: a "Converted to" panel on a `Converted` lead showing the contact name, household name, and opportunities by product-line label + stage.

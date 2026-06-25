@@ -286,7 +286,7 @@ export default function LeadDetailPage() {
         lead.status === "Qualified" &&
         !lead.is_seed &&
         identity?.user.id === lead.owner_user_id && (
-          <LeadConvertSection lead={lead} onLeadChange={setLead} />
+          <LeadConvertSection lead={lead} />
         )}
       {/* The EVENT TIMELINE ink console sits at the VERY BOTTOM of the page, after the
           actions (Guide §6.1; P1.9 Epic 1) — the agent's read→act flow stays first and

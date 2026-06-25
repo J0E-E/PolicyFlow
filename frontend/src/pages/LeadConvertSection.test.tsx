@@ -1,23 +1,14 @@
-// Tests for the convert affordance (P2.1 Epic 5). jsdom has no backend, so `../api`
-// is mocked: `convertLead` drives the action. The component shows a "Convert lead"
-// primary button that reveals an inline confirm (explainer + Confirm/Cancel); a
-// confirmed conversion calls `convertLead` with the lead's product lines and lifts the
-// frozen lead via `onLeadChange`. Covers: the confirm reveal, the happy convert, the
-// product-line body, and the inline error on failure.
+// Tests for the convert affordance (P2.1 Epic 5, routed in Epic 6). The section is a
+// single "Convert lead" button that navigates to `/app/leads/:id/convert`. Rendered
+// inside a MemoryRouter with a small location probe so the navigation target can be
+// asserted without a real backend.
 
-import { fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router-dom";
+import { describe, expect, it } from "vitest";
 
 import LeadConvertSection from "./LeadConvertSection.tsx";
 import type { MaskedLead } from "../api";
-
-vi.mock("../api", () => ({
-  convertLead: vi.fn(),
-}));
-
-import { convertLead } from "../api";
-
-const convertLeadMock = vi.mocked(convertLead);
 
 function makeQualifiedLead(overrides: Partial<MaskedLead> = {}): MaskedLead {
   return {
@@ -30,7 +21,7 @@ function makeQualifiedLead(overrides: Partial<MaskedLead> = {}): MaskedLead {
     age_band: "65-74",
     zip_code: "33134",
     street_address: "***",
-    product_lines_of_interest: ["medicare_advantage", "final_expense"],
+    product_lines_of_interest: ["medicare_advantage"],
     preferred_contact_method: "email",
     notes: null,
     rejection_reason: null,
@@ -48,59 +39,26 @@ function makeQualifiedLead(overrides: Partial<MaskedLead> = {}): MaskedLead {
   };
 }
 
-afterEach(() => {
-  vi.clearAllMocks();
-});
+function LocationProbe() {
+  const location = useLocation();
+  return <span data-testid="location">{location.pathname}</span>;
+}
 
 describe("LeadConvertSection", () => {
-  it("reveals the inline confirm only after Convert lead is clicked", () => {
-    const { queryByText, getByText } = render(
-      <LeadConvertSection lead={makeQualifiedLead()} onLeadChange={vi.fn()} />,
+  it("navigates to the convert route when Convert lead is clicked", () => {
+    const { getByText, getByTestId } = render(
+      <MemoryRouter initialEntries={["/app/leads/lead-1"]}>
+        <LeadConvertSection lead={makeQualifiedLead()} />
+        <LocationProbe />
+      </MemoryRouter>,
     );
 
-    // The explainer is hidden until the agent opens the confirm.
-    expect(queryByText(/Converting creates a household/)).toBeNull();
+    expect(getByTestId("location").textContent).toBe("/app/leads/lead-1");
 
     fireEvent.click(getByText("Convert lead"));
 
-    expect(getByText(/Converting creates a household/)).toBeTruthy();
-    expect(getByText("Confirm conversion")).toBeTruthy();
-  });
-
-  it("converts with the lead's product lines and lifts the frozen lead", async () => {
-    const frozenLead = makeQualifiedLead({
-      status: "Converted",
-    });
-    convertLeadMock.mockResolvedValue(frozenLead);
-    const onLeadChange = vi.fn();
-
-    const { getByText } = render(
-      <LeadConvertSection lead={makeQualifiedLead()} onLeadChange={onLeadChange} />,
+    expect(getByTestId("location").textContent).toBe(
+      "/app/leads/lead-1/convert",
     );
-
-    fireEvent.click(getByText("Convert lead"));
-    fireEvent.click(getByText("Confirm conversion"));
-
-    await waitFor(() => expect(onLeadChange).toHaveBeenCalledWith(frozenLead));
-    expect(convertLeadMock).toHaveBeenCalledWith("lead-1", {
-      household: { mode: "new" },
-      product_lines: ["medicare_advantage", "final_expense"],
-    });
-  });
-
-  it("shows an inline error and does not lift the lead when the convert fails", async () => {
-    convertLeadMock.mockRejectedValue(new Error("boom"));
-    const onLeadChange = vi.fn();
-
-    const { getByText, findByRole } = render(
-      <LeadConvertSection lead={makeQualifiedLead()} onLeadChange={onLeadChange} />,
-    );
-
-    fireEvent.click(getByText("Convert lead"));
-    fireEvent.click(getByText("Confirm conversion"));
-
-    const alert = await findByRole("alert");
-    expect(alert.textContent).toMatch(/couldn't convert/);
-    expect(onLeadChange).not.toHaveBeenCalled();
   });
 });

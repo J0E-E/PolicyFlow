@@ -24,7 +24,6 @@ vi.mock("../api", () => ({
   getDemoSession: vi.fn(),
   revealLeadField: vi.fn(),
   qualifyLead: vi.fn(),
-  convertLead: vi.fn(),
   rejectLead: vi.fn(),
   resolveDuplicate: vi.fn(),
   ApiError: class ApiError extends Error {
