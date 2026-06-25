@@ -81,12 +81,12 @@ Source TDD: [./tdd-lead-conversion.md](./tdd-lead-conversion.md)
 - **Depends on:** Epic 8.
 - **Implementation notes:** none — `GET /conversion-prefill` (`get_conversion_prefill`) resolves the prior's household server-side; `ConvertLeadPage` pre-arms link mode + a suggested `HouseholdPicker` option, override via search; the commit-time visibility guard backstops a stale suggestion.
 
-## Epic 10 — Isolation + frozen-read hardening
+## Epic 10 — Isolation + frozen-read hardening — **COMPLETED** (7m37s)
 - **Goal:** Close the cross-cutting isolation invariant for the new entities and finish freezing a `Converted` lead: purge sweeps the four new tables per session, `resolve-duplicate` refuses a `Converted` lead, and the household search is confirmed session-scoped (a second session/tenant sees and purges none of it).
 - **Rough scope:** `purge.py` + `PurgeCounts` extend to `opportunities`/`tasks`/`contacts`/`households`; a `resolve-duplicate` frozen guard (409); confirm `visible_to_session` on the household search.
-- **Open questions / decisions for stakeholders:** none expected.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epics 4, 8.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** none — `purge.py` sweeps all 5 tables per session (`PurgeCounts` gains 4 count maps; `demo_purge` SELECT+DELETE from 0015); `resolve-duplicate` 409s a `Converted` lead before its flag check; household search confirmed `visible_to_session`-scoped. A NULL-baseline household linked by a session contact survives the purge (filter is on `demo_session_id`).
 
 ## Epic 11 — Acceptance suite
 - **Goal:** Prove the whole phase end-to-end on the real substrate: happy-path conversion (all entities + freeze + four event types incl. `opportunity.created` ×N, shared `correlation_id`), duplicate pre-select + new-Contact, forced-failure rollback (monkeypatch a mid-convert step), cross-session isolation + purge; plus the FE acceptance block for the convert flow + frozen panel.

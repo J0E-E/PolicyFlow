@@ -18,10 +18,12 @@ chosen.
 `app.audit.service`, the engine holds a module-global `session_factory` (the engine
 from `app.db`, monkeypatchable in tests) and opens its **own** short-lived session —
 it is not part of any web request. It becomes the `demo_purge` role with a single
-`SET LOCAL ROLE` (the `0013` grant gives that role SELECT + DELETE on every tenant's
-`leads` and on the two platform demo tables, nothing more) and runs the **whole**
-sweep in one transaction: delete every tenant's leads, then the ledger rows, then —
-when `delete_session_row` — the session rows, then one commit. Every statement is
+`SET LOCAL ROLE` (the `0013` + `0015` grants give that role SELECT + DELETE on every
+tenant's `leads` and the four P2.1 conversion tables, and on the two platform demo
+tables, nothing more) and runs the **whole** sweep in one transaction: delete every
+tenant's conversion overlay (households / contacts / opportunities / tasks) and leads,
+then the ledger rows, then — when `delete_session_row` — the session rows, then one
+commit. Every statement is
 fully schema-qualified (no `search_path` needed — the `audit/service.py` idiom);
 the only interpolated identifiers are registry schema names, never user input.
 
@@ -83,8 +85,10 @@ PurgeScope = Union[Expired, All, Session]
 class PurgeCounts:
     """What one purge run deleted — the return value and the INFO line's source.
 
-    `leads_deleted` maps each tenant `schema_name` to the rows removed from its
-    `leads`; `ledger_deleted` and `session_rows_deleted` count the
+    `leads_deleted` and the four conversion-entity maps
+    (`households_deleted` / `contacts_deleted` / `opportunities_deleted` /
+    `tasks_deleted`, P2.1 Epic 10) map each tenant `schema_name` to the rows removed
+    from that table; `ledger_deleted` and `session_rows_deleted` count the
     `demo_session_tenant_seed` and `demo_sessions` rows. `session_ids` is the
     in-scope set the scope resolved to (logged at DEBUG only). `session_rows_deleted`
     is always 0 when the caller passed `delete_session_row=False` (the `Session`
@@ -93,6 +97,10 @@ class PurgeCounts:
 
     session_ids: tuple[uuid.UUID, ...]
     leads_deleted: dict[str, int] = field(default_factory=dict)
+    households_deleted: dict[str, int] = field(default_factory=dict)
+    contacts_deleted: dict[str, int] = field(default_factory=dict)
+    opportunities_deleted: dict[str, int] = field(default_factory=dict)
+    tasks_deleted: dict[str, int] = field(default_factory=dict)
     ledger_deleted: int = 0
     session_rows_deleted: int = 0
 
@@ -162,16 +170,36 @@ async def purge_sessions(
 
         session_ids = await _resolve_session_ids(session, scope)
 
+        # Sweep every tenant's session-tagged overlay: the four P2.1 conversion
+        # entities (Epic 10) plus `leads`. All five tables carry `demo_session_id`
+        # directly, so each is one keyed DELETE; there are no FK constraints between
+        # them (the schema boundary is the isolation layer), so the order is for
+        # readability only — children (opportunities / tasks) before their contact,
+        # contacts before households, leads last. A session contact that linked to a
+        # NULL-baseline household is removed here while that household (its
+        # `demo_session_id` is NULL, not the session's) correctly survives.
         leads_deleted: dict[str, int] = {}
+        households_deleted: dict[str, int] = {}
+        contacts_deleted: dict[str, int] = {}
+        opportunities_deleted: dict[str, int] = {}
+        tasks_deleted: dict[str, int] = {}
+        table_counts = (
+            ("opportunities", opportunities_deleted),
+            ("tasks", tasks_deleted),
+            ("contacts", contacts_deleted),
+            ("households", households_deleted),
+            ("leads", leads_deleted),
+        )
         for tenant in TENANTS:
-            result = await session.execute(
-                text(
-                    f"DELETE FROM {tenant.schema_name}.leads "
-                    "WHERE demo_session_id = ANY(:ids)"
-                ),
-                {"ids": session_ids},
-            )
-            leads_deleted[tenant.schema_name] = result.rowcount
+            for table_name, counts in table_counts:
+                result = await session.execute(
+                    text(
+                        f"DELETE FROM {tenant.schema_name}.{table_name} "
+                        "WHERE demo_session_id = ANY(:ids)"
+                    ),
+                    {"ids": session_ids},
+                )
+                counts[tenant.schema_name] = result.rowcount
 
         ledger_result = await session.execute(
             text(
@@ -198,6 +226,10 @@ async def purge_sessions(
     counts = PurgeCounts(
         session_ids=tuple(session_ids),
         leads_deleted=leads_deleted,
+        households_deleted=households_deleted,
+        contacts_deleted=contacts_deleted,
+        opportunities_deleted=opportunities_deleted,
+        tasks_deleted=tasks_deleted,
         ledger_deleted=ledger_deleted,
         session_rows_deleted=session_rows_deleted,
     )
@@ -207,10 +239,15 @@ async def purge_sessions(
     # DEBUG: an `All`/nightly run can name dozens.
     logger.info(
         "demo purge run: scope=%s sessions=%d leads_deleted=%s "
-        "ledger_deleted=%d session_rows_deleted=%d",
+        "households_deleted=%s contacts_deleted=%s opportunities_deleted=%s "
+        "tasks_deleted=%s ledger_deleted=%d session_rows_deleted=%d",
         type(scope).__name__,
         len(session_ids),
         leads_deleted,
+        households_deleted,
+        contacts_deleted,
+        opportunities_deleted,
+        tasks_deleted,
         ledger_deleted,
         session_rows_deleted,
     )

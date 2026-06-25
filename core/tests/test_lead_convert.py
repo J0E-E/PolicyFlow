@@ -490,6 +490,25 @@ async def test_convert_link_to_an_unknown_household_is_404(
     assert response.status_code == 404
 
 
+async def test_resolve_duplicate_on_a_converted_lead_is_409(
+    seeded, db_client, database_engine
+):
+    """A frozen (Converted) lead refuses resolve-duplicate (P2.1 Epic 10 guard)."""
+    _, lead_id, _ = await login_agent_and_insert_qualified_lead(
+        db_client, database_engine
+    )
+    convert_response = await db_client.post(
+        f"/api/leads/{lead_id}/convert", json=convert_body()
+    )
+    assert convert_response.status_code == 200
+
+    # The frozen guard runs before the flag check, so any action is refused.
+    response = await db_client.post(
+        f"/api/leads/{lead_id}/resolve-duplicate", json={"action": "new"}
+    )
+    assert response.status_code == 409
+
+
 async def test_convert_rolls_back_every_write_on_a_mid_convert_failure(
     seeded, db_client, database_engine, monkeypatch
 ):

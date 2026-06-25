@@ -9,6 +9,7 @@ test.
 
 import uuid
 
+from app.demo.session import DEMO_SESSION_COOKIE_NAME
 from app.tenancy.registry import SUNSHINE
 
 from tests.test_endpoints_db import login_as, seeded  # noqa: F401
@@ -17,7 +18,7 @@ from tests.test_lead_convert import (
     login_agent_and_insert_qualified_lead,
     read_one,
 )
-from tests.test_lead_reads import login_agent_for_slug
+from tests.test_lead_reads import login_agent_for_slug, mint_live_demo_session
 
 
 async def convert_one_lead(db_client, database_engine):
@@ -78,3 +79,34 @@ async def test_household_search_requires_authentication(
     """An anonymous caller (no session) cannot search households (401)."""
     response = await db_client.get("/api/households", params={"q": "Reader"})
     assert response.status_code == 401
+
+
+async def test_household_search_is_session_scoped(
+    seeded, db_client, database_engine
+):
+    """A session's household is invisible to a session-less search (`visible_to_session`)."""
+    demo_session_id = await mint_live_demo_session(database_engine)
+    # Convert a lead inside the demo session, so its household is session-tagged.
+    _, lead_id, _ = await login_agent_and_insert_qualified_lead(
+        db_client, database_engine, demo_session_id=demo_session_id
+    )
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(demo_session_id))
+    convert_response = await db_client.post(
+        f"/api/leads/{lead_id}/convert", json=convert_body()
+    )
+    assert convert_response.status_code == 200
+    contact_id = uuid.UUID(convert_response.json()["lead"]["converted_contact_id"])
+    household_row = await read_one(
+        database_engine,
+        f"SELECT household_id FROM {SUNSHINE.schema_name}.contacts WHERE id = :id",
+        {"id": contact_id},
+    )
+    session_household_id = household_row.household_id
+
+    # Drop the session cookie: a session-less caller sees only the NULL baseline, never
+    # this session's household.
+    db_client.cookies.delete(DEMO_SESSION_COOKIE_NAME)
+    response = await db_client.get("/api/households", params={"q": "Reader"})
+    assert response.status_code == 200
+    household_ids = {h["id"] for h in response.json()["households"]}
+    assert str(session_household_id) not in household_ids

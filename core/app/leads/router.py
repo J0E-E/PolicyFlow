@@ -936,6 +936,17 @@ async def resolve_duplicate_lead(
         lead, request, db, refuse_seed=True
     )
 
+    # A frozen (Converted) lead is terminal — its duplicate linkage must not change.
+    # The `link` / `new` branches set `duplicate_resolution` without a state-machine
+    # transition, so without this guard they would silently mutate a converted lead;
+    # the `reject` branch's `New → Rejected` move would already 409 via
+    # `assert_transition`, but this guards all three uniformly (P2.1 Epic 10).
+    if lead.status == LeadStatus.CONVERTED.value:
+        raise HTTPException(
+            status_code=409,
+            detail="converted leads cannot be modified",
+        )
+
     # The endpoint exists only to resolve a flag: every action requires the lead to be
     # flagged. An unflagged lead has nothing to resolve, so it is a 409 before any
     # action-specific logic runs.
