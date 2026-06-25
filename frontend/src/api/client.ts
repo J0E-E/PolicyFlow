@@ -9,6 +9,7 @@
 // out" from a real failure.
 
 import type {
+  ConversionSummary,
   ConvertLeadRequest,
   CreateLeadRequest,
   DemoSessionResetResult,
@@ -263,6 +264,19 @@ export async function qualifyLead(leadId: string): Promise<MaskedLead> {
     `/api/leads/${leadId}/qualify`,
   );
   return responseBody.lead;
+}
+
+/**
+ * Get a converted lead's "converted to" summary from `GET /api/leads/{id}/conversion`
+ * (the contact / household / opportunities it became). Throws an `ApiError` with
+ * `status` `404` for a missing / cross-tenant / cross-session lead and `409` for a
+ * lead that exists but is not `Converted`. The body is returned flat (no envelope).
+ */
+export async function getConversion(leadId: string): Promise<ConversionSummary> {
+  return request<ConversionSummary>(
+    "GET",
+    `/api/leads/${leadId}/conversion`,
+  );
 }
 
 /**

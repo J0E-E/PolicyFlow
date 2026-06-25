@@ -7,6 +7,7 @@ export {
   claimLead,
   convertLead,
   createLead,
+  getConversion,
   getCurrentIdentity,
   getDemoSession,
   getLead,
@@ -23,6 +24,7 @@ export {
 } from "./client";
 export type {
   Capability,
+  ConversionSummary,
   ConvertLeadRequest,
   CreateLeadRequest,
   DemoSessionResetResult,

@@ -10,6 +10,7 @@ import {
   assumePersona,
   claimLead,
   convertLead,
+  getConversion,
   createLead,
   getCurrentIdentity,
   getLead,
@@ -320,6 +321,25 @@ describe("lead client calls", () => {
     expect(options.credentials).toBe("include");
     expect(JSON.parse(options.body as string)).toEqual({ reason: "not a fit" });
     expect(lead).toEqual(sampleMaskedLead);
+  });
+
+  it("getConversion GETs /api/leads/{id}/conversion and returns the flat summary", async () => {
+    const summary = {
+      contact: { id: "contact-1", first_name: "Maria", last_name: "Lopez" },
+      household: { id: "household-1", name: "Lopez Household" },
+      opportunities: [
+        { id: "opp-1", product_line: "medicare_advantage", stage: "New" },
+      ],
+    };
+    vi.stubGlobal("fetch", mockJsonResponse(summary));
+
+    const result = await getConversion(sampleMaskedLead.id);
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe(`/api/leads/${sampleMaskedLead.id}/conversion`);
+    expect(options.method).toBe("GET");
+    expect(options.credentials).toBe("include");
+    expect(result).toEqual(summary);
   });
 
   it("convertLead POSTs /api/leads/{id}/convert with the household + product lines and unwraps { lead }", async () => {

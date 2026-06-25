@@ -35,6 +35,7 @@ branch (reuse a chosen household, no `household.created` event) is Epic 8.
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..events.catalog import EventType as EventBusEventType
@@ -49,7 +50,7 @@ from ..models.user import Role
 from ..pii.service import decrypt_field, encrypt_field
 from .state import LeadStatus
 
-__all__ = ["convert_lead"]
+__all__ = ["convert_lead", "get_conversion_summary"]
 
 # The literal opportunity stage and origin every conversion writes (D3): `stage`
 # starts at `New` (no P2.2 state machine pulled forward) and `origin` records that
@@ -243,6 +244,61 @@ async def convert_lead(
     )
 
     return lead
+
+
+async def get_conversion_summary(db: AsyncSession, lead: Lead) -> dict:
+    """Build the non-PII "converted to" summary for an already-converted lead.
+
+    Reads back what the lead became — its Contact, that contact's Household, and the
+    opportunities opened for it — and returns only **display** fields (names, the
+    household name, the product-line key + stage). No encrypted PII is decrypted: the
+    contact's plaintext first/last name is shown as-is, exactly as the masked lead
+    read shows the lead's. The caller (the endpoint) has already guarded visibility
+    and confirmed the lead is `Converted`, so the converted-ref columns are set and the
+    rows exist.
+
+    Returns ``{contact: {id, first_name, last_name}, household: {id, name},
+    opportunities: [{id, product_line, stage}, …]}`` (TDD §5.5). Opportunities are
+    ordered by creation so the panel lists them in the order they were opened.
+    """
+    contact = (
+        await db.execute(
+            select(Contact).where(Contact.id == lead.converted_contact_id)
+        )
+    ).scalar_one()
+    household = (
+        await db.execute(
+            select(Household).where(Household.id == contact.household_id)
+        )
+    ).scalar_one()
+    opportunities = (
+        (
+            await db.execute(
+                select(Opportunity)
+                .where(Opportunity.contact_id == contact.id)
+                .order_by(Opportunity.created_at, Opportunity.product_line)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return {
+        "contact": {
+            "id": contact.id,
+            "first_name": contact.first_name,
+            "last_name": contact.last_name,
+        },
+        "household": {"id": household.id, "name": household.name},
+        "opportunities": [
+            {
+                "id": opportunity.id,
+                "product_line": opportunity.product_line,
+                "stage": opportunity.stage,
+            }
+            for opportunity in opportunities
+        ],
+    }
 
 
 async def _emit(

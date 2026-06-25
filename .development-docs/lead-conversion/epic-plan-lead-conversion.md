@@ -58,12 +58,13 @@ Source TDD: [./tdd-lead-conversion.md](./tdd-lead-conversion.md)
 - **Implementation notes:**
   - **`ConvertLeadPage` is the integration point for Epics 8 + 9** — it currently fixes `household` to `{mode:"new"}` (a default note). Epic 8 adds the create-new-vs-link household picker here (and widens the `convertLead` body); Epic 9 adds the duplicate pre-select (pre-checks the prior's household in that picker). The product-line `CheckboxGroup` + commit flow stay as-is.
 
-## Epic 7 — "Converted to" summary panel [UI]
+## Epic 7 — "Converted to" summary panel [UI] — **COMPLETED** (28m40s)
 - **Goal:** Prove the created customer is visible without building detail pages: a "Converted to" panel on a `Converted` lead showing the contact name, household name, and opportunities by product-line label + stage.
 - **Rough scope:** `GET /api/leads/{id}/conversion` (non-PII display fields; 409/404 when the lead isn't converted); the panel on the frozen lead detail.
-- **Open questions / decisions for stakeholders:** none expected.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 5.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **The panel reads a dedicated endpoint, not `MaskedLead`** — `LeadConvertedPanel` fetches `GET /api/leads/{id}/conversion` (`getConversion`), so the converted-ref fields were **never** added to the FE `MaskedLead` type (the Epic 2/5 forward-references to that are moot). Backend read = `get_conversion_summary` in `conversion.py`.
 
 ## Epic 8 — Household link path [UI]
 - **Goal:** Let the agent link the new Contact into an existing Household instead of creating one: a session-scoped household search backs a create-new-vs-link picker, and the convert action gains its link branch (reuse the chosen household, no `household.created` event).

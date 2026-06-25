@@ -21,6 +21,7 @@ vi.mock("../api", () => ({
   listTenants: vi.fn(),
   getLead: vi.fn(),
   getLeadTimeline: vi.fn(),
+  getConversion: vi.fn(),
   getDemoSession: vi.fn(),
   revealLeadField: vi.fn(),
   qualifyLead: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock("../session", () => ({
 
 import {
   ApiError,
+  getConversion,
   getDemoSession,
   getLead,
   getLeadTimeline,
@@ -57,6 +59,7 @@ import { useCapability, useSession } from "../session";
 const listTenantsMock = vi.mocked(listTenants);
 const getLeadMock = vi.mocked(getLead);
 const getLeadTimelineMock = vi.mocked(getLeadTimeline);
+const getConversionMock = vi.mocked(getConversion);
 const getDemoSessionMock = vi.mocked(getDemoSession);
 const revealLeadFieldMock = vi.mocked(revealLeadField);
 const qualifyLeadMock = vi.mocked(qualifyLead);
@@ -145,6 +148,7 @@ beforeEach(() => {
   listTenantsMock.mockReset();
   getLeadMock.mockReset();
   getLeadTimelineMock.mockReset();
+  getConversionMock.mockReset();
   getDemoSessionMock.mockReset();
   revealLeadFieldMock.mockReset();
   qualifyLeadMock.mockReset();
@@ -163,6 +167,15 @@ beforeEach(() => {
   // showing its calm empty note). The dedicated timeline tests live in
   // LeadTimeline.test.tsx.
   getLeadTimelineMock.mockResolvedValue([]);
+  // The "Converted to" panel (rendered only for a Converted lead) does its own fetch;
+  // default it to a simple summary so the Converted-lead gating test doesn't reject.
+  getConversionMock.mockResolvedValue({
+    contact: { id: "contact-1", first_name: "Maria", last_name: "Lopez" },
+    household: { id: "household-1", name: "Lopez Household" },
+    opportunities: [
+      { id: "opp-1", product_line: "medicare_advantage", stage: "New" },
+    ],
+  });
   // Default the demo-session probe to `active` so a plain 404 reads as a genuine
   // missing/cross-tenant lead (the graceful-expiry gate is Epic 12, opted into
   // per-test by resolving `expired`/`none`).

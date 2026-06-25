@@ -86,7 +86,7 @@ from ..pii.reveal_seam import on_pii_revealed
 from ..pii.service import decrypt_field
 from ..tenancy.registry import tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
-from .conversion import convert_lead
+from .conversion import convert_lead, get_conversion_summary
 from .intake import create_lead
 from .masking import build_masked_lead
 from .timeline import get_lead_timeline_rows
@@ -580,6 +580,42 @@ async def qualify_lead(
     return {
         "lead": await build_masked_lead(identity.tenant_id, lead, demo_session_id)
     }
+
+
+@router.get("/{lead_id}/conversion")
+async def get_lead_conversion(
+    lead_id: uuid.UUID,
+    request: Request,
+    identity: Identity = Depends(require_authenticated),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Return the non-PII "converted to" summary for a converted lead.
+
+    Feeds the frozen-lead "Converted to" panel (TDD §5.5): the new Contact's name, its
+    Household's name, and the opportunities opened (product-line key + stage). It is a
+    read, so it gates on `require_authenticated` and reuses `get_lead`'s visibility
+    guard exactly — a missing / cross-tenant / cross-session lead is a
+    `404 "lead not found"` (`refuse_seed=False`, since a shared seed row is readable).
+
+    A lead that exists and is visible but is **not** `Converted` has nothing to
+    summarize, so it is a `409 "lead is not converted"` — distinct from the 404, so the
+    UI can tell "no such lead" from "this lead hasn't been converted". The summary
+    decrypts no PII (the contact's plaintext name is shown as-is) and is returned flat
+    (TDD §5.5), not under an envelope.
+    """
+    lead = (
+        await db.execute(select(Lead).where(Lead.id == lead_id))
+    ).scalar_one_or_none()
+
+    if lead is None:
+        raise HTTPException(status_code=404, detail="lead not found")
+
+    await _guard_loaded_lead_for_session(lead, request, db, refuse_seed=False)
+
+    if lead.status != LeadStatus.CONVERTED.value:
+        raise HTTPException(status_code=409, detail="lead is not converted")
+
+    return await get_conversion_summary(db, lead)
 
 
 @router.post("/{lead_id}/convert")

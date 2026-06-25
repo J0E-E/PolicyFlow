@@ -244,6 +244,19 @@ export interface ConvertLeadRequest {
 }
 
 /**
+ * The non-PII "converted to" summary from `GET /api/leads/{id}/conversion`, mirroring
+ * the backend shape (TDD §5.5). It feeds the frozen-lead panel: the new contact's
+ * name, its household's name, and the opportunities opened (the `product_line` is a
+ * tenant key the UI maps to a label; `stage` is plain text). Returned flat, not under
+ * an envelope.
+ */
+export interface ConversionSummary {
+  contact: { id: string; first_name: string; last_name: string };
+  household: { id: string; name: string };
+  opportunities: { id: string; product_line: string; stage: string }[];
+}
+
+/**
  * The reveal request body for `POST /api/leads/{id}/reveal`, mirroring
  * `RevealLeadRequest` — which single field to unmask for this lead.
  */

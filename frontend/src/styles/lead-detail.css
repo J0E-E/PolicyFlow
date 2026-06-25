@@ -350,13 +350,82 @@
   gap: var(--space-2);
 }
 
-/* The convert confirm explainer — muted body text inside the inline confirm panel. */
-.lead-detail-convert-explainer {
+/* ---- The "Converted to" panel on a frozen lead (P2.1 Epic 7) ---- */
+
+.lead-converted-status {
   margin: 0;
   font-family: var(--font-ui);
   font-size: 14px;
   line-height: 20px;
   color: var(--on-surface-variant);
+}
+
+.lead-converted-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.lead-converted-entities {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.lead-converted-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.lead-converted-row dt {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+}
+
+.lead-converted-row dd {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface);
+}
+
+.lead-converted-opportunities-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+}
+
+.lead-converted-opportunities {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.lead-converted-opportunity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.lead-converted-opportunity-line {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface);
 }
 
 /* ---- "Possible duplicate" panel (top of the page when flagged) ---- */

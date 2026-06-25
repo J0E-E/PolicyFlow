@@ -17,6 +17,7 @@ import { leadDate, leadPreferredContactLabel } from "./leadDetailPresentation.ts
 import RevealableLeadField from "./RevealableLeadField.tsx";
 import LeadActionsSection from "./LeadActionsSection.tsx";
 import LeadConvertSection from "./LeadConvertSection.tsx";
+import LeadConvertedPanel from "./LeadConvertedPanel.tsx";
 import LeadDuplicatePanel from "./LeadDuplicatePanel.tsx";
 import LeadTimeline from "./LeadTimeline.tsx";
 import DemoSessionGate from "../components/DemoSessionGate.tsx";
@@ -288,6 +289,12 @@ export default function LeadDetailPage() {
         identity?.user.id === lead.owner_user_id && (
           <LeadConvertSection lead={lead} />
         )}
+      {/* On a frozen (Converted) lead, the "Converted to" panel shows what the lead
+          became — the contact, household, and opportunities — proving the conversion
+          produced a real customer. It does its own fetch of the conversion summary. */}
+      {lead.status === "Converted" && (
+        <LeadConvertedPanel leadId={lead.id} productLines={tenant.product_lines} />
+      )}
       {/* The EVENT TIMELINE ink console sits at the VERY BOTTOM of the page, after the
           actions (Guide §6.1; P1.9 Epic 1) — the agent's read→act flow stays first and
           the dark console anchors the page end. It does its own single fetch on open. */}
