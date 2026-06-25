@@ -82,6 +82,13 @@ def include_object(object_, name, type_, reflected, compare_to) -> bool:
         "outbox",
         "processed_events",
         "leads",
+        # P2.1 lead-conversion twins — physical tables land in 0015, the ORM
+        # models in Epic 2; excluded here so neither surfaces as phantom drift.
+        # None has a platform twin, so name-only matching is safe (no schema-guard).
+        "households",
+        "contacts",
+        "opportunities",
+        "tasks",
     }:
         return False
     if (

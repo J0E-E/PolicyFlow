@@ -9,7 +9,8 @@ container migrated to head), and both drive Alembic through the same
   `alembic check` reports zero new upgrade operations — the migration-owned
   tenant schemas (`sunshine` / `florida`), Postgres's built-in schemas, and the
   schema-less tenant tables (`tenant_settings`, `pii_demo`, `audit_records`,
-  `outbox`, `processed_events`) no longer surface as phantom drift, while
+  `outbox`, `processed_events`, and the P2.1 `households` / `contacts` /
+  `opportunities` / `tasks`) no longer surface as phantom drift, while
   `platform.audit_records` is drift-checked against its `PlatformAuditRecord`
   model.
 - **Round-trip:** `alembic downgrade base` then `alembic upgrade head` both
@@ -103,7 +104,8 @@ def test_alembic_check_reports_no_drift(database_engine, postgres_container):
     database disagree, so completing without raising is the assertion: the
     Phase-1 filter leaves no phantom drift from the tenant schemas or the
     schema-less tenant tables (`tenant_settings`, `pii_demo`, `audit_records`,
-    `outbox`, `processed_events`), while `platform.audit_records` is drift-checked
+    `outbox`, `processed_events`, `households`, `contacts`, `opportunities`,
+    `tasks`), while `platform.audit_records` is drift-checked
     against its `PlatformAuditRecord` model (P1.4 Epic 3 added both audit models,
     making this check pass for real and so removed the Epic-2 `xfail` marker that
     stood here).

@@ -8,19 +8,21 @@ Source TDD: [./tdd-lead-conversion.md](./tdd-lead-conversion.md)
 
 > High-level agile roadmap. Each epic's design specifics are confirmed with stakeholders at epic time (`4-plan-epic`) before any code is written.
 
-## Epic 1 — Migration 0015: the converted-world schema
+## Epic 1 — Migration 0015: the converted-world schema — **COMPLETED** (11m20s)
 - **Goal:** Add the per-tenant tables a conversion writes into — `households`, `contacts`, `opportunities`, `tasks` — plus the two converted-ref columns on `leads`, with correct grants. Down/up round-trips clean on the real Postgres substrate. No behavior yet; this is the ground every later epic stands on.
 - **Rough scope:** one additive Alembic migration in the 0009 grant shape (tenant CRUD, `platform_reader` SELECT, `demo_purge` SELECT+DELETE) + ALTER `leads` ADD `converted_contact_id` / `converted_opportunity_ids`; a substrate down/up test.
-- **Open questions / decisions for stakeholders:** confirm `env.py` `include_object` excludes the four schema-less tables from `alembic check` so the drift gate stays clean (the migration owns indexes).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Column contract for Epic 2's ORM twins** — `0015` shipped the four tables with **owner/assignee fields nullable**, `opportunities.origin` NOT NULL (no default), `stage` DEFAULT `'New'`, `tasks.body` NOT NULL, **no cross-table FKs**; Epic 2's twins must mirror these. `env.py include_object` already excludes the four (so Epic 2 adds only models).
 
 ## Epic 2 — ORM twins, terminal `Converted` status, masked read
 - **Goal:** Stand up the four schema-less ORM models over the new tables, add the terminal `Converted` lead status (`Qualified → Converted`, no outgoing edges so claim/qualify/reject all 409), and surface the two converted-ref fields on the masked lead read; mirror the new status in the frontend `LeadStatus` union. No conversion action yet — this is the model + read vocabulary the action will use.
 - **Rough scope:** four ORM twins (schema-less, excluded from `alembic check`); `LeadStatus.CONVERTED` + the `assert_transition` edge; `Lead` model + `build_masked_lead` gain the two converted fields; FE `LeadStatus` union adds `"Converted"`.
 - **Open questions / decisions for stakeholders:** confirm `converted_opportunity_ids` (`uuid[]`) serializes as a JSON array of strings on the masked read.
 - **Depends on:** Epic 1.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **No `env.py` change needed** — Epic 1 already added the four tables to `include_object`'s exclusion set, so adding the ORM twins here introduces no `alembic check` drift.
 
 ## Epic 3 — Event vocabulary for conversion
 - **Goal:** Add the four conversion event types to the catalog so the conversion action can emit them; consumer bindings stay as-is (`sync.logger`'s `#` auto-reacts, `enrichment.stub` does not), keeping the lead timeline honest.
