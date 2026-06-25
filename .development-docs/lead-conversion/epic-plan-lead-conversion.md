@@ -32,12 +32,14 @@ Source TDD: [./tdd-lead-conversion.md](./tdd-lead-conversion.md)
 - **Depends on:** none.
 - **Implementation notes:** none — added the four conversion `EventType` members (fan out to `sync.logger` only) + catalog test; `CONSUMER_BINDINGS` unchanged.
 
-## Epic 4 — Atomic convert action (new-household path)
+## Epic 4 — Atomic convert action (new-household path) — **COMPLETED** (15m27s)
 - **Goal:** The core customer-value transaction. `POST /api/leads/{id}/convert` turns a held Qualified lead into a new Household + Contact + one Opportunity per confirmed product line + a note-Task (when the lead has notes), freezes the lead `Converted`, and emits the four event types — all in one request transaction (atomic, no commit), every created entity carrying the lead's `correlation_id` + `demo_session_id`.
 - **Rough scope:** a new conversion service mirroring the `create_lead` outbox idiom on the request session; the `POST /convert` endpoint with guards in order (capability → session-guard refusing seed → holder → `Qualified` transition); `ConvertLeadRequest` (new-household mode only here, ≥1 valid tenant product-line key); returns the masked frozen lead.
-- **Open questions / decisions for stakeholders:** none expected (the link branch and the ≥1-or-blocked product-line UI land in later epics).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epics 1, 2, 3.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **`convert_lead` + `POST /convert` are new-household only** — `app/leads/conversion.py::convert_lead` always creates a Household and emits `household.created`; `ConvertLeadRequest.household` is `NewHouseholdChoice` (`mode:"new"`). Epic 8 widens `household` to a discriminated union (`+ link`) and adds the link branch (reuse the chosen household, **no** `household.created` event) + a `household_id` param on `convert_lead`.
+  - **FE wiring is Epic 5's** — the `convertLead` api client + the `ConvertLeadRequest` wire type don't exist yet; Epic 5 adds them when it calls the endpoint.
 
 ## Epic 5 — Convert affordance → frozen lead [UI]
 - **Goal:** Make a real conversion demoable end-to-end. A Convert affordance on a Qualified, held lead leads to a minimal confirm, calls `convertLead`, and lands back on the frozen lead detail showing the `Converted` stamp with mutating actions hidden. *(The tracer bullet is now complete.)*

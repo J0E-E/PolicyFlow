@@ -26,6 +26,11 @@ single masked read builder (`app.leads.masking`). It carries three routes:
 - **`POST /api/leads/{lead_id}/qualify`** — the qualify action (TDD §5.4): move a
   `Working` lead to `Qualified` and publish `lead.qualified` (an `entity_id`-only
   payload). Same load→guard→transition→publish→masked shape and 409 mapping as claim.
+- **`POST /api/leads/{lead_id}/convert`** — the convert action (TDD §5.4): turn a
+  held `Qualified` lead (owner-only, else 403) into a new Household + Contact + one
+  Opportunity per product line + a note-Task (when the lead has notes), freeze it
+  `Converted`, and publish the four conversion events — all atomically on the request
+  transaction (the shared `convert_lead` core). Returns the masked frozen lead (`200`).
 - **`POST /api/leads/{lead_id}/reject`** — the reject action (TDD §5.4): move a
   `Working` lead to `Rejected`, store an **optional** free-text reason on the row's
   `rejection_reason` column (surfaced in the masked read, never in the event), and
@@ -81,11 +86,13 @@ from ..pii.reveal_seam import on_pii_revealed
 from ..pii.service import decrypt_field
 from ..tenancy.registry import tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
+from .conversion import convert_lead
 from .intake import create_lead
 from .masking import build_masked_lead
 from .timeline import get_lead_timeline_rows
 from .visibility import visible_to_session
 from .schemas import (
+    ConvertLeadRequest,
     CreateLeadRequest,
     RejectLeadRequest,
     ResolveDuplicateRequest,
@@ -568,6 +575,105 @@ async def qualify_lead(
             correlation_id=lead.correlation_id,
             demo_session_id=demo_session_id,
         ),
+    )
+
+    return {
+        "lead": await build_masked_lead(identity.tenant_id, lead, demo_session_id)
+    }
+
+
+@router.post("/{lead_id}/convert")
+async def convert_lead_endpoint(
+    lead_id: uuid.UUID,
+    conversion: ConvertLeadRequest,
+    request: Request,
+    identity: Identity = Depends(
+        require_capability(Capability.CREATE_EDIT_RECORDS)
+    ),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Convert one held `Qualified` lead into the converted-world entities; freeze it.
+
+    The core customer-value transaction (TDD §5.4 / §5.5). The guard hands the route
+    an `Identity` only when the caller holds `CREATE_EDIT_RECORDS` (every other role a
+    403, the anonymous caller a 401); `get_tenant_db` scopes the lookup and writes to
+    the caller's schema and rejects a tenantless Platform Admin with a 400. The handler
+    then applies its guards **in order** before doing any work:
+
+    1. **Load the lead** by id within the caller's schema; a missing / cross-tenant id
+       is a `404 "lead not found"` (schema scoping makes another tenant's row
+       unreachable).
+    2. **Demo-session write-isolation** (`refuse_seed=True`): a foreign session's row is
+       a `404`, a shared seed row a `409` — a demo visitor never converts a row every
+       visitor sees. The resolved session id is reused for the conversion's events.
+    3. **Holder** — only the lead's owner may convert it; any other caller is a `403`.
+    4. **Transition** — `assert_transition(Qualified → Converted)`; a lead in any other
+       status is a `409` naming the current status.
+    5. **Product-line keys** — every supplied key must be one the caller's tenant offers
+       (resolved from the scoped session via the registry); any unknown key is a `422`.
+       (The ≥1 structural rule is enforced earlier by `ConvertLeadRequest`.)
+
+    Only then does `convert_lead` run the atomic sequence (new Household + Contact + one
+    Opportunity per product line + a note-Task when the lead has notes, freeze, four
+    events) on this request transaction — nothing is committed here. No new top-level
+    resource is created from the caller's view (the lead is frozen in place), so the
+    frozen lead is returned through `build_masked_lead` under `{"lead": …}` with a 200.
+    """
+    lead = (
+        await db.execute(select(Lead).where(Lead.id == lead_id))
+    ).scalar_one_or_none()
+
+    if lead is None:
+        raise HTTPException(status_code=404, detail="lead not found")
+
+    # Demo-session write-isolation, before the holder / transition guards: a foreign
+    # session's row is a 404, a shared seed row a 409. The resolved session id is
+    # reused for the conversion's events without a second `platform` read.
+    demo_session_id = await _guard_loaded_lead_for_session(
+        lead, request, db, refuse_seed=True
+    )
+
+    # Holder guard: only the agent who owns the lead may convert it (a 403 otherwise).
+    # Unlike qualify/reject, conversion is owner-only — the converting agent becomes the
+    # owner of every entity it creates.
+    if lead.owner_user_id != identity.user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="only the lead's owner can convert it",
+        )
+
+    try:
+        assert_transition(LeadStatus(lead.status), LeadStatus.CONVERTED)
+    except InvalidLeadTransition:
+        raise HTTPException(
+            status_code=409,
+            detail=f"lead cannot be converted (status: {lead.status})",
+        )
+
+    # Every submitted product-line key must be one the caller's tenant offers — the
+    # same per-request tenant check `create_lead_endpoint` runs, resolved from the
+    # scoped session's `current_schema()` via the registry.
+    active_schema = (await db.execute(text("SELECT current_schema()"))).scalar_one()
+    tenant_config = tenant_by_schema(active_schema)
+    allowed_keys = {product_line.key for product_line in tenant_config.product_lines}
+    unknown_keys = [
+        key for key in conversion.product_lines if key not in allowed_keys
+    ]
+    if unknown_keys:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown product line(s): {', '.join(unknown_keys)}",
+        )
+
+    await convert_lead(
+        db,
+        identity.tenant_id,
+        lead=lead,
+        product_lines=conversion.product_lines,
+        actor_user_id=identity.user_id,
+        actor_username=identity.username,
+        actor_role=identity.role,
+        demo_session_id=demo_session_id,
     )
 
     return {

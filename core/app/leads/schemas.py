@@ -41,7 +41,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from ..pii.crypto import normalize_phone
 
 __all__ = [
+    "ConvertLeadRequest",
     "CreateLeadRequest",
+    "NewHouseholdChoice",
     "PublicIntakeRequest",
     "RejectLeadRequest",
     "ResolveDuplicateRequest",
@@ -256,6 +258,45 @@ class ResolveDuplicateRequest(BaseModel):
     """
 
     action: Literal["link", "new", "reject"]
+
+
+class NewHouseholdChoice(BaseModel):
+    """The "create a new household" choice on a conversion (the only mode in P2.1 Epic 4).
+
+    A single `mode` literal pinned to `"new"`, so the wire shape is
+    `{"mode": "new"}`. The link-an-existing-household mode (`{"mode": "link",
+    "household_id": …}`) lands in Epic 8, which widens `household` to a
+    discriminated union on `mode`; modelling the choice as its own object now keeps
+    that later widening additive.
+    """
+
+    mode: Literal["new"]
+
+
+class ConvertLeadRequest(BaseModel):
+    """The request body for the convert action (`POST /api/leads/{id}/convert`).
+
+    Two fields: the `household` choice (new-household only in Epic 4) and the
+    `product_lines` to open an opportunity for. `product_lines` must hold at least
+    one key (an empty list is a 422 before the handler runs); whether each key is
+    one the caller's tenant offers needs the per-request tenant context, so that
+    check lives in the router (the same split `CreateLeadRequest` uses).
+    """
+
+    household: NewHouseholdChoice
+    product_lines: list[str]
+
+    @model_validator(mode="after")
+    def require_at_least_one_product_line(self) -> "ConvertLeadRequest":
+        """Reject the request unless at least one product line is supplied.
+
+        A conversion opens one opportunity per product line, so an empty
+        `product_lines` list raises a `ValueError`, which FastAPI surfaces as a 422
+        before the handler runs. Key membership is checked in the router.
+        """
+        if len(self.product_lines) < 1:
+            raise ValueError("supply at least one product line")
+        return self
 
 
 class RevealLeadRequest(BaseModel):
