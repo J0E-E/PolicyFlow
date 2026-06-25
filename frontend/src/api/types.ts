@@ -238,9 +238,29 @@ export interface ResolveDuplicateRequest {
  * link-an-existing-household mode lands later. `product_lines` opens one opportunity
  * per supplied tenant product-line key (at least one).
  */
+/**
+ * The household choice on a conversion — create a new household for the contact, or
+ * link it into an existing one (`household_id`). Mirrors the backend discriminated
+ * union on `mode`.
+ */
+export type HouseholdChoice =
+  | { mode: "new" }
+  | { mode: "link"; household_id: string };
+
 export interface ConvertLeadRequest {
-  household: { mode: "new" };
+  household: HouseholdChoice;
   product_lines: string[];
+}
+
+/**
+ * One household match from `GET /api/households?q=`, mirroring the backend shape: the
+ * household `id` + `name` and its `members` (the household's contacts' plaintext
+ * names). Backs the convert "link an existing household" picker.
+ */
+export interface HouseholdSearchResult {
+  id: string;
+  name: string;
+  members: { first_name: string; last_name: string }[];
 }
 
 /**

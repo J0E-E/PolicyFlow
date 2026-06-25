@@ -420,6 +420,76 @@ async def test_convert_with_no_product_lines_is_422(
     assert response.status_code == 422
 
 
+async def test_convert_link_mode_reuses_the_household_without_a_new_event(
+    seeded, db_client, database_engine
+):
+    """Linking to an existing household reuses it and emits no `household.created`."""
+    # First conversion mints a household.
+    _, first_lead_id, _ = await login_agent_and_insert_qualified_lead(
+        db_client, database_engine
+    )
+    first_response = await db_client.post(
+        f"/api/leads/{first_lead_id}/convert", json=convert_body()
+    )
+    assert first_response.status_code == 200
+    first_contact_id = uuid.UUID(
+        first_response.json()["lead"]["converted_contact_id"]
+    )
+    household_row = await read_one(
+        database_engine,
+        f"SELECT household_id FROM {SUNSHINE.schema_name}.contacts WHERE id = :id",
+        {"id": first_contact_id},
+    )
+    household_id = household_row.household_id
+
+    # A second lead converts by LINKING to the first lead's household.
+    _, second_lead_id, _ = await login_agent_and_insert_qualified_lead(
+        db_client, database_engine
+    )
+    link_response = await db_client.post(
+        f"/api/leads/{second_lead_id}/convert",
+        json={
+            "household": {"mode": "link", "household_id": str(household_id)},
+            "product_lines": SUNSHINE_PRODUCT_LINES,
+        },
+    )
+    assert link_response.status_code == 200
+    second_contact_id = uuid.UUID(
+        link_response.json()["lead"]["converted_contact_id"]
+    )
+
+    # The second contact rolls up to the SAME household...
+    second_contact = await read_one(
+        database_engine,
+        f"SELECT household_id FROM {SUNSHINE.schema_name}.contacts WHERE id = :id",
+        {"id": second_contact_id},
+    )
+    assert second_contact.household_id == household_id
+    # ...and exactly one `household.created` event exists for it — the link reused the
+    # household and never emitted a second creation.
+    household_created = await read_outbox_rows_for_entity(
+        database_engine, SUNSHINE.schema_name, EventType.HOUSEHOLD_CREATED, household_id
+    )
+    assert len(household_created) == 1
+
+
+async def test_convert_link_to_an_unknown_household_is_404(
+    seeded, db_client, database_engine
+):
+    """Linking to a household id the caller can't see is a 404."""
+    _, lead_id, _ = await login_agent_and_insert_qualified_lead(
+        db_client, database_engine
+    )
+    response = await db_client.post(
+        f"/api/leads/{lead_id}/convert",
+        json={
+            "household": {"mode": "link", "household_id": str(uuid.uuid4())},
+            "product_lines": SUNSHINE_PRODUCT_LINES,
+        },
+    )
+    assert response.status_code == 404
+
+
 async def test_convert_rolls_back_every_write_on_a_mid_convert_failure(
     seeded, db_client, database_engine, monkeypatch
 ):

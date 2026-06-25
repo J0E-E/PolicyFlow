@@ -11,6 +11,7 @@ import {
   claimLead,
   convertLead,
   getConversion,
+  getHouseholds,
   createLead,
   getCurrentIdentity,
   getLead,
@@ -321,6 +322,25 @@ describe("lead client calls", () => {
     expect(options.credentials).toBe("include");
     expect(JSON.parse(options.body as string)).toEqual({ reason: "not a fit" });
     expect(lead).toEqual(sampleMaskedLead);
+  });
+
+  it("getHouseholds GETs /api/households with the encoded query and unwraps { households }", async () => {
+    const households = [
+      {
+        id: "household-1",
+        name: "Lopez Household",
+        members: [{ first_name: "Maria", last_name: "Lopez" }],
+      },
+    ];
+    vi.stubGlobal("fetch", mockJsonResponse({ households }));
+
+    const result = await getHouseholds("Lo pez");
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe("/api/households?q=Lo%20pez");
+    expect(options.method).toBe("GET");
+    expect(options.credentials).toBe("include");
+    expect(result).toEqual(households);
   });
 
   it("getConversion GETs /api/leads/{id}/conversion and returns the flat summary", async () => {

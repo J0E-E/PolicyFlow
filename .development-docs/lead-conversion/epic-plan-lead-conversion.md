@@ -66,12 +66,13 @@ Source TDD: [./tdd-lead-conversion.md](./tdd-lead-conversion.md)
 - **Implementation notes:**
   - **The panel reads a dedicated endpoint, not `MaskedLead`** — `LeadConvertedPanel` fetches `GET /api/leads/{id}/conversion` (`getConversion`), so the converted-ref fields were **never** added to the FE `MaskedLead` type (the Epic 2/5 forward-references to that are moot). Backend read = `get_conversion_summary` in `conversion.py`.
 
-## Epic 8 — Household link path [UI]
+## Epic 8 — Household link path [UI] — **COMPLETED** (14m13s)
 - **Goal:** Let the agent link the new Contact into an existing Household instead of creating one: a session-scoped household search backs a create-new-vs-link picker, and the convert action gains its link branch (reuse the chosen household, no `household.created` event).
 - **Rough scope:** `GET /api/households?q=` (tenant-scoped, `visible_to_session`, members = the household's contacts' plaintext names); picker UI (create-new default vs link); `ConvertLeadRequest` link mode; the `convert_lead` link branch.
-- **Open questions / decisions for stakeholders:** household-search match limit + ordering — reuse the lead-list cap idiom; settle the exact cap at epic time.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time. Search cap `HOUSEHOLD_SEARCH_LIMIT = 20`, `ORDER BY name ASC, id ASC`, `name ILIKE '%q%'` (a typed-search picker, so a tighter cap + alphabetical order, not the lead-list 200/newest-first).
 - **Depends on:** Epics 4, 6.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **`HouseholdPicker` is Epic 9's pre-select hook** — Epic 9 pre-selects the prior's household by driving `HouseholdPicker`'s `mode="link"` + `selectedHouseholdId` (the same props the search picks set), and may seed the results so the chosen household shows by name. The link branch (reuse, no `household.created`, no re-stamp of a NULL-baseline household) is already in `convert_lead`.
 
 ## Epic 9 — Duplicate pre-select [UI]
 - **Goal:** For a lead flagged as a duplicate of a *converted* prior, pre-select that prior's Household in the picker (agent can override); graceful "new household" default when the prior isn't converted.

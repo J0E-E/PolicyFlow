@@ -12,6 +12,7 @@ import type {
   ConversionSummary,
   ConvertLeadRequest,
   CreateLeadRequest,
+  HouseholdSearchResult,
   DemoSessionResetResult,
   DemoSessionState,
   Identity,
@@ -264,6 +265,22 @@ export async function qualifyLead(leadId: string): Promise<MaskedLead> {
     `/api/leads/${leadId}/qualify`,
   );
   return responseBody.lead;
+}
+
+/**
+ * Search households by name via `GET /api/households?q=`, unwrapping the
+ * `{ households }` envelope into the match array (each with its members' plaintext
+ * names). Backs the convert "link an existing household" picker; an empty array is a
+ * valid result (no match). Tenant- and session-scoped on the server.
+ */
+export async function getHouseholds(
+  query: string,
+): Promise<HouseholdSearchResult[]> {
+  const responseBody = await request<{ households: HouseholdSearchResult[] }>(
+    "GET",
+    `/api/households?q=${encodeURIComponent(query)}`,
+  );
+  return responseBody.households;
 }
 
 /**

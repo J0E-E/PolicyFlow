@@ -84,6 +84,7 @@ async def convert_lead(
     actor_username: str | None,
     actor_role: Role | None,
     demo_session_id: uuid.UUID | None,
+    existing_household: Household | None = None,
 ) -> Lead:
     """Convert `lead` into a Household + Contact + opportunities (+ note-Task); freeze it.
 
@@ -109,24 +110,32 @@ async def convert_lead(
     """
     correlation_id = lead.correlation_id
 
-    # 1. Household (new). The name is derived from the lead's (plaintext) last name.
-    household = Household(
-        name=f"{lead.last_name} Household",
-        correlation_id=correlation_id,
-        demo_session_id=demo_session_id,
-    )
-    db.add(household)
-    await db.flush()
-    await _emit(
-        db,
-        event_type=EventBusEventType.HOUSEHOLD_CREATED,
-        tenant_id=tenant_id,
-        actor_user_id=actor_user_id,
-        actor_role=actor_role,
-        payload={"entity_id": str(household.id)},
-        correlation_id=correlation_id,
-        demo_session_id=demo_session_id,
-    )
+    # 1. Household. Link branch (Epic 8): reuse the caller-chosen, already-loaded
+    #    household as-is — no insert, no re-stamp of its `demo_session_id` (a
+    #    session-tagged contact may link to a NULL-baseline household, which survives
+    #    the session's purge), and **no** `household.created` event. New branch:
+    #    mint a household named from the lead's (plaintext) last name and emit
+    #    `household.created`.
+    if existing_household is not None:
+        household = existing_household
+    else:
+        household = Household(
+            name=f"{lead.last_name} Household",
+            correlation_id=correlation_id,
+            demo_session_id=demo_session_id,
+        )
+        db.add(household)
+        await db.flush()
+        await _emit(
+            db,
+            event_type=EventBusEventType.HOUSEHOLD_CREATED,
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            payload={"entity_id": str(household.id)},
+            correlation_id=correlation_id,
+            demo_session_id=demo_session_id,
+        )
 
     # 2. Contact — re-encrypt the lead's sensitive blobs, carry the plaintext fields.
     street_address_encrypted = None

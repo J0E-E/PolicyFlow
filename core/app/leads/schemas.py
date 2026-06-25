@@ -33,6 +33,7 @@ the handler runs — the automatic-validation style the `pii_demo` create relies
 """
 
 import re
+import uuid
 from datetime import date
 from typing import Literal
 
@@ -43,6 +44,7 @@ from ..pii.crypto import normalize_phone
 __all__ = [
     "ConvertLeadRequest",
     "CreateLeadRequest",
+    "LinkHouseholdChoice",
     "NewHouseholdChoice",
     "PublicIntakeRequest",
     "RejectLeadRequest",
@@ -261,29 +263,43 @@ class ResolveDuplicateRequest(BaseModel):
 
 
 class NewHouseholdChoice(BaseModel):
-    """The "create a new household" choice on a conversion (the only mode in P2.1 Epic 4).
+    """The "create a new household" choice on a conversion.
 
     A single `mode` literal pinned to `"new"`, so the wire shape is
-    `{"mode": "new"}`. The link-an-existing-household mode (`{"mode": "link",
-    "household_id": …}`) lands in Epic 8, which widens `household` to a
-    discriminated union on `mode`; modelling the choice as its own object now keeps
-    that later widening additive.
+    `{"mode": "new"}` — the conversion mints a fresh household for the contact.
     """
 
     mode: Literal["new"]
 
 
+class LinkHouseholdChoice(BaseModel):
+    """The "link an existing household" choice on a conversion (P2.1 Epic 8).
+
+    Names the `household_id` to reuse, so the wire shape is
+    `{"mode": "link", "household_id": …}`. The chosen household must be one the
+    caller can see (tenant-scoped + session-visible); the router resolves and
+    validates it, so an unknown / cross-session id is a 404 there.
+    """
+
+    mode: Literal["link"]
+    household_id: uuid.UUID
+
+
 class ConvertLeadRequest(BaseModel):
     """The request body for the convert action (`POST /api/leads/{id}/convert`).
 
-    Two fields: the `household` choice (new-household only in Epic 4) and the
-    `product_lines` to open an opportunity for. `product_lines` must hold at least
-    one key (an empty list is a 422 before the handler runs); whether each key is
-    one the caller's tenant offers needs the per-request tenant context, so that
-    check lives in the router (the same split `CreateLeadRequest` uses).
+    Two fields: the `household` choice and the `product_lines` to open an
+    opportunity for. `household` is a discriminated union on `mode` — create a new
+    household (`{"mode": "new"}`) or link an existing one
+    (`{"mode": "link", "household_id": …}`). `product_lines` must hold at least one
+    key (an empty list is a 422 before the handler runs); whether each key is one
+    the caller's tenant offers needs the per-request tenant context, so that check
+    lives in the router (the same split `CreateLeadRequest` uses).
     """
 
-    household: NewHouseholdChoice
+    household: NewHouseholdChoice | LinkHouseholdChoice = Field(
+        discriminator="mode"
+    )
     product_lines: list[str]
 
     @model_validator(mode="after")

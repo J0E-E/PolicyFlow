@@ -16,6 +16,7 @@ vi.mock("../api", () => ({
   getLead: vi.fn(),
   listTenants: vi.fn(),
   convertLead: vi.fn(),
+  getHouseholds: vi.fn(),
   ApiError: class ApiError extends Error {
     status: number;
     constructor(status: number, message: string) {
@@ -31,12 +32,13 @@ vi.mock("../session", () => ({
   useCapability: vi.fn(),
 }));
 
-import { convertLead, getLead, listTenants } from "../api";
+import { convertLead, getHouseholds, getLead, listTenants } from "../api";
 import { useCapability, useSession } from "../session";
 
 const getLeadMock = vi.mocked(getLead);
 const listTenantsMock = vi.mocked(listTenants);
 const convertLeadMock = vi.mocked(convertLead);
+const getHouseholdsMock = vi.mocked(getHouseholds);
 const useCapabilityMock = vi.mocked(useCapability);
 const useSessionMock = vi.mocked(useSession);
 
@@ -125,12 +127,14 @@ beforeEach(() => {
   getLeadMock.mockReset();
   listTenantsMock.mockReset();
   convertLeadMock.mockReset();
+  getHouseholdsMock.mockReset();
   useCapabilityMock.mockReset();
   useSessionMock.mockReset();
   useSessionMock.mockReturnValue(sessionFor(agentIdentity));
   useCapabilityMock.mockImplementation(capabilitySet(["create_edit_records", "reveal_pii"]));
   listTenantsMock.mockResolvedValue([sunshineTenant]);
   getLeadMock.mockResolvedValue(makeLead());
+  getHouseholdsMock.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -214,6 +218,56 @@ describe("ConvertLeadPage", () => {
       expect(document.getElementById("convert-lead-ineligible")).toBeInTheDocument();
     });
     expect(document.getElementById("convert-lead-commit-button")).toBeNull();
+  });
+
+  it("links to a searched household and commits with the link choice", async () => {
+    convertLeadMock.mockResolvedValue(makeLead({ status: "Converted" }));
+    getHouseholdsMock.mockResolvedValue([
+      {
+        id: "household-7",
+        name: "Garcia Household",
+        members: [{ first_name: "Ana", last_name: "Garcia" }],
+      },
+    ]);
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.getElementById("convert-lead-commit-button")).toBeInTheDocument();
+    });
+    // Switch to link mode, search, and pick the match.
+    fireEvent.click(document.getElementById("convert-lead-household-link")!);
+    fireEvent.change(document.getElementById("convert-lead-household-search")!, {
+      target: { value: "Garcia" },
+    });
+    await waitFor(() => {
+      expect(
+        document.getElementById("convert-lead-household-option-household-7"),
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(
+      document.getElementById("convert-lead-household-option-household-7")!,
+    );
+    fireEvent.click(document.getElementById("convert-lead-commit-button")!);
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="lead-detail"]')).toBeInTheDocument();
+    });
+    expect(convertLeadMock).toHaveBeenCalledWith("lead-1", {
+      household: { mode: "link", household_id: "household-7" },
+      product_lines: ["medicare_advantage"],
+    });
+  });
+
+  it("blocks the commit in link mode until a household is picked", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.getElementById("convert-lead-commit-button")).toBeInTheDocument();
+    });
+    // New mode commits freely; switching to link with nothing picked disables commit.
+    expect(document.getElementById("convert-lead-commit-button")).not.toBeDisabled();
+    fireEvent.click(document.getElementById("convert-lead-household-link")!);
+    expect(document.getElementById("convert-lead-commit-button")).toBeDisabled();
   });
 
   it("surfaces an inline error and stays on the page when the commit fails", async () => {

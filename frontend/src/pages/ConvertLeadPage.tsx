@@ -3,9 +3,10 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import Button from "../components/Button.tsx";
 import Card from "../components/Card.tsx";
 import CheckboxGroup from "../components/CheckboxGroup.tsx";
+import HouseholdPicker from "./HouseholdPicker.tsx";
 import { useCapability, useSession } from "../session";
 import { ApiError, convertLead, getLead, listTenants } from "../api";
-import type { MaskedLead, Tenant } from "../api";
+import type { HouseholdChoice, MaskedLead, Tenant } from "../api";
 
 // The dedicated review-and-confirm convert screen at `/app/leads/:id/convert`
 // (P2.1 Epic 6). It replaces Epic 5's minimal inline confirm: the agent lands here
@@ -69,6 +70,8 @@ export default function ConvertLeadPage() {
   });
   const [leadLoad, setLeadLoad] = useState<LeadLoadState>({ kind: "loading" });
   const [selectedProductLines, setSelectedProductLines] = useState<string[]>([]);
+  const [householdMode, setHouseholdMode] = useState<"new" | "link">("new");
+  const [linkedHouseholdId, setLinkedHouseholdId] = useState<string | null>(null);
   const [isConverting, setIsConverting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -134,14 +137,26 @@ export default function ConvertLeadPage() {
 
   const backToLead = `/app/leads/${leadId ?? ""}`;
 
+  // Link mode needs a chosen household before it can commit; new mode never does.
+  const isHouseholdChoiceIncomplete =
+    householdMode === "link" && linkedHouseholdId === null;
+
   const commitConvert = () => {
-    if (leadId === undefined || selectedProductLines.length === 0) {
+    if (
+      leadId === undefined ||
+      selectedProductLines.length === 0 ||
+      isHouseholdChoiceIncomplete
+    ) {
       return;
     }
+    const household: HouseholdChoice =
+      householdMode === "link" && linkedHouseholdId !== null
+        ? { mode: "link", household_id: linkedHouseholdId }
+        : { mode: "new" };
     setErrorMessage(null);
     setIsConverting(true);
     convertLead(leadId, {
-      household: { mode: "new" },
+      household,
       product_lines: selectedProductLines,
     })
       .then(() => navigate(backToLead))
@@ -282,9 +297,19 @@ export default function ConvertLeadPage() {
       </Card>
 
       <Card id="convert-lead-form-card" title="What to open">
-        <p id="convert-lead-household-note" className="convert-lead-intro">
-          This creates a new household for the contact.
-        </p>
+        <HouseholdPicker
+          mode={householdMode}
+          selectedHouseholdId={linkedHouseholdId}
+          onSelectNew={() => {
+            setHouseholdMode("new");
+            setLinkedHouseholdId(null);
+          }}
+          onSelectLinkMode={() => setHouseholdMode("link")}
+          onSelectHousehold={(householdId) => {
+            setHouseholdMode("link");
+            setLinkedHouseholdId(householdId);
+          }}
+        />
         <CheckboxGroup
           id="convert-lead-product-lines"
           label="Open an opportunity for"
@@ -302,7 +327,7 @@ export default function ConvertLeadPage() {
             id="convert-lead-commit-button"
             variant="filled"
             isPending={isConverting}
-            disabled={hasNoProductLine}
+            disabled={hasNoProductLine || isHouseholdChoiceIncomplete}
             onClick={commitConvert}
           >
             Convert lead

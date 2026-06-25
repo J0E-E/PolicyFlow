@@ -24,6 +24,7 @@ from .demo.router import router as demo_router
 from .demo.runtime import demo_lifecycle_lifespan
 from .events.runtime import event_bus_lifespan
 from .health import router as health_router
+from .leads.households_router import router as households_router
 from .leads.public_router import router as public_leads_router
 from .leads.router import router as leads_router
 from .pii_demo.router import router as pii_demo_router
@@ -55,4 +56,5 @@ app.include_router(pii_demo_router)
 app.include_router(audit_router)
 app.include_router(demo_router)
 app.include_router(leads_router)
+app.include_router(households_router)
 app.include_router(public_leads_router)

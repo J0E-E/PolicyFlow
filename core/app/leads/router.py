@@ -81,6 +81,7 @@ from ..demo.session import current_demo_session
 from ..events.catalog import EventType as EventBusEventType
 from ..events.envelope import build_envelope
 from ..events.outbox import enqueue_event
+from ..models.household import Household
 from ..models.lead import Lead
 from ..pii.reveal_seam import on_pii_revealed
 from ..pii.service import decrypt_field
@@ -701,6 +702,30 @@ async def convert_lead_endpoint(
             detail=f"unknown product line(s): {', '.join(unknown_keys)}",
         )
 
+    # Resolve the household choice. `new` mints one in `convert_lead`; `link` reuses an
+    # existing household the caller can see — tenant-scoped (via the session's
+    # search_path) and session-visible (the seed baseline plus the caller's own
+    # session, like the leads read). An unknown / cross-session id is a 404.
+    existing_household = None
+    if conversion.household.mode == "link":
+        household_query = select(Household).where(
+            Household.id == conversion.household.household_id
+        )
+        if demo_session_id is None:
+            household_query = household_query.where(
+                Household.demo_session_id.is_(None)
+            )
+        else:
+            household_query = household_query.where(
+                Household.demo_session_id.is_(None)
+                | (Household.demo_session_id == demo_session_id)
+            )
+        existing_household = (
+            await db.execute(household_query)
+        ).scalar_one_or_none()
+        if existing_household is None:
+            raise HTTPException(status_code=404, detail="household not found")
+
     await convert_lead(
         db,
         identity.tenant_id,
@@ -710,6 +735,7 @@ async def convert_lead_endpoint(
         actor_username=identity.username,
         actor_role=identity.role,
         demo_session_id=demo_session_id,
+        existing_household=existing_household,
     )
 
     return {
