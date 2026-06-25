@@ -24,6 +24,7 @@ vi.mock("../api", () => ({
   getDemoSession: vi.fn(),
   revealLeadField: vi.fn(),
   qualifyLead: vi.fn(),
+  convertLead: vi.fn(),
   rejectLead: vi.fn(),
   resolveDuplicate: vi.fn(),
   ApiError: class ApiError extends Error {
@@ -665,5 +666,71 @@ describe("LeadDetailPage demo-session markers (Epic 6)", () => {
     expect(
       document.getElementById("lead-detail-duplicate-new-button"),
     ).toBeNull();
+  });
+});
+
+describe("LeadDetailPage convert affordance (P2.1 Epic 5)", () => {
+  // The fixed agent identity owns this id; a Qualified lead owned by it is convertible.
+  const AGENT_USER_ID = "11111111-1111-1111-1111-111111111111";
+
+  async function renderWithLead(lead: MaskedLead) {
+    getLeadMock.mockResolvedValue(lead);
+    renderPage();
+    await waitFor(() => {
+      expect(document.getElementById("lead-detail-title")).toBeInTheDocument();
+    });
+  }
+
+  it("shows Convert for a Qualified lead the caller holds and may edit", async () => {
+    await renderWithLead(
+      makeLead({ status: "Qualified", owner_user_id: AGENT_USER_ID }),
+    );
+    expect(
+      document.getElementById("lead-detail-convert-button"),
+    ).toBeInTheDocument();
+  });
+
+  it("hides Convert when the caller is not the holder", async () => {
+    await renderWithLead(
+      makeLead({ status: "Qualified", owner_user_id: "someone-else" }),
+    );
+    expect(document.getElementById("lead-detail-convert")).toBeNull();
+  });
+
+  it("hides Convert on a non-Qualified (Working) lead", async () => {
+    await renderWithLead(
+      makeLead({ status: "Working", owner_user_id: AGENT_USER_ID }),
+    );
+    expect(document.getElementById("lead-detail-convert")).toBeNull();
+  });
+
+  it("hides Convert on an already-Converted (frozen) lead", async () => {
+    await renderWithLead(
+      makeLead({ status: "Converted", owner_user_id: AGENT_USER_ID }),
+    );
+    expect(document.getElementById("lead-detail-convert")).toBeNull();
+    // The header stamp reflects the frozen status.
+    expect(
+      document.getElementById("lead-detail-status-stamp-label"),
+    ).toHaveTextContent("Converted");
+  });
+
+  it("hides Convert on a read-only shared seed row", async () => {
+    await renderWithLead(
+      makeLead({
+        status: "Qualified",
+        owner_user_id: AGENT_USER_ID,
+        is_seed: true,
+      }),
+    );
+    expect(document.getElementById("lead-detail-convert")).toBeNull();
+  });
+
+  it("hides Convert without the create-edit capability", async () => {
+    useCapabilityMock.mockImplementation(capabilitySet(["reveal_pii"]));
+    await renderWithLead(
+      makeLead({ status: "Qualified", owner_user_id: AGENT_USER_ID }),
+    );
+    expect(document.getElementById("lead-detail-convert")).toBeNull();
   });
 });

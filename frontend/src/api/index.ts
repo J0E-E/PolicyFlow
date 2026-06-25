@@ -5,6 +5,7 @@ export { ApiError } from "./client";
 export {
   assumePersona,
   claimLead,
+  convertLead,
   createLead,
   getCurrentIdentity,
   getDemoSession,
@@ -22,6 +23,7 @@ export {
 } from "./client";
 export type {
   Capability,
+  ConvertLeadRequest,
   CreateLeadRequest,
   DemoSessionResetResult,
   DemoSessionState,

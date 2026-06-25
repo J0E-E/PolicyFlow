@@ -232,6 +232,18 @@ export interface ResolveDuplicateRequest {
 }
 
 /**
+ * The convert request body for `POST /api/leads/{id}/convert`, mirroring the backend
+ * `ConvertLeadRequest`. `household` chooses how the new contact is grouped — only the
+ * create-a-new-household mode (`{ mode: "new" }`) ships in P2.1 Epic 4/5; the
+ * link-an-existing-household mode lands later. `product_lines` opens one opportunity
+ * per supplied tenant product-line key (at least one).
+ */
+export interface ConvertLeadRequest {
+  household: { mode: "new" };
+  product_lines: string[];
+}
+
+/**
  * The reveal request body for `POST /api/leads/{id}/reveal`, mirroring
  * `RevealLeadRequest` — which single field to unmask for this lead.
  */

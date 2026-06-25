@@ -16,6 +16,7 @@ import {
 import { leadDate, leadPreferredContactLabel } from "./leadDetailPresentation.ts";
 import RevealableLeadField from "./RevealableLeadField.tsx";
 import LeadActionsSection from "./LeadActionsSection.tsx";
+import LeadConvertSection from "./LeadConvertSection.tsx";
 import LeadDuplicatePanel from "./LeadDuplicatePanel.tsx";
 import LeadTimeline from "./LeadTimeline.tsx";
 import DemoSessionGate from "../components/DemoSessionGate.tsx";
@@ -276,6 +277,17 @@ export default function LeadDetailPage() {
       {canEdit && lead.status === "Working" && !lead.is_seed && (
         <LeadActionsSection lead={lead} onLeadChange={setLead} />
       )}
+      {/* Convert sits in the same status-gated slot, for a Qualified lead the caller
+          both holds and may edit (conversion is owner-only on the backend, so the
+          holder check keeps the affordance honest). Hidden on a read-only seed row,
+          and — once converted — the Qualified gate no longer matches, so the frozen
+          lead shows no mutating actions. */}
+      {canEdit &&
+        lead.status === "Qualified" &&
+        !lead.is_seed &&
+        identity?.user.id === lead.owner_user_id && (
+          <LeadConvertSection lead={lead} onLeadChange={setLead} />
+        )}
       {/* The EVENT TIMELINE ink console sits at the VERY BOTTOM of the page, after the
           actions (Guide §6.1; P1.9 Epic 1) — the agent's read→act flow stays first and
           the dark console anchors the page end. It does its own single fetch on open. */}

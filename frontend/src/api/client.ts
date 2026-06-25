@@ -9,6 +9,7 @@
 // out" from a real failure.
 
 import type {
+  ConvertLeadRequest,
   CreateLeadRequest,
   DemoSessionResetResult,
   DemoSessionState,
@@ -260,6 +261,24 @@ export async function qualifyLead(leadId: string): Promise<MaskedLead> {
   const responseBody = await request<{ lead: MaskedLead }>(
     "POST",
     `/api/leads/${leadId}/qualify`,
+  );
+  return responseBody.lead;
+}
+
+/**
+ * Convert a lead via `POST /api/leads/{id}/convert` (moves `Qualified → Converted`,
+ * creating the household / contact / opportunities), unwrapping the `{ lead }`
+ * envelope into the frozen masked lead. The body chooses the household mode and the
+ * product lines to open opportunities for.
+ */
+export async function convertLead(
+  leadId: string,
+  convertLeadRequest: ConvertLeadRequest,
+): Promise<MaskedLead> {
+  const responseBody = await request<{ lead: MaskedLead }>(
+    "POST",
+    `/api/leads/${leadId}/convert`,
+    convertLeadRequest,
   );
   return responseBody.lead;
 }

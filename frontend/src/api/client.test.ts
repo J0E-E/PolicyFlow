@@ -9,6 +9,7 @@ import {
   ApiError,
   assumePersona,
   claimLead,
+  convertLead,
   createLead,
   getCurrentIdentity,
   getLead,
@@ -318,6 +319,25 @@ describe("lead client calls", () => {
     expect(options.method).toBe("POST");
     expect(options.credentials).toBe("include");
     expect(JSON.parse(options.body as string)).toEqual({ reason: "not a fit" });
+    expect(lead).toEqual(sampleMaskedLead);
+  });
+
+  it("convertLead POSTs /api/leads/{id}/convert with the household + product lines and unwraps { lead }", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ lead: sampleMaskedLead }));
+
+    const lead = await convertLead(sampleMaskedLead.id, {
+      household: { mode: "new" },
+      product_lines: ["medicare_advantage"],
+    });
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe(`/api/leads/${sampleMaskedLead.id}/convert`);
+    expect(options.method).toBe("POST");
+    expect(options.credentials).toBe("include");
+    expect(JSON.parse(options.body as string)).toEqual({
+      household: { mode: "new" },
+      product_lines: ["medicare_advantage"],
+    });
     expect(lead).toEqual(sampleMaskedLead);
   });
 

@@ -41,12 +41,14 @@ Source TDD: [./tdd-lead-conversion.md](./tdd-lead-conversion.md)
   - **`convert_lead` + `POST /convert` are new-household only** — `app/leads/conversion.py::convert_lead` always creates a Household and emits `household.created`; `ConvertLeadRequest.household` is `NewHouseholdChoice` (`mode:"new"`). Epic 8 widens `household` to a discriminated union (`+ link`) and adds the link branch (reuse the chosen household, **no** `household.created` event) + a `household_id` param on `convert_lead`.
   - **FE wiring is Epic 5's** — the `convertLead` api client + the `ConvertLeadRequest` wire type don't exist yet; Epic 5 adds them when it calls the endpoint.
 
-## Epic 5 — Convert affordance → frozen lead [UI]
+## Epic 5 — Convert affordance → frozen lead [UI] — **COMPLETED** (10m19s)
 - **Goal:** Make a real conversion demoable end-to-end. A Convert affordance on a Qualified, held lead leads to a minimal confirm, calls `convertLead`, and lands back on the frozen lead detail showing the `Converted` stamp with mutating actions hidden. *(The tracer bullet is now complete.)*
 - **Rough scope:** Convert affordance gated on `status==="Qualified"` + holder + `create_edit_records` + `!is_seed`; a minimal confirm step; `convertLead` api client + `ConvertLeadRequest` wire type; frozen-lead detail reflects `Converted`; every rendered element gets a unique `id`.
-- **Open questions / decisions for stakeholders:** none expected (the richer review screen replaces the minimal confirm next).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 4.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Minimal confirm lives in `LeadConvertSection.tsx`** — an inline confirm on the lead detail page that sends `product_lines: lead.product_lines_of_interest` (no picker). Epic 6 replaces this with the dedicated `/app/leads/:id/convert` review-and-confirm route (where the Convert button navigates instead of opening the inline confirm); reuse the `convertLead` client + the page gating as-is.
+  - **FE `MaskedLead` still lacks the converted-ref fields** — not needed here (Epic 5 only reflects `status`); Epic 7 adds them when the "Converted to" panel reads them.
 
 ## Epic 6 — Review-and-confirm screen [UI]
 - **Goal:** Replace the minimal confirm with the real `/app/leads/:id/convert` review-and-confirm page: read-only mapped contact details, product-line confirm/choose (the lead's lines pre-checked; when the lead has none the agent picks ≥1; commit blocked at zero), new-household default.
