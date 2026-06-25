@@ -1,33 +1,23 @@
 {
-    "mcpServers": {
-        "code-review-graph": {
-            "command": "cmd",
-            "args": [
-                "/c",
-                "code-review-graph",
-                "serve"
-            ]
-        },
-        "memory-vault": {
-            "command": "docker",
-            "args": [
-                "exec",
-                "-i",
-                "memory-vault-app-1",
-                "python",
-                "-m",
-                "src.mcp"
-            ]
-        },
-        "playwright": {
-            "command": "docker",
-            "args": [
-                "run",
-                "-i",
-                "--rm",
-                "--init",
-                "mcr.microsoft.com/playwright/mcp"
-            ]
-        }
-    }
+    "mcpServers":  {
+                       "code-review-graph":  {
+                                                 "type":  "http",
+                                                 "url":  "http://127.0.0.1:5555/mcp"
+                                             },
+                       "memory-vault":  {
+                                            "command":  "docker",
+                                            "args":  [
+                                                         "exec",
+                                                         "-i",
+                                                         "memory-vault-app-1",
+                                                         "python",
+                                                         "-m",
+                                                         "src.mcp"
+                                                     ]
+                                        },
+                       "playwright":  {
+                                          "type":  "http",
+                                          "url":  "http://localhost:8931/mcp"
+                                      }
+                   }
 }

@@ -497,7 +497,7 @@ ordered so the system stays runnable/deployable after each.
   `SEED_USER_PASSWORD` SSM injection (backlog #3, the Epic 13 env-plumbing seam is the
   prerequisite). **Next move:** **P1.9 (Per-record event timeline `[UI]`)**.
 
-#### P1.9 — Per-record event timeline `[UI]`
+#### P1.9 — Per-record event timeline `[UI]` — **COMPLETE**
 
 - **Goal:** Live-updating per-record event timeline on the lead detail view.
 - **Shippable outcome / acceptance:** lead detail shows each domain event + stub
@@ -505,21 +505,211 @@ ordered so the system stays runnable/deployable after each.
 - **Depends on:** P1.5, P1.7.
 - **Isolation note:** timeline reads scoped to the record's tenant.
 - **Size:** M.
+- **Status:** **COMPLETE** (2026-06-25). All 7 epics shipped behind a green gate (full
+  backend suite **665 passed** on the real Postgres + RabbitMQ substrate; full frontend
+  suite **331 passed** across 43 files; `tsc -b && vite build` clean), built simplest-first
+  behind a tracer bullet: the thinnest customer-visible thread first — migration + read
+  endpoint + a `LeadTimeline` console of real domain-event rows on the lead detail page
+  (Epic 1) — then reaction sibling rows with read-time status derivation (2), the enrichment
+  result summary (3), live polling (4), seeded historical trails (5), the "Simulated" badge +
+  outbox explainer (6), and the isolation/acceptance hardening suite (7). Acceptance met
+  end-to-end across the five TDD §8 criteria: a freshly created lead's enrichment reaction
+  visibly advances **Pending → Processing → Done** with a deterministic quality score and no
+  manual refresh (#1, ~1500 ms poll that idle-stops once every row is terminal and re-arms on
+  the lead's `updated_at`); historical/seed leads open with a populated, coherent
+  status-derived chronological trail (#2); both stub reactions (`enrichment.stub`,
+  `sync.logger`) render as sibling rows under their parent event with derived status (#3); a
+  per-row "Simulated" badge plus exactly one outbox `ExplainerPopover` are present (#4); and a
+  second demo session never sees another session's reactions (#5). The read is a pure
+  derivation over real bus state — no new domain events, no stored status: the per-lead
+  endpoint filters the tenant `outbox` on `payload->>'entity_id'` alone, synthesizes expected
+  reactions per event from `CONSUMER_BINDINGS`, LEFT JOINs `processed_events` on `event_id`,
+  and derives `pending → processing → done` (`failed` dormant in the vocabulary for M3).
+  Migration `0014` is additive only — re-grants the tenant role `SELECT` on its own `outbox`
+  (INSERT+SELECT, UPDATE/DELETE still revoked) and adds the nullable
+  `processed_events.result_summary` the enrichment stub fills via a deterministic
+  `event_id`-derived score, written atomically on the `ON CONFLICT DO NOTHING` insert so
+  redelivery never rewrites it; the seed reuses the *same* derivation + fan-out so seeded
+  trails match what a live delivery would produce. The named acceptance suite
+  (`core/tests/test_timeline_acceptance.py` + the frontend `acceptance criteria (Epic 7)`
+  block) proves the five criteria through the real endpoint/component, the new substance being
+  the no-cross-contamination proof (a reaction can only link via a globally unique
+  `event_id`, so no foreign-session/tenant row can leak onto a visible lead).
+  **Tenant-isolation / PII invariant held throughout** — the timeline adds no new visibility
+  and carries no PII (events key on `entity_id`, never a value). Epic plan:
+  `./p1.9/epic-plan-P1.9-event-timeline.md`. **Faked / deferred per plan:** real sidecar
+  effects (the quality score / log line are canned stubs M3 replaces behind the identical
+  events); timeline on opportunities/policies + the end-to-end correlation-trace view
+  (**P2.5**); no push transport (polling only). **This completes Milestone 1.**
 
-### Milestone 2 — Domain Workflow *(sketch — earns full design pass at M2 start)*
+### Milestone 2 — Domain Workflow
 
-- **P2.1 — Lead conversion** — one-transaction Contact + Household + one Opportunity
-  per product line; Lead frozen. *Accept: walkthrough step 7.*
-- **P2.2 — Opportunity pipeline & product rules `[UI]`** — canonical stage machine,
-  Medicare eligibility gate, beneficiary/health steps, pipeline value fields.
-  *Accept: steps 8.*
-- **P2.3 — Quotes → Application → Policy** — stubbed quote gen, quote-selection
-  creates Application, application lifecycle, policy creation, masked Medicare ID.
-  *Accept: steps 9–12.*
-- **P2.4 — Renewals & cross-sell** — anniversary job + AEP sweep + demo time controls;
-  cross-sell prompt. *Accept: step 15.*
-- **P2.5 — Timeline + correlation trace extension `[UI]`** — timeline on
-  opportunities/policies + end-to-end trace view. *Accept: step 20.*
+> **Full design pass done 2026-06-25** (via `/grill-me`); the sketch is now planned to
+> M1-level detail. The requirements (Lifecycle States, Workflow Orchestration Model,
+> Opportunity/Quote/Application/Policy/Renewal Management) pin most behavior — the
+> decisions here settle **sequencing, decomposition, faking, and the open seams**.
+
+**Cross-cutting M2 decisions (apply to every phase):**
+
+- **Lean event-seam wiring.** M2 publishes every new domain event (the real seam M3/M4
+  bind to) but wires only **one new stub consumer — Carrier Quote** (`quote.requested`
+  → stub → `quote.completed`) — and **extends the existing `sync.logger` bindings** to
+  the new events. **Notification and Metrics bindings are deliberately *not* registered
+  until M3/M4** — the P1.9 timeline only synthesizes reactions for *bound* consumers, so
+  this keeps the M2 timeline honest (Quote + CRM-Sync reactions only) with no throwaway
+  stubs built-then-replaced. Notification-worthy effects (renewal Task, cross-sell
+  prompt) surface as **UI domain records** in M2, not broker reactions. *(M3 P3.4
+  registers Notification bindings; M4 registers Metrics bindings + builds the read model
+  from live demo events.)*
+- **`correlation_id` propagation is an M2 invariant.** The originating lead's
+  `correlation_id` is **stored on each entity and copied forward at creation**
+  (Contact/Household/Opportunity at conversion; Quote/Application/Policy at issuance);
+  every M2 event publish stamps it. A **renewal starts a new `correlation_id`** with
+  `causation_id` back to the policy (bounded traces). P2.5 renders the trace over this;
+  P2.1–P2.4 must honor it.
+- **Build strategy:** tracer bullet per phase (as M1) — thinnest customer-visible thread
+  first, then expand.
+- **Sequencing:** hard-sequential P2.1 → P2.2 → P2.3 → P2.4 → P2.5; each builds on the
+  prior phase's entities.
+
+#### P2.1 — Lead conversion
+
+- **Goal:** One-transaction conversion of a qualified Lead into Contact + Household + one
+  Opportunity per product line of interest; Lead frozen `Converted`.
+- **Shippable outcome / acceptance:** walkthrough **step 7** — an agent converts a
+  qualified lead; in one DB transaction a Contact is created, a Household is created **or
+  linked to an existing one** (duplicate-resolution pre-selects the linked Contact's
+  Household; a minimal household picker covers the search path), one Opportunity per
+  product line is created (born at stage *New*, owned by the converting agent), the
+  lead's notes become a note-type **Task** on the Contact, and the Lead is frozen
+  (`Converted`, read-only, stamped `converted_contact_id` / `converted_opportunity_ids`).
+  Emits `lead.converted`, `contact.created`, `household.created` (if new), and
+  `opportunity.created` ×N — all via the outbox in the same transaction.
+- **Key components:** Contact / Household / Opportunity / **Task** (polymorphic,
+  introduced minimally here) entities + migrations; the transactional conversion service;
+  the conversion UI flow (household create/link picker); outbox emission of the five event
+  types; `correlation_id` copied lead→entities.
+- **Faked / deferred:** rich Task queue + due-date/assignment routing → **P2.4**;
+  opportunity stage transitions + tenant stage config → **P2.2**; existing-household
+  *address-matching* is out of scope (manual pick only).
+- **Depends on:** P1.7 (qualified leads + blind index for the duplicate-link path), P1.5
+  (outbox/events).
+- **Isolation note:** all created entities tenant-scoped + demo-session-tagged;
+  conversion runs under the per-tenant role; events carry `tenant_id` + `demo_session_id`.
+- **Size:** M.
+
+#### P2.2 — Opportunity pipeline & product rules `[UI]`
+
+- **Goal:** The canonical opportunity stage machine with per-tenant configuration, the
+  Medicare eligibility gate, and pipeline value fields.
+- **Shippable outcome / acceptance:** walkthrough **step 8** — opportunities move through
+  `New → Qualified → Quoted → Application Started → Submitted → Approved → Policy Active`;
+  `(any) → Lost`; invalid transitions rejected server-side. Per-tenant (seed-driven)
+  config renames stage labels and toggles the optional *Quoted* / *Approved* stages
+  (anchors *New* / *Application Started* / *Policy Active* / *Lost* fixed); disabled-stage
+  skip semantics honored. The **Medicare (MA/Part D) eligibility gate** (age ≥ 65 from
+  stored DOB / age band) blocks reaching *Quoted* and blocks quote requests; the
+  enrichment flag is advisory only. `estimated_annual_premium` + `target_close_date`
+  displayed on the pipeline. Stage changes publish `opportunity.stage_changed` (+
+  `opportunity.lost`).
+- **Key components:** stage state-machine module (explicit + testable — not in
+  controllers/UI); per-tenant stage-config seed + read-only render; eligibility-gate rule;
+  pipeline board UI; value-field display.
+- **Faked / deferred:** beneficiary/health steps → **P2.3** (corrected from the sketch —
+  the spec puts them on the Application); pipeline-value sorting + value-by-stage → **M4
+  [SHOULD]**; auto-update of `estimated_annual_premium` to the selected quote's premium
+  happens in **P2.3**.
+- **Depends on:** P2.1 (opportunities exist).
+- **Isolation note:** stage config + opportunities tenant-scoped; the two tenants differ
+  visibly in stage labels/toggles (itself a demo requirement).
+- **Size:** M–L.
+
+#### P2.3 — Quotes → Application → Policy `[UI]`
+
+- **Goal:** The opportunity-to-policy spine — quote generation, quote-selection →
+  Application, application lifecycle + product-specific steps, simulated carrier decision,
+  policy issuance, masked Medicare ID.
+- **Shippable outcome / acceptance:** walkthrough **steps 9–12** — from an opportunity at
+  *Qualified*, the agent requests quotes (`quote.requested` → **Carrier Quote stub** →
+  `quote.completed`, deterministic canned options from the tenant carrier/product catalog,
+  watchable pending→completed); quotes attach, opportunity → *Quoted*; **selecting a quote
+  creates the Application** (`Draft`), moves to *Application Started* (`application.started`)
+  and updates `estimated_annual_premium` to the quote's annualized premium.
+  Product-specific steps captured on the Application: **beneficiary** (Life), **health
+  questions** (LTC, 3–5 mock). Submission publishes `application.submitted`; **inline
+  core** evaluates the carrier decision (approved by default; applicant email containing
+  `deny` forces declined) → `application.approved` / `application.declined`. Application
+  status auto-advances the opportunity stage (coupling rule); a declined application
+  returns the opportunity to *Quoted*/*Qualified* and a superseding Application may be
+  created. Approval enables **policy issuance** (`policy.created`); the Tenant-1
+  Application stores a **masked, encrypted mock Medicare ID** (reusing P1.3
+  encrypt/mask/audited-reveal).
+- **Key components:** **Carrier** reference data + product catalog seed; the Carrier Quote
+  **stub consumer** (real broker round-trip); Quote / Application / Policy entities +
+  migrations; application state machine + supersession; inline carrier-decision rule
+  (magic input); the Application↔Opportunity coupling; quote-list/selection,
+  application-steps, and policy UIs; Medicare-ID field treatment.
+- **Faked / deferred:** real Carrier Quote service → **M3** (behind identical events);
+  cross-sell prompt + renewals → **P2.4**.
+- **Depends on:** P2.2 (stage machine + eligibility gate), P1.3 (PII for Medicare ID), P1.5
+  (events/outbox).
+- **Isolation note:** carrier/catalog are tenant-scoped reference data; Medicare ID
+  encrypted per-tenant + masked-by-default + reveal audited; events carry `tenant_id` +
+  `demo_session_id`.
+- **Size:** L (split likely at epic-plan time).
+
+#### P2.4 — Renewals & cross-sell `[UI]`
+
+- **Goal:** Per-product renewal generation (anniversary job + AEP sweep) with demo time
+  controls, plus the cross-sell prompt — the two "post-policy opportunity generation"
+  workflows.
+- **Shippable outcome / acceptance:** walkthrough **step 15** — per-product renewal rules
+  fire: MA/Part D via a seasonal **AEP sweep**; Hospital Indemnity/LTC via a **daily
+  anniversary job** (60 days prior); Life/Annuities none. Each renewal creates a **Renewal
+  Opportunity** (`origin = renewal`, linked to the policy), a renewal-review **Task**
+  (assigned to the policy's owning agent), and publishes `policy.renewal_due`. **Demo time
+  controls:** Platform-Admin "run renewal sweep now" / "run AEP sweep now" workspace
+  actions, scoped to the visitor's demo session. **Seeded policies are never mutated** —
+  sweeps generate session-tagged Renewal Opportunities/Tasks and present *Renewal Due* via
+  a **session-scoped overlay**; only session-created policies get real `Active → Renewal
+  Due` writes. The **cross-sell prompt** on the Household surfaces one suggestion per
+  uncovered tenant product line, one-click creates an Opportunity (owned by the policy's
+  agent), and is suppressed when the Household covers every product line. Enriches the Task
+  entity with the agent **task queue** UI + due dates/routing.
+- **Key components:** renewal job logic (per-product rules) on the **extended P1.8
+  in-process scheduler**; Platform-Admin on-demand sweep controls (P1.8 workspace-control
+  pattern); the **session-scoped policy-status overlay** (reusing P1.8 baseline+session
+  layering); Renewal Opportunity creation; Task enrichment + task queue UI; cross-sell
+  suggestion logic + prompt UI; `policy.renewal_due` emission.
+- **Faked / deferred:** real notification delivery for renewal/cross-sell → **M3**
+  (surfaces as UI records here); issuing a policy from a Renewal Opportunity
+  (`policy.renewed`) reuses the P2.3 issuance path.
+- **Depends on:** P2.3 (policies exist), P1.8 (scheduler + session layering), P2.1 (Task
+  entity).
+- **Isolation note:** sweeps operate within the visitor's demo session; the shared `NULL`
+  baseline is never mutated (overlay only); generated records session-tagged +
+  tenant-scoped.
+- **Size:** L.
+
+#### P2.5 — Timeline + correlation trace extension `[UI]`
+
+- **Goal:** Extend the P1.9 timeline to opportunities and policies, and add the
+  end-to-end correlation-trace view.
+- **Shippable outcome / acceptance:** walkthrough **step 20** — opportunity and policy
+  detail views show a live-updating per-record event timeline (generalizing P1.9's
+  derivation, keyed on `entity_id`); a **correlation-trace view** renders one lead's
+  end-to-end story (lead → contact/household → opportunity → quote → application → policy)
+  by querying events on the shared `correlation_id`, with a causation link out to any
+  renewal trace.
+- **Key components:** generalized timeline read + component (opp/policy entity types);
+  correlation-trace read endpoint (`WHERE correlation_id = ?` over `outbox` +
+  `processed_events`) + trace UI; reuses the P1.9 polling + "Simulated" badge treatment.
+- **Faked / deferred:** push transport (polling only, as P1.9); Notification/Metrics
+  reactions absent until M3/M4 (only Quote + CRM-Sync reactions render).
+- **Depends on:** P2.1–P2.4 (`correlation_id` propagation honored), P1.9 (timeline base).
+- **Isolation note:** trace/timeline reads tenant- and session-scoped; carry no PII
+  (events key on references, never values).
+- **Size:** M.
 
 ### Milestone 3 — Integration Sidecars *(sketch)*
 
@@ -530,13 +720,15 @@ Real services replace P1–P2 stubs behind the same events.
 - **P3.2 — Enrichment service** — consumer-data outputs, quality score, eligibility flag.
 - **P3.3 — Carrier Quote service** — carrier mapping table, real async quotes.
 - **P3.4 — Notification service `[UI]`** — notification center + simulated outbox.
-  *Accept: step 16.*
+  **Registers the Notification event bindings** (deferred from M2 per the lean-seam
+  decision) as it stands the service up. *Accept: step 16.*
 - **P3.5 — Minimal DLQ list `[UI]`** — replay/discard actions (full dashboard → M4).
 
 ### Milestone 4 — Observability & Polish *(sketch)*
 
 - **P4.1 — Funnel + integration-health dashboards `[UI]`** + platform health page.
-  *Accept: step 19.*
+  **Registers the Metrics event bindings** (deferred from M2) and builds the
+  event-sourced read model from live demo events. *Accept: step 19.*
 - **P4.2 — Audit log viewer `[UI]`.** *Accept: step 17.*
 - **P4.3 — Pipeline value by stage + opportunity sorting `[UI]` [SHOULD]`.**
 - **P4.4 — Inbound CRM webhook demo control [SHOULD]`.**
@@ -553,10 +745,10 @@ M0  P0.1 ✓ Walking Skeleton & Pipeline        (exit test PASSED 2026-06-12 —
         |
 M1  P1.1 ✓ Auth/RBAC → P1.2 ✓ Tenant schemas → P1.3 ✓ Encryption → P1.4 ✓ Audit
         → P1.5 ✓ Event bus+stubs → P1.6 ✓ Demo shell [UI]
-        → P1.7 ✓ Intake/queue/qualify/dup [UI] → P1.8 ✓ Seed+sessions → P1.9 Timeline [UI]
+        → P1.7 ✓ Intake/queue/qualify/dup [UI] → P1.8 ✓ Seed+sessions → P1.9 ✓ Timeline [UI]
         |
-M2  P2.1 Conversion → P2.2 Pipeline [UI] → P2.3 Quote→App→Policy
-        → P2.4 Renewals+cross-sell → P2.5 Timeline/trace [UI]
+M2  P2.1 Conversion → P2.2 Pipeline [UI] → P2.3 Quote→App→Policy [UI]
+        → P2.4 Renewals+cross-sell [UI] → P2.5 Timeline/trace [UI]
         |
 M3  P3.1 CRM Sync → P3.2 Enrichment → P3.3 Carrier Quote
         → P3.4 Notification [UI] → P3.5 DLQ list [UI]
@@ -566,7 +758,9 @@ M4  P4.1 Dashboards [UI] → P4.2 Audit viewer [UI] → P4.3–P4.5 [SHOULD]
 
 **Hard-sequential chains:** P0.1 gates all. Within M1, P1.1→P1.2→P1.3 are strictly
 ordered (each builds the next's substrate); P1.5 needs P1.2; UI phases (P1.6/P1.7/P1.9)
-need their backend substrate.
+need their backend substrate. **All of M2 is strictly sequential** — P2.1→P2.2→P2.3→
+P2.4→P2.5 — because each phase operates on entities the prior phase creates (conversion →
+opportunities → quote/app/policy → renewals → trace).
 
 **Go/no-go gates (`◄`):** **P0.1 exit test** — if a push does not reach prod hands-off,
 STOP and fix the pipeline before any feature work (the whole program's premise).
@@ -870,3 +1064,52 @@ Tenant-isolation / PII invariant held throughout. Epic plan:
 plan:** sidecar-store purge cascade (**M3**); public fresh-mint endpoint + shell-wide graceful
 gate (backlog #2); `PII_MASTER_KEY`/`SEED_USER_PASSWORD` SSM injection (backlog #3). **Next
 move:** **P1.9 (Per-record event timeline `[UI]`)** — the last Milestone-1 phase.
+
+**2026-06-25** — **P1.9 COMPLETE — Milestone 1 is done; every lead now tells its own story.**
+All 7 epics shipped behind a green gate (full backend suite **665 passed** on the real Postgres
++ RabbitMQ substrate; full frontend suite **331 passed** across 43 files; production build
+clean), built simplest-first behind a tracer bullet: an oldest-first `LeadTimeline` ink-console
+of real `outbox` domain-event rows on the lead detail page (Epic 1), then reaction sibling rows
+with read-time `pending → processing → done` derivation (2), the deterministic enrichment
+quality-score result summary (3), ~1500 ms live polling that idle-stops and re-arms on the
+lead's `updated_at` (4), coherent backdated seeded trails on every baseline lead (5), the
+per-row "Simulated" badge + one outbox `ExplainerPopover` (6), and the isolation/acceptance
+hardening suite (7). The whole surface is a **pure derivation over real bus state** — the
+endpoint filters the tenant `outbox` on `payload->>'entity_id'` alone, synthesizes expected
+reactions from `CONSUMER_BINDINGS`, LEFT JOINs `processed_events` on `event_id`, and derives
+status live (no new domain events, nothing stored; `failed` dormant for M3). Migration `0014`
+is additive only — the `outbox` SELECT re-grant (INSERT+SELECT; UPDATE/DELETE still revoked) +
+the nullable `processed_events.result_summary` the enrichment stub fills atomically on its
+`ON CONFLICT DO NOTHING` insert, with the seed reusing the same score + fan-out so seeded
+trails match live ones. The named acceptance suite (`test_timeline_acceptance.py` + the
+frontend `acceptance criteria (Epic 7)` block) proves all five TDD §8 criteria end-to-end —
+the new substance being the no-cross-contamination proof (a reaction can only link via a
+globally unique `event_id`, so no foreign-session/tenant row leaks onto a visible lead).
+Tenant-isolation / PII invariant held throughout (no new visibility, no PII on the wire). Epic
+plan: `./p1.9/epic-plan-P1.9-event-timeline.md`. **Faked / deferred per plan:** real sidecar
+effects (canned stubs → **M3**); opportunity/policy timelines + correlation-trace view
+(**P2.5**); push transport (polling only). **Milestone 1 is now fully complete** — auth →
+scoping → encryption → audit → event bus → demo shell → intake → seed/sessions → timeline all
+shipped. **Next move:** **Milestone 2 (Domain Workflow)** — earns its full design pass at M2
+start, beginning with **P2.1 (Lead conversion)**; run `2-requirements-to-tdd` on the P2.1
+sketch to open it.
+
+**2026-06-25** — **M2 full design pass done (`/grill-me`).** The five-line M2 sketch is now
+planned to M1-level detail (Goal / acceptance / key components / faked-deferred / depends-on /
+isolation / size per phase). The requirements already pin most M2 behavior; the session settled
+**sequencing, decomposition, faking, and the open seams**. Resolved decisions: (1) **lean
+event-seam wiring** — M2 wires only the **Carrier Quote stub** + extends `sync.logger`;
+**Notification/Metrics bindings deferred to M3/M4** (the P1.9 timeline only shows reactions for
+*bound* consumers, so no throwaway stubs) — M3 P3.4 / M4 P4.1 sketches amended to register their
+bindings; (2) the **Task** entity is introduced minimally in **P2.1** (conversion note-task) and
+enriched in **P2.4** (renewal tasks + queue); (3) **P2.1** household linking covers create-new +
+link-on-duplicate-resolution; (4) **beneficiary/health steps moved P2.2 → P2.3** (the spec puts
+them on the Application), so P2.2 owns stage machine + tenant config + Medicare gate + value
+fields; (5) an Opportunity is **born at stage *New*** on conversion; (6) the carrier
+approve/decline decision is **inline core** (only quote *generation* is a sidecar stub); (7)
+**cross-sell stays in P2.4** with renewals (coherent "post-policy opportunity generation"
+phase); (8) seeded-policy *Renewal Due* uses a **session-scoped overlay** (never mutates the
+shared baseline), and renewal jobs **extend the P1.8 in-process scheduler**; (9) **`correlation_id`
+is stored on each entity and copied forward** at creation (an M2 invariant P2.1–P2.4 honor),
+with a **renewal starting a new linked `correlation_id`**. **Next move (unchanged):** run
+`2-requirements-to-tdd` on **P2.1 (Lead conversion)** to open it.
