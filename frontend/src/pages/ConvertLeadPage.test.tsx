@@ -17,6 +17,7 @@ vi.mock("../api", () => ({
   listTenants: vi.fn(),
   convertLead: vi.fn(),
   getHouseholds: vi.fn(),
+  getConversionPrefill: vi.fn(),
   ApiError: class ApiError extends Error {
     status: number;
     constructor(status: number, message: string) {
@@ -32,13 +33,20 @@ vi.mock("../session", () => ({
   useCapability: vi.fn(),
 }));
 
-import { convertLead, getHouseholds, getLead, listTenants } from "../api";
+import {
+  convertLead,
+  getConversionPrefill,
+  getHouseholds,
+  getLead,
+  listTenants,
+} from "../api";
 import { useCapability, useSession } from "../session";
 
 const getLeadMock = vi.mocked(getLead);
 const listTenantsMock = vi.mocked(listTenants);
 const convertLeadMock = vi.mocked(convertLead);
 const getHouseholdsMock = vi.mocked(getHouseholds);
+const getConversionPrefillMock = vi.mocked(getConversionPrefill);
 const useCapabilityMock = vi.mocked(useCapability);
 const useSessionMock = vi.mocked(useSession);
 
@@ -128,6 +136,7 @@ beforeEach(() => {
   listTenantsMock.mockReset();
   convertLeadMock.mockReset();
   getHouseholdsMock.mockReset();
+  getConversionPrefillMock.mockReset();
   useCapabilityMock.mockReset();
   useSessionMock.mockReset();
   useSessionMock.mockReturnValue(sessionFor(agentIdentity));
@@ -135,6 +144,8 @@ beforeEach(() => {
   listTenantsMock.mockResolvedValue([sunshineTenant]);
   getLeadMock.mockResolvedValue(makeLead());
   getHouseholdsMock.mockResolvedValue([]);
+  // Default: not a duplicate, so the new-household default stands.
+  getConversionPrefillMock.mockResolvedValue({ preselected_household: null });
 });
 
 afterEach(() => {
@@ -268,6 +279,36 @@ describe("ConvertLeadPage", () => {
     expect(document.getElementById("convert-lead-commit-button")).not.toBeDisabled();
     fireEvent.click(document.getElementById("convert-lead-household-link")!);
     expect(document.getElementById("convert-lead-commit-button")).toBeDisabled();
+  });
+
+  it("pre-selects the duplicate-suggested household and commits the link", async () => {
+    convertLeadMock.mockResolvedValue(makeLead({ status: "Converted" }));
+    getConversionPrefillMock.mockResolvedValue({
+      preselected_household: { id: "household-3", name: "Prior Household" },
+    });
+    renderPage();
+
+    await waitFor(() => {
+      expect(document.getElementById("convert-lead-commit-button")).toBeInTheDocument();
+    });
+    // Link mode is pre-armed with the suggested household, checked and ready to commit.
+    await waitFor(() => {
+      expect(
+        document.getElementById("convert-lead-household-suggested"),
+      ).toBeChecked();
+    });
+    expect(document.getElementById("convert-lead-household-link")).toBeChecked();
+    expect(document.getElementById("convert-lead-commit-button")).not.toBeDisabled();
+
+    fireEvent.click(document.getElementById("convert-lead-commit-button")!);
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="lead-detail"]')).toBeInTheDocument();
+    });
+    expect(convertLeadMock).toHaveBeenCalledWith("lead-1", {
+      household: { mode: "link", household_id: "household-3" },
+      product_lines: ["medicare_advantage"],
+    });
   });
 
   it("surfaces an inline error and stays on the page when the commit fails", async () => {

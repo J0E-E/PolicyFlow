@@ -8,6 +8,7 @@ export {
   convertLead,
   createLead,
   getConversion,
+  getConversionPrefill,
   getCurrentIdentity,
   getDemoSession,
   getHouseholds,
@@ -25,6 +26,7 @@ export {
 } from "./client";
 export type {
   Capability,
+  ConversionPrefill,
   ConversionSummary,
   ConvertLeadRequest,
   CreateLeadRequest,

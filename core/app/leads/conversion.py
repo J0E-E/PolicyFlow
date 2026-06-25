@@ -50,7 +50,11 @@ from ..models.user import Role
 from ..pii.service import decrypt_field, encrypt_field
 from .state import LeadStatus
 
-__all__ = ["convert_lead", "get_conversion_summary"]
+__all__ = [
+    "convert_lead",
+    "get_conversion_summary",
+    "get_conversion_prefill",
+]
 
 # The literal opportunity stage and origin every conversion writes (D3): `stage`
 # starts at `New` (no P2.2 state machine pulled forward) and `origin` records that
@@ -307,6 +311,60 @@ async def get_conversion_summary(db: AsyncSession, lead: Lead) -> dict:
             }
             for opportunity in opportunities
         ],
+    }
+
+
+async def get_conversion_prefill(db: AsyncSession, lead: Lead) -> dict:
+    """Resolve the household to pre-select on the convert screen, or null.
+
+    When the lead the agent is converting was flagged a duplicate of a **converted**
+    prior lead, the new contact most likely belongs in that prior's household — so the
+    convert screen can pre-select it (the agent may still override). This walks that
+    chain server-side: ``lead.duplicate_of_lead_id`` → the prior lead → (only if it is
+    `Converted`) its ``converted_contact_id`` → that contact's ``household_id`` → the
+    household.
+
+    Returns ``{"preselected_household": {"id", "name"}}`` when the whole chain resolves,
+    and ``{"preselected_household": None}`` at the first broken link — the lead isn't
+    flagged, the prior isn't converted, or any row is missing — so the screen falls back
+    to the new-household default. The prior lead is looked up within the caller's own
+    schema (the session's search_path), so a cross-tenant prior simply resolves to null.
+    The suggestion is not a guarantee: the convert action re-checks household visibility
+    at commit time, so an unlinkable suggestion is refused there.
+    """
+    if lead.duplicate_of_lead_id is None:
+        return {"preselected_household": None}
+
+    prior_lead = (
+        await db.execute(
+            select(Lead).where(Lead.id == lead.duplicate_of_lead_id)
+        )
+    ).scalar_one_or_none()
+    if (
+        prior_lead is None
+        or prior_lead.status != LeadStatus.CONVERTED.value
+        or prior_lead.converted_contact_id is None
+    ):
+        return {"preselected_household": None}
+
+    contact = (
+        await db.execute(
+            select(Contact).where(Contact.id == prior_lead.converted_contact_id)
+        )
+    ).scalar_one_or_none()
+    if contact is None:
+        return {"preselected_household": None}
+
+    household = (
+        await db.execute(
+            select(Household).where(Household.id == contact.household_id)
+        )
+    ).scalar_one_or_none()
+    if household is None:
+        return {"preselected_household": None}
+
+    return {
+        "preselected_household": {"id": household.id, "name": household.name}
     }
 
 

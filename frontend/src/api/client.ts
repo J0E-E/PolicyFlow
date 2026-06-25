@@ -9,6 +9,7 @@
 // out" from a real failure.
 
 import type {
+  ConversionPrefill,
   ConversionSummary,
   ConvertLeadRequest,
   CreateLeadRequest,
@@ -265,6 +266,22 @@ export async function qualifyLead(leadId: string): Promise<MaskedLead> {
     `/api/leads/${leadId}/qualify`,
   );
   return responseBody.lead;
+}
+
+/**
+ * Get the duplicate pre-select for a lead from
+ * `GET /api/leads/{id}/conversion-prefill` — the household to pre-select on the convert
+ * screen, or `{ preselected_household: null }` when the lead is not a duplicate of a
+ * converted prior. Throws an `ApiError` with `status` `404` for a missing /
+ * cross-tenant / cross-session lead. Returned flat (no envelope).
+ */
+export async function getConversionPrefill(
+  leadId: string,
+): Promise<ConversionPrefill> {
+  return request<ConversionPrefill>(
+    "GET",
+    `/api/leads/${leadId}/conversion-prefill`,
+  );
 }
 
 /**

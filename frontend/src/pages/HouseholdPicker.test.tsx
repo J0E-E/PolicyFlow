@@ -27,6 +27,7 @@ function renderPicker(
     onSelectNew: () => void;
     onSelectLinkMode: () => void;
     onSelectHousehold: (id: string) => void;
+    suggestedHousehold: { id: string; name: string } | null;
   }> = {},
 ) {
   return render(
@@ -36,6 +37,7 @@ function renderPicker(
       onSelectNew={overrides.onSelectNew ?? vi.fn()}
       onSelectLinkMode={overrides.onSelectLinkMode ?? vi.fn()}
       onSelectHousehold={overrides.onSelectHousehold ?? vi.fn()}
+      suggestedHousehold={overrides.suggestedHousehold ?? null}
     />,
   );
 }
@@ -84,6 +86,22 @@ describe("HouseholdPicker", () => {
       document.getElementById("convert-lead-household-option-household-7")!,
     );
     expect(onSelectHousehold).toHaveBeenCalledWith("household-7");
+  });
+
+  it("offers the suggested household pre-checked in link mode", () => {
+    const onSelectHousehold = vi.fn();
+    renderPicker({
+      mode: "link",
+      selectedHouseholdId: "household-3",
+      onSelectHousehold,
+      suggestedHousehold: { id: "household-3", name: "Prior Household" },
+    });
+
+    const suggested = document.getElementById("convert-lead-household-suggested");
+    expect(suggested).toBeChecked();
+    expect(
+      document.getElementById("convert-lead-household-suggested-name"),
+    ).toHaveTextContent("Prior Household");
   });
 
   it("shows an empty note when the search matches nothing", async () => {

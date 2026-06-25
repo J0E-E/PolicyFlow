@@ -5,7 +5,13 @@ import Card from "../components/Card.tsx";
 import CheckboxGroup from "../components/CheckboxGroup.tsx";
 import HouseholdPicker from "./HouseholdPicker.tsx";
 import { useCapability, useSession } from "../session";
-import { ApiError, convertLead, getLead, listTenants } from "../api";
+import {
+  ApiError,
+  convertLead,
+  getConversionPrefill,
+  getLead,
+  listTenants,
+} from "../api";
 import type { HouseholdChoice, MaskedLead, Tenant } from "../api";
 
 // The dedicated review-and-confirm convert screen at `/app/leads/:id/convert`
@@ -72,6 +78,10 @@ export default function ConvertLeadPage() {
   const [selectedProductLines, setSelectedProductLines] = useState<string[]>([]);
   const [householdMode, setHouseholdMode] = useState<"new" | "link">("new");
   const [linkedHouseholdId, setLinkedHouseholdId] = useState<string | null>(null);
+  const [suggestedHousehold, setSuggestedHousehold] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [isConverting, setIsConverting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -134,6 +144,31 @@ export default function ConvertLeadPage() {
   }, [leadId]);
 
   useEffect(() => loadLead(), [loadLead]);
+
+  // Duplicate pre-select (Epic 9): if this lead is flagged a duplicate of a converted
+  // prior, the server resolves that prior's household; pre-select it in link mode (the
+  // agent may still override). A null result or a failure leaves the new-household
+  // default untouched.
+  useEffect(() => {
+    if (leadId === undefined) {
+      return;
+    }
+    let isActive = true;
+    getConversionPrefill(leadId)
+      .then((prefill) => {
+        if (isActive && prefill.preselected_household !== null) {
+          setSuggestedHousehold(prefill.preselected_household);
+          setHouseholdMode("link");
+          setLinkedHouseholdId(prefill.preselected_household.id);
+        }
+      })
+      .catch(() => {
+        // Fall back to the new-household default — the suggestion is best-effort.
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [leadId]);
 
   const backToLead = `/app/leads/${leadId ?? ""}`;
 
@@ -300,6 +335,7 @@ export default function ConvertLeadPage() {
         <HouseholdPicker
           mode={householdMode}
           selectedHouseholdId={linkedHouseholdId}
+          suggestedHousehold={suggestedHousehold}
           onSelectNew={() => {
             setHouseholdMode("new");
             setLinkedHouseholdId(null);

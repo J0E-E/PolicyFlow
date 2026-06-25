@@ -87,7 +87,11 @@ from ..pii.reveal_seam import on_pii_revealed
 from ..pii.service import decrypt_field
 from ..tenancy.registry import tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
-from .conversion import convert_lead, get_conversion_summary
+from .conversion import (
+    convert_lead,
+    get_conversion_prefill,
+    get_conversion_summary,
+)
 from .intake import create_lead
 from .masking import build_masked_lead
 from .timeline import get_lead_timeline_rows
@@ -617,6 +621,35 @@ async def get_lead_conversion(
         raise HTTPException(status_code=409, detail="lead is not converted")
 
     return await get_conversion_summary(db, lead)
+
+
+@router.get("/{lead_id}/conversion-prefill")
+async def get_lead_conversion_prefill(
+    lead_id: uuid.UUID,
+    request: Request,
+    identity: Identity = Depends(require_authenticated),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Return the household to pre-select on the convert screen for this lead, or null.
+
+    Feeds the duplicate pre-select (TDD §5.5): when the lead is flagged a duplicate of a
+    **converted** prior lead, the prior's household is the natural pre-selection. It is a
+    read, so it gates on `require_authenticated` and reuses `get_lead`'s visibility guard
+    exactly — a missing / cross-tenant / cross-session lead is a `404 "lead not found"`
+    (`refuse_seed=False`). Unlike the conversion summary it never 409s: a lead that is
+    simply not a duplicate (or whose prior isn't converted) is a normal case, returned as
+    `{"preselected_household": null}` so the screen keeps the new-household default.
+    """
+    lead = (
+        await db.execute(select(Lead).where(Lead.id == lead_id))
+    ).scalar_one_or_none()
+
+    if lead is None:
+        raise HTTPException(status_code=404, detail="lead not found")
+
+    await _guard_loaded_lead_for_session(lead, request, db, refuse_seed=False)
+
+    return await get_conversion_prefill(db, lead)
 
 
 @router.post("/{lead_id}/convert")

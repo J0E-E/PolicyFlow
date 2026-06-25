@@ -74,12 +74,12 @@ Source TDD: [./tdd-lead-conversion.md](./tdd-lead-conversion.md)
 - **Implementation notes:**
   - **`HouseholdPicker` is Epic 9's pre-select hook** — Epic 9 pre-selects the prior's household by driving `HouseholdPicker`'s `mode="link"` + `selectedHouseholdId` (the same props the search picks set), and may seed the results so the chosen household shows by name. The link branch (reuse, no `household.created`, no re-stamp of a NULL-baseline household) is already in `convert_lead`.
 
-## Epic 9 — Duplicate pre-select [UI]
+## Epic 9 — Duplicate pre-select [UI] — **COMPLETED** (7m55s)
 - **Goal:** For a lead flagged as a duplicate of a *converted* prior, pre-select that prior's Household in the picker (agent can override); graceful "new household" default when the prior isn't converted.
 - **Rough scope:** `GET /api/leads/{id}/conversion-prefill` (resolve `duplicate_of_lead_id → prior converted_contact_id → household_id` server-side; null otherwise); the screen pre-selects it with override allowed.
-- **Open questions / decisions for stakeholders:** none expected.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 8.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** none — `GET /conversion-prefill` (`get_conversion_prefill`) resolves the prior's household server-side; `ConvertLeadPage` pre-arms link mode + a suggested `HouseholdPicker` option, override via search; the commit-time visibility guard backstops a stale suggestion.
 
 ## Epic 10 — Isolation + frozen-read hardening
 - **Goal:** Close the cross-cutting isolation invariant for the new entities and finish freezing a `Converted` lead: purge sweeps the four new tables per session, `resolve-duplicate` refuses a `Converted` lead, and the household search is confirmed session-scoped (a second session/tenant sees and purges none of it).

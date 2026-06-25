@@ -264,6 +264,16 @@ export interface HouseholdSearchResult {
 }
 
 /**
+ * The duplicate pre-select from `GET /api/leads/{id}/conversion-prefill`. When the lead
+ * is flagged a duplicate of a converted prior, `preselected_household` is that prior's
+ * household (so the convert screen can pre-select it); otherwise `null` (the screen
+ * keeps the new-household default). Returned flat, not under an envelope.
+ */
+export interface ConversionPrefill {
+  preselected_household: { id: string; name: string } | null;
+}
+
+/**
  * The non-PII "converted to" summary from `GET /api/leads/{id}/conversion`, mirroring
  * the backend shape (TDD §5.5). It feeds the frozen-lead panel: the new contact's
  * name, its household's name, and the opportunities opened (the `product_line` is a

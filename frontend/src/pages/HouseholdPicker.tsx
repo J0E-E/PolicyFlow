@@ -21,6 +21,8 @@ interface HouseholdPickerProperties {
   onSelectLinkMode: () => void;
   /** Pick one searched household to link into. */
   onSelectHousehold: (householdId: string) => void;
+  /** The duplicate-suggested household to offer pre-selected (P2.1 Epic 9), or null. */
+  suggestedHousehold?: { id: string; name: string } | null;
 }
 
 function memberNames(household: HouseholdSearchResult): string {
@@ -35,6 +37,7 @@ export default function HouseholdPicker({
   onSelectNew,
   onSelectLinkMode,
   onSelectHousehold,
+  suggestedHousehold = null,
 }: HouseholdPickerProperties) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<HouseholdSearchResult[]>([]);
@@ -102,6 +105,30 @@ export default function HouseholdPicker({
           id="convert-lead-household-search-area"
           className="convert-lead-household-search-area"
         >
+          {suggestedHousehold !== null && (
+            <label
+              id="convert-lead-household-suggested-label"
+              className="convert-lead-household-result"
+              htmlFor="convert-lead-household-suggested"
+            >
+              <input
+                id="convert-lead-household-suggested"
+                type="radio"
+                name="convert-lead-household-choice"
+                checked={selectedHouseholdId === suggestedHousehold.id}
+                onChange={() => onSelectHousehold(suggestedHousehold.id)}
+              />
+              <span id="convert-lead-household-suggested-name">
+                {suggestedHousehold.name}
+              </span>
+              <span
+                id="convert-lead-household-suggested-hint"
+                className="convert-lead-household-result-members"
+              >
+                from the duplicate match
+              </span>
+            </label>
+          )}
           <input
             id="convert-lead-household-search"
             className="convert-lead-household-search"

@@ -11,6 +11,7 @@ import {
   claimLead,
   convertLead,
   getConversion,
+  getConversionPrefill,
   getHouseholds,
   createLead,
   getCurrentIdentity,
@@ -341,6 +342,20 @@ describe("lead client calls", () => {
     expect(options.method).toBe("GET");
     expect(options.credentials).toBe("include");
     expect(result).toEqual(households);
+  });
+
+  it("getConversionPrefill GETs /api/leads/{id}/conversion-prefill and returns it flat", async () => {
+    const prefill = {
+      preselected_household: { id: "household-1", name: "Lopez Household" },
+    };
+    vi.stubGlobal("fetch", mockJsonResponse(prefill));
+
+    const result = await getConversionPrefill(sampleMaskedLead.id);
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe(`/api/leads/${sampleMaskedLead.id}/conversion-prefill`);
+    expect(options.method).toBe("GET");
+    expect(result).toEqual(prefill);
   });
 
   it("getConversion GETs /api/leads/{id}/conversion and returns the flat summary", async () => {
