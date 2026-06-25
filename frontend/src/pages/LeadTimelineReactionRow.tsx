@@ -1,4 +1,6 @@
 import StampTag from "../components/StampTag.tsx";
+import SimulatedBadge from "../components/SimulatedBadge.tsx";
+import { reactionSimulatedNotice } from "../components/simulatedNotice.ts";
 import type { TimelineReactionRow } from "../api";
 import { reactionStatusStamp } from "./leadDetailPresentation.ts";
 
@@ -22,6 +24,13 @@ interface LeadTimelineReactionRowProperties {
 // mono sub-line under the consumer name (`--on-ink-variant`, Guide §6.1 trace style); a null
 // summary omits the line entirely — the status stamp already disambiguates the state (P1.9
 // Epic 3).
+//
+// Every reaction row carries a per-row Guide §6.3 "Simulated" badge (P1.9 Epic 6): both
+// consumers (enrichment.stub, sync.logger) produce CANNED effects, so the badge marks the
+// stub effect — NOT the real domain event the reaction sits under (a console-level badge
+// would wrongly imply the events themselves are simulated). It reuses the P1.6 SimulatedBadge
+// verbatim with a reaction-surface catalog entry; the on-ink stamp recolor lives in
+// lead-timeline.css, mirroring the architecture console.
 export default function LeadTimelineReactionRow({
   id,
   row,
@@ -58,6 +67,11 @@ export default function LeadTimelineReactionRow({
       >
         {stamp.label}
       </StampTag>
+      <SimulatedBadge
+        id={`${id}-simulated`}
+        surfaceLabel={`the ${row.consumer_name} reaction`}
+        notice={reactionSimulatedNotice}
+      />
       {row.result_summary !== null && (
         <span
           id={`${id}-summary`}

@@ -30,11 +30,33 @@
   color: var(--on-ink);
 }
 
+/* The console header row — the "EVENT TIMELINE" overline beside the single outbox
+   explainer (P1.9 Epic 6), mirroring the Masthead's icon-beside-title pattern. A quiet
+   baseline-aligned flex row so the explainer glyph sits next to the title, not below it. */
+.lead-timeline-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* The stamp overline titling the console — the StampTag overline recolored for ink
    (its paper default --on-surface-variant is invisible here), matching the
    architecture console's overline treatment. */
 .lead-timeline-console .stamp-tag-overline {
   color: var(--on-ink-variant);
+}
+
+/* The outbox explainer trigger, on-ink (P1.9 Epic 6). The explainer glyph rests at
+   --on-surface-variant (explainer.css), invisible on --surface-ink — recolor it to the
+   on-ink-variant tone, brightening to --on-ink on hover, mirroring the masthead's
+   inverted-ink explainer scope. Scoped under the console so no paper-ground explainer
+   is affected. */
+.lead-timeline-console .explainer-trigger {
+  color: var(--on-ink-variant);
+}
+
+.lead-timeline-console .explainer-trigger:hover {
+  color: var(--on-ink);
 }
 
 /* ---- The calm on-ink state notes (loading / error / empty) ---- */
@@ -218,6 +240,36 @@
   background-color: transparent;
   color: var(--state-error-on-ink);
   border-color: var(--state-error-on-ink);
+}
+
+/* ---- Per-row "Simulated" badge, on-ink (P1.9 Epic 6, Guide §6.3) ----
+   Each reaction row carries the P1.6 SimulatedBadge marking the canned consumer effect.
+   The console sits on --surface-ink, so the badge's paper-ground warning stamp is
+   invisible here — these ADDITIVE overrides (mirroring how-its-built.css's architecture
+   console) recolor the dashed warning stamp to the on-ink warning bright (AA on ink,
+   Guide §2.2/§7), scoped under the console so no paper-ground badge is affected. The
+   dashed "border law" and the stamp geometry come from stamp-tag.css / simulated-badge.css
+   unchanged. */
+.lead-timeline-console .simulated-badge-trigger .stamp-tag-warning {
+  background-color: transparent;
+  color: var(--state-warning-on-ink);
+  border-color: var(--state-warning-on-ink);
+}
+
+/* The interactive hover wash, recolored for ink (the paper variant's --surface-3 is
+   invisible here) — a quiet raised-ink fill; the hue itself never changes. */
+.lead-timeline-console .simulated-badge-trigger:hover .stamp-tag-warning {
+  background-color: var(--surface-ink-raised);
+}
+
+/* The console sits on --surface-ink, so the global ink-on-paper :focus-visible ring
+   (base.css, --focus-ring-color) is invisible here. Swap in the paper-toned
+   --focus-ring-on-ink for any focusable control on the console (the Simulated-badge
+   trigger and the outbox explainer trigger), mirroring the architecture console and
+   the masthead's inverted-ink focus scope. Guide §7: a visible focus ring on every
+   interactive element, on BOTH grounds. */
+.lead-timeline-console :focus-visible {
+  outline-color: var(--focus-ring-on-ink);
 }
 
 /* The inline "working…" spinner on the `processing` stamp — the SAME ring as the

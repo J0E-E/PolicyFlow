@@ -83,12 +83,17 @@ Source TDD: [./tdd-P1.9-event-timeline.md](./tdd-P1.9-event-timeline.md)
   - **Raw-text JSONB carry-forward (asyncpg):** the outbox `payload` is bound as a JSON *string* (`json.dumps`) with `CAST(:payload AS jsonb)` in the SQL — binding a Python `dict` to a `text()` statement does **not** work for JSONB under asyncpg (only the ORM JSONB column auto-serializes). First raw-JSONB INSERT in `core/`; any later raw outbox/processed write must keep this idiom. Also stored in memory-vault (`policyflow`).
   - **No migration** — `0014` already owns the `outbox` SELECT grant + `processed_events.result_summary`; `test_migration_hygiene::test_alembic_check_reports_no_drift` stays green.
 
-## Epic 6 — "Simulated" badge + outbox explainer [UI]
+## Epic 6 — "Simulated" badge + outbox explainer [UI] — **COMPLETED** (12m · 12.2M tok · 945k tok/min)
 - **Goal:** Reaction rows are clearly marked as simulated, and the timeline carries one explainer of the outbox/event-bus mechanism — reusing the P1.6 components.
 - **Rough scope:** Reuse the P1.6 `SimulatedBadge` on stub-reaction rows and one `ExplainerPopover` on the timeline describing how the outbox/event bus drives the reactions.
-- **Open questions / decisions for stakeholders:** Explainer copy and placement; whether the badge sits per-row or once on the reaction group.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time (rung-3 grill):
+  - **Explainer copy & placement:** **ONE** `ExplainerPopover` in a new console-header row beside the "EVENT TIMELINE" overline (the Masthead icon-beside-title pattern). New `explainerContent.ts` entry, four Guide §6.2 sections — **PATTERN** (event-driven + transactional outbox / pub-sub); **HOW POLICYFLOW DOES IT** (each lead action writes a domain event to the per-tenant `outbox` in the same transaction → the relay publishes it → sidecar consumers react and record results, which *are* the reaction rows); **REAL VS SIMULATED** (the bus / outbox / relay / fan-out are real; the consumer *effects* — the quality score, the log line — are canned stubs M3 replaces); **CRM PARALLEL** (a real CRM firing enrichment/sync integrations on record creation). Copy authored in the existing `explainerContent.ts` voice.
+  - **Badge — per-row, not once:** one `SimulatedBadge` on **each stub-reaction row** (both `enrichment.stub` and `sync.logger` are stubs). Decisive reason: a single console-level badge would wrongly imply the **real** domain events are simulated too — per-row scoping marks *exactly* the simulated surface and matches the BRD's "stub rows carry the badge". New `simulatedNotice.ts` entry for the reaction surface (mocked = the stub consumer effects; real = the event bus / outbox / relay; adapter seam = M3's real sidecars). The compact stamp + the rows' subordinate styling keep it calm; the single explainer carries the mechanism story.
 - **Depends on:** Epic 2 (reaction rows must exist to badge).
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Catalog-entry, not new component:** Epic 6 reuses the P1.6 `SimulatedBadge` and `ExplainerPopover` verbatim — it adds only a `simulatedNotice.ts` entry (reaction surface) and an `explainerContent.ts` entry (outbox mechanism) plus their placement (the "new surface = new catalog entry" seam). **Epic 7** asserts the badge + explainer presence.
+  - **Pure presentation:** the explainer sits in a new console-header row in `LeadTimeline.tsx`; the badge renders inside `LeadTimelineReactionRow.tsx` per row — no timeline-read or endpoint change.
+  - **Epic 7 asserts badge + explainer presence:** a per-row Simulated badge on reaction rows, exactly one outbox `ExplainerPopover` in the console header.
 
 ## Epic 7 — Isolation + acceptance hardening
 - **Goal:** Re-prove tenant + demo-session isolation on the new timeline surface and cover the five acceptance criteria end-to-end.

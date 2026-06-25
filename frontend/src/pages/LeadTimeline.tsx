@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import StampTag from "../components/StampTag.tsx";
+import ExplainerPopover from "../components/ExplainerPopover.tsx";
+import { outboxExplainer } from "../components/explainerContent.ts";
 import { ApiError, getLeadTimeline } from "../api";
 import type { TimelineRow } from "../api";
 import LeadTimelineRow from "./LeadTimelineRow.tsx";
@@ -132,9 +134,22 @@ export default function LeadTimeline({
       className="lead-timeline-console"
       aria-labelledby={`${id}-overline`}
     >
-      <StampTag id={`${id}-overline`} variant="overline">
-        Event timeline
-      </StampTag>
+      {/* The console header row — the "EVENT TIMELINE" overline beside ONE outbox
+          explainer (P1.9 Epic 6), mirroring the Masthead's icon-beside-title pattern.
+          The explainer is console chrome: it renders once in every load state (the
+          body below covers loading / error / empty / loaded), carrying the mechanism
+          story behind the reaction rows. Its on-ink focus ring comes from the console's
+          :focus-visible scope (lead-timeline.css). */}
+      <div id={`${id}-header`} className="lead-timeline-header">
+        <StampTag id={`${id}-overline`} variant="overline">
+          Event timeline
+        </StampTag>
+        <ExplainerPopover
+          id={`${id}-explainer-outbox`}
+          surfaceLabel="the event timeline"
+          content={outboxExplainer}
+        />
+      </div>
       <LeadTimelineBody id={id} load={load} />
     </section>
   );

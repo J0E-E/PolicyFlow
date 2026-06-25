@@ -54,3 +54,31 @@ export const defaultSimulatedNotice: SimulatedNotice = {
     "Every external system sits behind one small adapter interface. The demo wires in a simulated adapter; pointing it at a real carrier or CRM client is a drop-in swap, with no change to the engine that calls it.",
   ],
 };
+
+// ---- Lead-timeline reaction surface (P1.9 Epic 6) ----
+// The per-row badge on each sidecar reaction (enrichment.stub, sync.logger) in the
+// EVENT TIMELINE console. Scoped tightly to the consumer EFFECT — it marks the canned
+// result, NOT the real domain event the reaction sits under (a console-level badge
+// would wrongly imply the events are simulated too). Mono terms name the consumers /
+// the real bus mechanism, matching the runs model and voice above.
+
+/** The official notice for a stub reaction row: its canned effect is mocked; the
+ *  event bus / outbox / relay / fan-out that drove it are real; M3 swaps in the
+ *  real enrichment / sync sidecars at the adapter seam. */
+export const reactionSimulatedNotice: SimulatedNotice = {
+  whatIsMocked: [
+    "Only this consumer's effect. ",
+    { mono: "enrichment.stub" },
+    " returns a canned, deterministic quality score and ",
+    { mono: "sync.logger" },
+    " writes a fixed log line — neither makes a real network call or contacts anyone.",
+  ],
+  whatIsReal: [
+    "The machinery that drove this reaction is real, working code: the in-process event bus, the per-tenant transactional ",
+    { mono: "outbox" },
+    ", the relay that publishes each event, and the fan-out that delivers it to every consumer all run end to end.",
+  ],
+  theAdapterSeam: [
+    "Each consumer sits behind one small adapter interface. The demo wires in these stub effects; M3 swaps in the real enrichment and sync sidecars as a drop-in, with no change to the bus that fans out to them.",
+  ],
+};

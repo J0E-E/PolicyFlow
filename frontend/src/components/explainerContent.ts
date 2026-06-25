@@ -141,3 +141,32 @@ export const surfaceToggleExplainer: ExplainerContent = {
     " — a public community/storefront site — beside the internal CRM org: one platform and dataset, two distinct front ends for customers versus staff.",
   ],
 };
+
+/** Lead-timeline outbox / event bus → the mechanism behind the EVENT TIMELINE console
+ *  (P1.9 Epic 6). Explains how each lead action drives the indented reaction rows: a
+ *  domain event written to the per-tenant outbox in the same transaction, a relay that
+ *  publishes it, sidecar consumers that react and record results. */
+export const outboxExplainer: ExplainerContent = {
+  pattern: [
+    "Event-driven architecture with a transactional outbox: each lead action records a domain event, and independent consumers react to it through publish/subscribe — work fans out as a chain of events, not one big save.",
+  ],
+  how: [
+    "Every lead action writes its domain event into this tenant's ",
+    { mono: "outbox" },
+    " in the SAME database transaction as the state change, so the event can never be lost or doubled. A relay polls the outbox and publishes each event on the event bus; sidecar consumers — ",
+    { mono: "enrichment.stub" },
+    " on ",
+    { mono: "lead.created" },
+    ", ",
+    { mono: "sync.logger" },
+    " on every event — subscribe, react, and record their results. Those results are the indented reaction rows above.",
+  ],
+  realVsSimulated: [
+    "The bus, the per-tenant ",
+    { mono: "outbox" },
+    ", the relay, and the consumer fan-out are real, working code, running exactly as they would in production. Only the consumer EFFECTS — the canned quality score, the fixed log line — are stubs; M3 replaces them with the real enrichment and sync sidecars.",
+  ],
+  crmParallel: [
+    "A real CRM firing enrichment and sync integrations the moment a record is created — the new record publishes a fact, and subscribed automations react in turn.",
+  ],
+};

@@ -6,7 +6,7 @@
 // indented siblings with the correct bright stamp/hue per status, the fan-out, and the
 // spinner on `processing`.
 
-import { act, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import LeadTimeline from "./LeadTimeline.tsx";
@@ -344,6 +344,116 @@ describe("LeadTimeline", () => {
       document.querySelectorAll(".lead-timeline-reaction-consumer"),
     ).map((node) => node.textContent);
     expect(consumerNodes).toEqual(["sync.logger"]);
+  });
+
+  // Epic 6 — the per-row "Simulated" badge marks each canned consumer effect, and ONE
+  // outbox explainer (console chrome) carries the mechanism story behind the reactions.
+  describe("simulated badge + outbox explainer (Epic 6)", () => {
+    it("carries a Simulated badge on each reaction row, none on event rows", async () => {
+      getLeadTimelineMock.mockResolvedValue([
+        makeRow({ event_id: "00000000-0000-0000-0000-0000000000a6" }),
+        makeReactionRow({
+          event_id: "00000000-0000-0000-0000-0000000000a6",
+          consumer_name: "enrichment.stub",
+          status: "done",
+        }),
+        makeReactionRow({
+          event_id: "00000000-0000-0000-0000-0000000000a6",
+          consumer_name: "sync.logger",
+          status: "done",
+        }),
+      ]);
+
+      render(<LeadTimeline id="timeline" leadId="lead-1" />);
+
+      await waitFor(() => {
+        expect(document.getElementById("timeline-list")).toBeInTheDocument();
+      });
+
+      // Each reaction row carries its own Simulated badge trigger (derived from the row id).
+      expect(
+        document.getElementById(
+          "timeline-reaction-00000000-0000-0000-0000-0000000000a6-enrichment.stub-simulated-trigger",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        document.getElementById(
+          "timeline-reaction-00000000-0000-0000-0000-0000000000a6-sync.logger-simulated-trigger",
+        ),
+      ).toBeInTheDocument();
+
+      // The event row carries NO badge — a console-level/event badge would wrongly imply
+      // the real domain events are simulated. Exactly one badge per reaction (two total).
+      expect(
+        document.getElementById(
+          "timeline-row-00000000-0000-0000-0000-0000000000a6-simulated-trigger",
+        ),
+      ).toBeNull();
+      expect(
+        document.querySelectorAll(".simulated-badge-trigger"),
+      ).toHaveLength(2);
+    });
+
+    it("renders exactly one outbox explainer on the console, opening to its four sections", async () => {
+      getLeadTimelineMock.mockResolvedValue([
+        makeRow({ event_id: "00000000-0000-0000-0000-0000000000a7" }),
+      ]);
+
+      render(<LeadTimeline id="timeline" leadId="lead-1" />);
+
+      await waitFor(() => {
+        expect(document.getElementById("timeline-list")).toBeInTheDocument();
+      });
+
+      // Exactly one explainer, in the console header beside the overline, naming the surface.
+      const trigger = document.getElementById("timeline-explainer-outbox-trigger");
+      expect(trigger).toBeInTheDocument();
+      expect(trigger?.getAttribute("aria-label")).toBe(
+        "Explain: the event timeline",
+      );
+      expect(
+        document.getElementById("timeline-header"),
+      ).toContainElement(trigger);
+      expect(document.querySelectorAll(".explainer-trigger")).toHaveLength(1);
+
+      // It opens to the four fixed sections (PATTERN / HOW / REAL VS SIMULATED / CRM PARALLEL).
+      act(() => {
+        fireEvent.click(trigger as HTMLElement);
+      });
+      for (const section of ["pattern", "how", "realVsSimulated", "crmParallel"]) {
+        expect(
+          document.getElementById(
+            `timeline-explainer-outbox-section-${section}`,
+          ),
+        ).toBeInTheDocument();
+      }
+    });
+
+    it("renders the outbox explainer once in every load state (it is console chrome)", async () => {
+      // Loaded-empty: the explainer is present even with no rows.
+      getLeadTimelineMock.mockResolvedValue([]);
+      const { unmount } = render(<LeadTimeline id="timeline" leadId="lead-1" />);
+      await waitFor(() => {
+        expect(document.getElementById("timeline-empty")).toBeInTheDocument();
+      });
+      expect(
+        document.querySelectorAll(".explainer-trigger"),
+      ).toHaveLength(1);
+      unmount();
+
+      // Errored: the explainer still renders once.
+      getLeadTimelineMock.mockRejectedValue(new Error("boom"));
+      render(<LeadTimeline id="timeline" leadId="lead-1" />);
+      await waitFor(() => {
+        expect(document.getElementById("timeline-error")).toBeInTheDocument();
+      });
+      expect(
+        document.getElementById("timeline-explainer-outbox-trigger"),
+      ).toBeInTheDocument();
+      expect(
+        document.querySelectorAll(".explainer-trigger"),
+      ).toHaveLength(1);
+    });
   });
 
   // Epic 4 — the watchable moment: the armed poll re-fetches on a 1500 ms cadence while a
