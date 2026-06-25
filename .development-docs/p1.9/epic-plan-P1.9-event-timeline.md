@@ -95,9 +95,11 @@ Source TDD: [./tdd-P1.9-event-timeline.md](./tdd-P1.9-event-timeline.md)
   - **Pure presentation:** the explainer sits in a new console-header row in `LeadTimeline.tsx`; the badge renders inside `LeadTimelineReactionRow.tsx` per row — no timeline-read or endpoint change.
   - **Epic 7 asserts badge + explainer presence:** a per-row Simulated badge on reaction rows, exactly one outbox `ExplainerPopover` in the console header.
 
-## Epic 7 — Isolation + acceptance hardening
+## Epic 7 — Isolation + acceptance hardening — **COMPLETED** (15m · 14.9M tok · 972k tok/min)
 - **Goal:** Re-prove tenant + demo-session isolation on the new timeline surface and cover the five acceptance criteria end-to-end.
 - **Rough scope:** A named acceptance/isolation test proving another session's reactions never appear and no cross-tenant row leaks (linkage rides the `event_id` join off the lead's own events), plus end-to-end coverage of the live moment, coherent seeded trail, both stub reactions as siblings, and the badge/explainer presence.
-- **Open questions / decisions for stakeholders:** none expected — acceptance criteria are fixed by the TDD §8.
+- **Open questions / decisions for stakeholders:** none — confirmed at plan time (rung-3): nothing was open; the five acceptance criteria are fixed by TDD §8.
 - **Depends on:** Epics 1–6.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Final epic — test-only hardening, no production change:** a named acceptance/isolation suite for the five TDD §8 criteria (`core/tests/test_timeline_acceptance.py` + a frontend `acceptance criteria (Epic 7)` describe block), all through the real endpoint/component. Epic 1 already proves the three timeline `404` open-probes; the new substance is the **no-cross-contamination** proof — on a lead the visitor *can* see, no foreign-session/tenant event or reaction leaks in. It rides the Epic 1/2 seam: the `entity_id`-keyed outbox filter + the `event_id` join, and `processed_events` carries no session, so a foreign reaction could only match via a (globally unique) shared `event_id`, which cannot occur.
+  - **Seeded-baseline status filter gotcha (cross-cutting carry-forward):** resolving a baseline lead by `status` uses the **capitalized** stored spelling (`LeadStatus.QUALIFIED.value == "Qualified"`, not `"qualified"`) — the `leads.status` column stores the `StrEnum` value verbatim. Any test filtering `leads` by status must pass `LeadStatus.<X>.value`, never a lowercased literal.

@@ -685,4 +685,129 @@ describe("LeadTimeline", () => {
       expect(onSessionExpired).not.toHaveBeenCalled();
     });
   });
+
+  // Epic 7 — the named acceptance hardening. The per-slice tests above already prove the
+  // mechanics (Epic 4's pending→processing→done poll, Epic 6's per-row badge + single
+  // explainer). This block ties the two *frontend* TDD §8 acceptance criteria to named
+  // end-to-end assertions, adding the one piece the slices don't already pin: the quality
+  // score *appearing live* on the same tick the enrichment reaction flips to `done`, with
+  // no manual refetch (#1's "watch the quality score appear"). It does not re-assert the
+  // hue/spinner/label mechanics — those are owned above.
+  describe("acceptance criteria (Epic 7)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // Settle the mount fetch's microtasks without advancing the 1500 ms poll timer.
+    async function flushFetch() {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    // Advance one poll tick and settle its re-fetch.
+    async function advancePoll() {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+    }
+
+    it("#1 live moment: the enrichment reaction reaches done and its quality score appears, no manual refetch", async () => {
+      // The walkthrough payoff: a freshly created lead's enrichment reaction advances on a
+      // live poll and, on the tick it flips to `done`, its deterministic quality-score
+      // summary appears on screen — the viewer never refetches by hand.
+      const eventId = "00000000-0000-0000-0000-0000000000e1";
+      const summaryId = `timeline-reaction-${eventId}-enrichment.stub-summary`;
+      const processing = [
+        makeRow({ event_id: eventId }),
+        makeReactionRow({
+          event_id: eventId,
+          consumer_name: "enrichment.stub",
+          status: "processing",
+          result_summary: null,
+        }),
+      ];
+      const done = [
+        makeRow({ event_id: eventId }),
+        makeReactionRow({
+          event_id: eventId,
+          consumer_name: "enrichment.stub",
+          status: "done",
+          result_summary: "Quality score 73/100 · Medium",
+        }),
+      ];
+      getLeadTimelineMock
+        .mockResolvedValueOnce(processing)
+        .mockResolvedValueOnce(done);
+
+      render(<LeadTimeline id="timeline" leadId="lead-1" />);
+
+      // Mount fetch: processing, no score yet. The loop is armed (a reaction is in flight).
+      await flushFetch();
+      expect(
+        document.getElementById(
+          `timeline-reaction-${eventId}-enrichment.stub-status-label`,
+        )?.textContent,
+      ).toBe("Processing");
+      expect(document.getElementById(summaryId)).toBeNull();
+
+      // One live tick later — no manual refetch — the reaction is `done` and the quality
+      // score sub-line has appeared verbatim.
+      await advancePoll();
+      expect(
+        document.getElementById(
+          `timeline-reaction-${eventId}-enrichment.stub-status-label`,
+        )?.textContent,
+      ).toBe("Done");
+      expect(document.getElementById(summaryId)?.textContent).toBe(
+        "Quality score 73/100 · Medium",
+      );
+    });
+
+    it("#4 every reaction row carries a Simulated badge and the console carries exactly one outbox explainer", async () => {
+      // Both stub reactions are marked simulated (per-row), event rows are not, and the
+      // mechanism story is carried by exactly one console-level explainer.
+      const eventId = "00000000-0000-0000-0000-0000000000e4";
+      getLeadTimelineMock.mockResolvedValue([
+        makeRow({ event_id: eventId }),
+        makeReactionRow({
+          event_id: eventId,
+          consumer_name: "enrichment.stub",
+          status: "done",
+          result_summary: "Quality score 73/100 · Medium",
+        }),
+        makeReactionRow({
+          event_id: eventId,
+          consumer_name: "sync.logger",
+          status: "done",
+        }),
+      ]);
+
+      render(<LeadTimeline id="timeline" leadId="lead-1" />);
+
+      await flushFetch();
+      expect(document.getElementById("timeline-list")).toBeInTheDocument();
+
+      // One Simulated badge per reaction row (two), none on the event row.
+      expect(
+        document.querySelectorAll(".simulated-badge-trigger"),
+      ).toHaveLength(2);
+      expect(
+        document.getElementById(`timeline-row-${eventId}-simulated-trigger`),
+      ).toBeNull();
+
+      // Exactly one outbox explainer, on the console header.
+      expect(
+        document.querySelectorAll(".explainer-trigger"),
+      ).toHaveLength(1);
+      expect(
+        document.getElementById("timeline-explainer-outbox-trigger"),
+      ).toBeInTheDocument();
+    });
+  });
 });
