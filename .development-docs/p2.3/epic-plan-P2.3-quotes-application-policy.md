@@ -126,9 +126,9 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
   - _The session queue is now **5 per tenant** (was 4) — **migrated ~20 count assertions** across 6 demo/session test files (`== 4`→`5`, totals `8`→`10`, `16`→`20`), leaving `ledger_deleted` untouched. Analogous to the P2.2 test migration (R2)._
   - _**CONTENT DECISION — no seeded quote/application/policy chains.** The seed model is leads → **interactive** conversion (it seeds no converted opportunities/contacts), so completed money-path records would need seeded converted opportunities the seed does not create. The money path is created **interactively** (the demo) and by Epic 14's acceptance, so seeded depth is out of scope; the `deny@` fixture is the critical seeded prerequisite._
 
-## Epic 14 — Acceptance suite
+## Epic 14 — Acceptance suite — **COMPLETED** (9m03s)
 - **Goal:** A named acceptance suite proving both threads end-to-end on the real Postgres + RabbitMQ substrate — happy path to issued Policy and decline → supersession → re-approval — plus the coupling and tenant/session isolation proofs.
 - **Rough scope:** The end-to-end happy-path and decline/supersession threads; the coupling proof (status moves advance the opportunity, manual reach into automation-owned stages rejected); the isolation proofs (Tenant-1 records absent in Tenant-2, no Medicare field in Tenant-2, cross-session invisibility).
-- **Open questions / decisions for stakeholders:** none expected.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 11, Epic 12, Epic 13.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** _none — named suite `tests/test_p23_acceptance.py` (no production code), 5 proofs: (1) happy path quote→select→step+Medicare→submit→approve→issued Policy (opp *Policy Active*) + masked/reveal; (2) decline → opp returns to *Quoted* → re-select supersedes; (3) manual advance into an automation-owned stage → 422; (4) Tenant-2 no Medicare field (capture/reveal 422); (5) foreign-session quote-request poll → 404._
