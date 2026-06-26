@@ -223,3 +223,71 @@
   line-height: 18px;
   color: var(--on-surface-variant);
 }
+
+/* ---- Product-specific application step form (Epic 6) ---- */
+
+.application-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+}
+
+.application-step-heading {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.application-step-error {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--error, var(--on-surface));
+}
+
+.application-step-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.application-step-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  max-width: 320px;
+}
+
+.application-step-label {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.application-step-input {
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  padding: var(--space-2) var(--space-3);
+  color: var(--on-surface);
+  background-color: var(--surface-1);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-sm);
+}
+
+.application-step-question {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface);
+  cursor: pointer;
+}

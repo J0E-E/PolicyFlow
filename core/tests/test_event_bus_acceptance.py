@@ -260,42 +260,81 @@ async def reset_published_at_to_null(database_engine, schema_name, event_id):
         )
 
 
-async def drain_for_event_id(broker_channel, queue_name, event_id, max_messages=50):
+async def drain_for_event_id(
+    broker_channel,
+    queue_name,
+    event_id,
+    max_messages=5000,
+    empty_polls=20,
+    empty_poll_delay=0.1,
+):
     """Get the message whose `message_id` equals `event_id` off `queue_name`.
 
-    The container broker is never reset and the relay drains every tenant's pending
-    rows, so a queue can hold unrelated messages. This `get`s (and acks, via
-    `no_ack=True`) up to `max_messages` from the queue, returning the first whose AMQP
-    `message_id` is this test's `event_id` and discarding the rest. Returns `None` if
-    the matching message is not seen within the budget. The entity-pinned reader idiom
-    from `test_record_created_event.py`, extended to the broker side via `message_id`.
+    The container broker is never reset and `publish_pending_once` flushes **every**
+    tenant's accumulated unpublished outbox rows — the whole suite's backlog — and
+    `sync.logger` binds `#`, so this queue can hold a large backlog ahead of this
+    test's event. This `get`s (and acks, via `no_ack=True`) up to `max_messages` from
+    the queue, returning the first whose AMQP `message_id` is this test's `event_id`
+    and discarding the rest. `max_messages` is deliberately high so a big backlog
+    cannot exhaust the budget before the target is reached (the cause of the earlier
+    "never arrived" flake under full-suite load). The entity-pinned reader idiom from
+    `test_record_created_event.py`, extended to the broker side via `message_id`.
+
+    An empty `get` does **not** end the drain: the relay publishes asynchronously, so
+    the message can still be in flight. The drain waits out up to `empty_polls`
+    **consecutive** empty reads (`empty_poll_delay` apart) before giving up; any
+    delivery resets that counter. Returns `None` only if the matching message never
+    arrives within the budget.
     """
     queue = await broker_channel.get_queue(queue_name)
-    for _ in range(max_messages):
+    seen_messages = 0
+    seen_empty = 0
+    while seen_messages < max_messages and seen_empty < empty_polls:
         message = await queue.get(no_ack=True, fail=False)
         if message is None:
-            return None
+            seen_empty += 1
+            await asyncio.sleep(empty_poll_delay)
+            continue
+        seen_empty = 0
         if message.message_id == str(event_id):
             return message
+        seen_messages += 1
     return None
 
 
-async def deliver_for_event_id(broker_channel, queue_name, event_id, max_messages=50):
+async def deliver_for_event_id(
+    broker_channel,
+    queue_name,
+    event_id,
+    max_messages=5000,
+    empty_polls=20,
+    empty_poll_delay=0.1,
+):
     """Get the message for `event_id` off `queue_name` with its ack still pending.
 
     Like `drain_for_event_id` but `no_ack=False`, so the returned message's ack is
     outstanding and the handler under test is what acks or nacks it. Non-matching
     messages walked past are acked (`no_ack=True` would lose them; here they are
-    explicitly acked) so they do not block the queue for a later poll.
+    explicitly acked) so they do not block the queue for a later poll. The high
+    `max_messages` budget absorbs the suite's backlog, and up to `empty_polls`
+    **consecutive** empty reads are waited out (any delivery resets the counter) for
+    the asynchronously-published message to arrive — the same backlog + race guards
+    `drain_for_event_id` uses.
     """
     queue = await broker_channel.get_queue(queue_name)
-    for _ in range(max_messages):
+    seen_messages = 0
+    seen_empty = 0
+    while seen_messages < max_messages and seen_empty < empty_polls:
         message = await queue.get(no_ack=False, fail=False)
         if message is None:
-            return None
+            seen_empty += 1
+            await asyncio.sleep(empty_poll_delay)
+            continue
+        seen_empty = 0
         if message.message_id == str(event_id):
             return message
         await message.ack()
+        seen_messages += 1
     return None
 
 

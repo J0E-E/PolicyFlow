@@ -28,7 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.dependencies import require_authenticated, require_capability
 from ..auth.provider import Identity
 from ..auth.rbac import Capability
+from ..applications.read import serialize_application
 from ..applications.service import select_quote
+from ..applications.steps import application_step_for
 from ..demo.session import current_demo_session
 from ..models.application import Application
 from ..models.contact import Contact
@@ -529,27 +531,6 @@ async def get_quote_request(
     }
 
 
-def _application_row(application: Application) -> dict:
-    """Serialize one `Application` to the detail page's summary shape (non-PII).
-
-    Carries the frozen carrier / product / coverage / premium snapshot copied from
-    the selected quote plus the lifecycle `status`. The product-step, decision, and
-    Medicare fields are added by later epics as they populate them.
-    """
-    return {
-        "id": str(application.id),
-        "opportunity_id": str(application.opportunity_id),
-        "product_line": application.product_line,
-        "selected_quote_id": str(application.selected_quote_id),
-        "status": application.status,
-        "carrier": application.carrier,
-        "product_label": application.product_label,
-        "coverage_amount": application.coverage_amount,
-        "premium_monthly": application.premium_monthly,
-        "premium_annual": application.premium_annual,
-    }
-
-
 @router.post("/{opportunity_id}/applications")
 async def create_application(
     opportunity_id: uuid.UUID,
@@ -611,4 +592,6 @@ async def create_application(
         actor_role=identity.role,
         demo_session_id=demo_session_id,
     )
-    return {"application": _application_row(application)}
+    tenant_config = await _active_tenant_config(db)
+    application_step = application_step_for(opportunity.product_line, tenant_config)
+    return {"application": serialize_application(application, application_step)}

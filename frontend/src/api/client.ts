@@ -50,7 +50,7 @@ export class ApiError extends Error {
 }
 
 /** The HTTP methods this client issues. */
-type HttpMethod = "GET" | "POST";
+type HttpMethod = "GET" | "POST" | "PATCH";
 
 /**
  * Send one request to the backend and return its parsed JSON body, typed as `T`.
@@ -310,6 +310,29 @@ export async function selectQuote(
     "POST",
     `/api/opportunities/${opportunityId}/applications`,
     { quote_id: quoteId },
+  );
+  return responseBody.application;
+}
+
+/**
+ * Capture the product-specific step on a Draft application via
+ * `PATCH /api/applications/{id}`, unwrapping the `{ application }` envelope into the
+ * updated application. The body carries the `beneficiary` details **or** the
+ * `health_answers`, matching the product line's step. Throws an `ApiError` carrying
+ * the status for a refused capture — `404`, `403`, `409` (not Draft), `422` (wrong
+ * or incomplete step payload).
+ */
+export async function patchApplication(
+  applicationId: string,
+  body: {
+    beneficiary?: Record<string, string>;
+    health_answers?: Record<string, boolean>;
+  },
+): Promise<Application> {
+  const responseBody = await request<{ application: Application }>(
+    "PATCH",
+    `/api/applications/${applicationId}`,
+    body,
   );
   return responseBody.application;
 }

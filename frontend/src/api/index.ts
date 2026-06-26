@@ -23,6 +23,7 @@ export {
   requestQuotes,
   getQuoteRequest,
   selectQuote,
+  patchApplication,
   resetDemoSession,
   resolveDuplicate,
   revealLeadField,

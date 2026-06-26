@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import QuotePanel from "./QuotePanel.tsx";
 import ApplicationSummary from "./ApplicationSummary.tsx";
+import ApplicationStep from "./ApplicationStep.tsx";
 import { useCapability } from "../session";
 import { ApiError, getOpportunityBoard, selectQuote } from "../api";
 import type { Application, OpportunityRow } from "../api";
@@ -117,6 +118,7 @@ export default function OpportunityDetailPage() {
         selectError={selectError}
         onStageChange={setStage}
         onSelectQuote={handleSelectQuote}
+        onStepCaptured={setApplication}
         onRetry={loadOpportunity}
       />
     </div>
@@ -135,6 +137,7 @@ function OpportunityDetailBody({
   selectError,
   onStageChange,
   onSelectQuote,
+  onStepCaptured,
   onRetry,
 }: {
   detailLoad: DetailLoadState;
@@ -146,6 +149,7 @@ function OpportunityDetailBody({
   selectError: string | null;
   onStageChange: (stage: string) => void;
   onSelectQuote: (quoteId: string) => void;
+  onStepCaptured: (application: Application) => void;
   onRetry: () => void;
 }) {
   if (detailLoad.kind === "loading") {
@@ -210,6 +214,19 @@ function OpportunityDetailBody({
       {application && (
         <ApplicationSummary id="opportunity-detail-application" application={application} />
       )}
+      {application &&
+        application.status === "Draft" &&
+        (application.application_step === "beneficiary"
+          ? application.beneficiary === null
+          : application.application_step === "health"
+            ? application.health_answers === null
+            : false) && (
+          <ApplicationStep
+            id="opportunity-detail-step"
+            application={application}
+            onCaptured={onStepCaptured}
+          />
+        )}
       <QuotePanel
         id="opportunity-detail-quotes"
         opportunityId={opportunityId}

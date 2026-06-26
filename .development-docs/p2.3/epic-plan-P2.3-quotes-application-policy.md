@@ -50,12 +50,15 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
   - _**Migration moved to 0017** (the plan said "0016", but Epic 3 took 0016 for the quote tables). The `applications` table is created with the **full D5 column set** (beneficiary/health_answers/medicare_id_encrypted/decision/decided_at/superseded_by) so Epics 6/7/10/11 **populate** columns rather than each ALTER-ing. The partial-unique "one-active" index is **Epic 10's** deliverable, not here._
   - _The select endpoint (`POST …/applications`) requires the opportunity at *Quoted* (409 otherwise). UI selection works within the live session right after the round-trip; reloading a *Quoted* opp to select later is not supported (no list-quote-requests-for-opportunity endpoint — the generalized read is P2.5), same limitation as Epic 3's quote reload._
 
-## Epic 6 — Product-specific application step [UI]
+## Epic 6 — Product-specific application step [UI] — **COMPLETED** (19m02s)
 - **Goal:** Capture the product-specific step on a Draft application — beneficiary details or health questions, chosen by the product line — so the application carries what submission needs.
 - **Rough scope:** The update endpoint capturing `beneficiary` / `health_answers` (jsonb) per the product line's `application_step`; the agent-workspace step form. (Medicare-ID capture is Epic 11.)
-- **Open questions / decisions for stakeholders:** the **content** of the step — the exact beneficiary fields and the 3–5 health questions per product line (TDD R4/D10, deliberately left for epic time).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time (content: beneficiary `{full_name, relationship, date_of_birth}`; 5 yes/no health questions — keys in `app/applications/steps.py`).
 - **Depends on:** Epic 5.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - _**New `/api/applications` router** (`PATCH /{id}`) mounted in `main.py` — Epics 7/11 add submit + Medicare-reveal under it. The step contract is `app/applications/steps.py` (`BENEFICIARY_FIELDS`, `HEALTH_QUESTION_KEYS`, `application_step_for`); the FE `ApplicationStep.tsx` renders the matching keys/prompts._
+  - _**Shared application serializer** `app/applications/read.py::serialize_application` is now the single application wire shape — the create endpoint (Epic 5) switched to it and the old `opportunities/router._application_row` was removed. The application response now carries `application_step` + `beneficiary` + `health_answers` so the workspace knows which step form to render._
+  - _**Flake fix (folded in):** the broker drain helpers (`drain_for_event_id` / `deliver_for_event_id` in `test_demo_session_acceptance.py` + `test_event_bus_acceptance.py`) capped at `max_messages=50`, but `publish_pending_once` flushes the **whole suite's** accumulated unpublished outbox and `sync.logger` binds `#`, so under full-suite load the target event sat past position 50 in the backlog → intermittent "event never arrived on sync.logger". Raised the budget to 5000 (+ reset the consecutive-empty counter, + a bounded async-publish wait). Pre-existing latent issue surfaced by the growing suite; validated green over the full suite._
 
 ## Epic 7 — Submit + inline carrier decision [UI]
 - **Goal:** Submitting an application runs the deterministic inline carrier decision (approved by default; declined when the contact's email contains `deny`) and couples the outcome to the opportunity stage.

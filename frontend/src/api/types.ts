@@ -551,4 +551,11 @@ export interface Application {
   premium_monthly: number;
   /** The annualized premium in whole dollars. */
   premium_annual: number;
+  /** The product-specific step this line captures: `"beneficiary"`, `"health"`, or
+   *  `null` (no step). Tells the workspace which step form to render. */
+  application_step: string | null;
+  /** The captured beneficiary details, or `null` until the step is captured. */
+  beneficiary: Record<string, string> | null;
+  /** The captured health answers (yes/no), or `null` until the step is captured. */
+  health_answers: Record<string, boolean> | null;
 }

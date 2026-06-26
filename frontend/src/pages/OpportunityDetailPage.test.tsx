@@ -149,6 +149,9 @@ describe("OpportunityDetailPage", () => {
       coverage_amount: 7500,
       premium_monthly: 29,
       premium_annual: 348,
+      application_step: null,
+      beneficiary: null,
+      health_answers: null,
     });
     renderAt("opp-1");
 

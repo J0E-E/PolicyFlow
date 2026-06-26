@@ -102,3 +102,25 @@ async def select_quote(
         ),
     )
     return application
+
+
+async def capture_application_step(
+    db: AsyncSession,
+    *,
+    application: Application,
+    beneficiary: dict | None = None,
+    health_answers: dict | None = None,
+) -> Application:
+    """Record the captured product step on a Draft application (Epic 6).
+
+    Sets whichever of `beneficiary` / `health_answers` the caller supplies onto the
+    application's jsonb columns and flushes — the endpoint owns the validation that
+    the right one is supplied for the product line's step. Runs on the caller's
+    request session and does **not** commit. Returns the same application instance.
+    """
+    if beneficiary is not None:
+        application.beneficiary = beneficiary
+    if health_answers is not None:
+        application.health_answers = health_answers
+    await db.flush()
+    return application

@@ -18,6 +18,7 @@ import contextlib
 
 from fastapi import FastAPI
 
+from .applications.router import router as applications_router
 from .audit.router import router as audit_router
 from .auth.router import router as auth_router
 from .demo.router import router as demo_router
@@ -60,3 +61,4 @@ app.include_router(leads_router)
 app.include_router(households_router)
 app.include_router(public_leads_router)
 app.include_router(opportunities_router)
+app.include_router(applications_router)
