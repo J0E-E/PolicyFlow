@@ -71,9 +71,9 @@ Source TDD: [./tdd-P2.2-opportunity-pipeline-product-rules.md](./tdd-P2.2-opport
 - **Depends on:** Epic 3.
 - **Implementation notes:** Seed-only: Priya Nakamura (Sunshine `SESSION_LEAD_TEMPLATES`) is now on `medicare_advantage` (was `dental_vision_hearing`) with an under-65 DOB (1965) — converting her yields a gated under-65 opportunity for the scripted step-8 block. Pinned by a date-robust `test_seed.py` assertion (registry `requires_medicare_age` + `age_band_for`, not a hard-coded name). **Epic 10's acceptance suite converts this Sunshine Medicare/under-65 template to exercise the gate on the real seed.**
 
-## Epic 10 — Acceptance suite
+## Epic 10 — Acceptance suite — **COMPLETED** (5m54s)
 - **Goal:** Prove the whole phase end-to-end on the real substrate: the machine (advance through stages, invalid move refused, Lost terminal), the Medicare gate (under-65 blocked from Quoted, allowed at 65+), per-tenant config + the Florida skip, cross-tenant/session isolation, and both events on the outbox carrying `tenant_id` + `demo_session_id` + forwarded `correlation_id`; plus a frontend acceptance block for the board flow.
 - **Rough scope:** the named `test_opportunity_pipeline_acceptance.py` against real Postgres + RabbitMQ; a FE acceptance block (board → advance → gate-block → mark lost).
 - **Open questions / decisions for stakeholders:** none expected.
 - **Depends on:** Epics 1–9.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** none — test-only. `core/tests/test_opportunity_pipeline_acceptance.py` (9 scenarios on the real DB-backed substrate: full-spine walk, invalid-move 409, Lost terminal, Medicare 422/200, Florida config + Approved skip, foreign-session 404 + cross-tenant invisibility, and both events on the outbox carrying `tenant_id` + `demo_session_id` + forwarded `correlation_id`) + `frontend/src/pages/OpportunityBoardAcceptance.test.tsx` (one cohesive board flow: render → advance → gate-block reason inline → Mark Lost into the Lost lane).
