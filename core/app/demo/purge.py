@@ -101,6 +101,11 @@ class PurgeCounts:
     contacts_deleted: dict[str, int] = field(default_factory=dict)
     opportunities_deleted: dict[str, int] = field(default_factory=dict)
     tasks_deleted: dict[str, int] = field(default_factory=dict)
+    # The four P2.3 money-path entities (Epic 12) — same per-tenant rowcount maps.
+    quote_requests_deleted: dict[str, int] = field(default_factory=dict)
+    quotes_deleted: dict[str, int] = field(default_factory=dict)
+    applications_deleted: dict[str, int] = field(default_factory=dict)
+    policies_deleted: dict[str, int] = field(default_factory=dict)
     ledger_deleted: int = 0
     session_rows_deleted: int = 0
 
@@ -170,20 +175,28 @@ async def purge_sessions(
 
         session_ids = await _resolve_session_ids(session, scope)
 
-        # Sweep every tenant's session-tagged overlay: the four P2.1 conversion
-        # entities (Epic 10) plus `leads`. All five tables carry `demo_session_id`
-        # directly, so each is one keyed DELETE; there are no FK constraints between
-        # them (the schema boundary is the isolation layer), so the order is for
-        # readability only — children (opportunities / tasks) before their contact,
-        # contacts before households, leads last. A session contact that linked to a
-        # NULL-baseline household is removed here while that household (its
-        # `demo_session_id` is NULL, not the session's) correctly survives.
+        # Sweep every tenant's session-tagged overlay: the four P2.3 money-path
+        # entities (Epic 12), the four P2.1 conversion entities (Epic 10), and
+        # `leads`. Every table carries `demo_session_id` directly, so each is one
+        # keyed DELETE; there are no FK constraints between them (the schema boundary
+        # is the isolation layer), so the order is for readability only — the P2.3
+        # records (policies → applications → quotes → quote_requests) before the
+        # opportunity they hang off, then opportunities / tasks before their contact,
+        # contacts before households, leads last.
         leads_deleted: dict[str, int] = {}
         households_deleted: dict[str, int] = {}
         contacts_deleted: dict[str, int] = {}
         opportunities_deleted: dict[str, int] = {}
         tasks_deleted: dict[str, int] = {}
+        quote_requests_deleted: dict[str, int] = {}
+        quotes_deleted: dict[str, int] = {}
+        applications_deleted: dict[str, int] = {}
+        policies_deleted: dict[str, int] = {}
         table_counts = (
+            ("policies", policies_deleted),
+            ("applications", applications_deleted),
+            ("quotes", quotes_deleted),
+            ("quote_requests", quote_requests_deleted),
             ("opportunities", opportunities_deleted),
             ("tasks", tasks_deleted),
             ("contacts", contacts_deleted),
@@ -230,6 +243,10 @@ async def purge_sessions(
         contacts_deleted=contacts_deleted,
         opportunities_deleted=opportunities_deleted,
         tasks_deleted=tasks_deleted,
+        quote_requests_deleted=quote_requests_deleted,
+        quotes_deleted=quotes_deleted,
+        applications_deleted=applications_deleted,
+        policies_deleted=policies_deleted,
         ledger_deleted=ledger_deleted,
         session_rows_deleted=session_rows_deleted,
     )

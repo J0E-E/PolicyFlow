@@ -108,12 +108,14 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
   - _**Reveal:** `POST /api/applications/{id}/reveal-medicare-id` (`REVEAL_PII` → `decrypt_field` → `on_pii_revealed(db, identity, "application", id, "medicare_id")` → return) — entity_type is a free string, no audit-enum change. `_guard_application_for_session` gained `refuse_seed` (the reveal allows seed reads, the leads precedent)._
   - _FE: `MedicareReveal` (masked + click-to-reveal) on the application + policy views; `ApplicationStep` gained a Medicare input (also renders standalone for no-step Sunshine lines). Capture is **optional** — it does not gate submit._
 
-## Epic 12 — Demo-session isolation
+## Epic 12 — Demo-session isolation — **COMPLETED** (12m13s)
 - **Goal:** Every new record and the quote stub respect demo-session isolation — a visitor never sees or mutates another session's quotes, applications, or policies, and the stub propagates the session through the round-trip.
 - **Rough scope:** `demo_session_id` on all four tables; `visible_to_session` reads and the foreign-404 / seed-409 mutation guards applied across the new endpoints (the opportunities-router trio); the `carrier.quote` stub propagating `demo_session_id` (and `correlation_id`) from the envelope.
-- **Open questions / decisions for stakeholders:** none expected — the isolation trio is reused verbatim (TDD §5 / D13).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 8 (all four record types exist), Epic 3 (the stub).
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - _The isolation guards (`_guard_opportunity_for_session` / `_guard_application_for_session` / `_scope_to_session`) and the stub's `demo_session_id` + `correlation_id` propagation were applied **as each endpoint was built** (Epics 3/5/6/7/11); this epic **verifies** them with acceptance tests (cross-session 404, stub propagation)._
+  - _**Gap closed:** the demo-**purge** engine (`app/demo/purge.py`) did not sweep the 4 new tables — a reset would have orphaned them. Added `policies` / `applications` / `quotes` / `quote_requests` to the per-tenant sweep (children-first, no FKs) + 4 `PurgeCounts` fields. The migrations already granted `demo_purge` SELECT+DELETE on all four._
 
 ## Epic 13 — Seed
 - **Goal:** Seed coherent quote/application/policy demo data plus the prerequisite contact whose decrypted email contains `deny`, so both the happy path and the decline thread are demoable and the acceptance suite has its fixtures.
