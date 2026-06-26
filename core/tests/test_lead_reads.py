@@ -200,10 +200,15 @@ def unique_contact() -> tuple[str, str]:
     """Return a (email, phone) pair unique to one test, avoiding cross-test matches.
 
     The container DB is shared, so each inserted lead owns unique contact details so
-    the create endpoint's duplicate matcher never flags an unrelated test's row.
+    the create endpoint's duplicate matcher never flags an unrelated test's row. The
+    phone is a distinct `+1999`-prefixed number whose 10 trailing digits come from the
+    full uuid's integer (high entropy, all decimal so `normalize_phone` drops none) —
+    the narrow `+1 (415) 555-{hex}` form this once used collides in a busy shared table
+    once the hex letters are stripped.
     """
     token = uuid.uuid4().hex[:12]
-    return (f"read-{token}@example.com", f"+1 (415) 555-{token[:4]}")
+    phone_digits = f"{uuid.uuid4().int % 10**10:010d}"
+    return (f"read-{token}@example.com", f"+1999{phone_digits}")
 
 
 # --- Phase 1: detail read ----------------------------------------------------

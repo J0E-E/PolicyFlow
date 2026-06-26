@@ -90,11 +90,16 @@ def unique_contact() -> tuple[str, str]:
     """Return a (email, phone) pair unique to one test, to avoid cross-test matches.
 
     The container database is shared across the session, so a test that must control
-    whether a duplicate is found owns its match targets by suffixing both fields with
-    a random token — no other test's (or the seed's) leads can fingerprint the same.
+    whether a duplicate is found owns its match targets so no other test's (or the
+    seed's) leads can fingerprint the same on the email **or** phone blind index. The
+    email carries a random hex token; the phone is a distinct `+1999`-prefixed number
+    whose 10 trailing digits come from the full uuid's integer (high entropy, all
+    decimal so `normalize_phone` drops none) — the narrow `+1 (415) 555-{hex}` form
+    this once used collides in a busy shared table once the hex letters are stripped.
     """
     token = uuid.uuid4().hex[:12]
-    return (f"intake-{token}@example.com", f"+1 (415) 555-{token[:4]}")
+    phone_digits = f"{uuid.uuid4().int % 10**10:010d}"
+    return (f"intake-{token}@example.com", f"+1999{phone_digits}")
 
 
 async def read_lead_row(database_engine, schema_name, lead_id):

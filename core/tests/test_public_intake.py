@@ -54,14 +54,15 @@ def unique_contact() -> tuple[str, str]:
     whether a duplicate is found owns its match targets by suffixing both fields with
     a random token — no other test's (or the seed's) leads can fingerprint the same.
 
-    Unlike `test_lead_intake.unique_contact`, the phone is built from a **numeric**
-    token so its digit-only fold lands in the public route's strict 10–15-digit range
-    (`+1 (415) 555-XXXX` → eleven digits). The agent route's lenient `CreateLeadRequest`
-    tolerates a non-numeric suffix; the public route's `PublicIntakeRequest` does not.
+    The phone is a distinct `+1999`-prefixed number whose 10 trailing digits come from
+    the full uuid's integer: high entropy (so a busy shared table does not collide) and
+    all decimal, so its digit-only fold lands squarely in the public route's strict
+    10–15-digit range. The agent route's lenient `CreateLeadRequest` tolerates a
+    non-numeric suffix; the public route's `PublicIntakeRequest` does not.
     """
     token = uuid.uuid4().hex[:12]
-    digits = f"{uuid.uuid4().int % 10000:04d}"
-    return (f"intake-{token}@example.com", f"+1 (415) 555-{digits}")
+    phone_digits = f"{uuid.uuid4().int % 10**10:010d}"
+    return (f"intake-{token}@example.com", f"+1999{phone_digits}")
 
 # A full valid public-intake body the happy-path tests reuse. The product-line keys
 # are real Sunshine keys, the zip is US-shaped, the date of birth lands in the `65+`
