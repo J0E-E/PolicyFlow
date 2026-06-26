@@ -53,6 +53,7 @@ export type {
   OpportunityEligibility,
   OpportunityRow,
   PipelineStage,
+  Policy,
   ProductLine,
   PublicIntakeRequest,
   PublicIntakeResult,

@@ -125,7 +125,11 @@ async def read_application(database_engine, application_id):
 async def test_submit_approves_by_default_and_advances_the_opportunity(
     db_client, database_engine, seeded, container_quotes_session_factory
 ):
-    """A normal applicant email approves: app → Approved, opportunity → Approved."""
+    """A normal applicant email approves: app → Approved, opportunity → Policy Active.
+
+    Approval auto-issues the policy (Epic 8), so the opportunity reaches *Policy
+    Active* and the submit response carries the issued policy.
+    """
     application_id, opportunity_id = await submit_ready_application(db_client, database_engine)
 
     response = await db_client.post(f"/api/applications/{application_id}/submit")
@@ -133,7 +137,9 @@ async def test_submit_approves_by_default_and_advances_the_opportunity(
     body = response.json()
     assert body["application"]["status"] == "Approved"
     assert body["application"]["decision"] == "approved"
-    assert body["opportunity_stage"] == "Approved"
+    assert body["opportunity_stage"] == "Policy Active"
+    assert body["policy"] is not None
+    assert body["policy"]["status"] == "Active"
 
     stored = await read_application(database_engine, uuid.UUID(application_id))
     assert stored.status == "Approved"
@@ -164,6 +170,8 @@ async def test_submit_declines_when_the_contact_email_contains_deny(
     assert body["application"]["decision"] == "declined"
     # The decline does not advance the opportunity (Epic 10 returns it to Quoted).
     assert body["opportunity_stage"] == "Submitted"
+    # No policy is issued on a decline.
+    assert body["policy"] is None
     # The decrypted email is never echoed back in the response.
     assert "deny" not in response.text.lower()
 

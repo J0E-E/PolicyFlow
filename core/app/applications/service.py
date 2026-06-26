@@ -29,9 +29,11 @@ from ..models.contact import Contact
 from ..models.opportunity import Opportunity
 from ..models.quote import Quote
 from ..models.user import Role
+from ..models.policy import Policy
 from ..opportunities.service import set_stage_internal
 from ..opportunities.state import OpportunityStage
 from ..pii.service import decrypt_field
+from ..policies.service import issue_policy
 from .state import ApplicationStatus, assert_transition
 
 # The two carrier-decision outcomes stored on `Application.decision` (D7). The
@@ -182,10 +184,11 @@ async def submit_application(
     application: Application,
     opportunity: Opportunity,
     contact: Contact,
+    policy_prefix: str,
     actor_user_id: uuid.UUID | None,
     actor_role: Role | None,
     demo_session_id: uuid.UUID | None,
-) -> Application:
+) -> tuple[Application, Policy | None]:
     """Submit a Draft application, then run the inline carrier decision (D7).
 
     Moves the application `Draft → Submitted` (validated by the pure machine),
@@ -196,10 +199,12 @@ async def submit_application(
     (`approved` / `declined`) is stored on `decision`.
 
     On **approve**: `Submitted → Approved`, emit `application.approved`, advance the
-    opportunity to *Approved* via the setter (policy issuance + *Policy Active* are
-    Epic 8). On **decline**: `Submitted → Declined`, emit `application.declined` (the
-    opportunity-return + supersession are Epic 10). All on the request transaction.
-    Returns the same application, now decided.
+    opportunity to *Approved* via the setter, then **auto-issue the policy** (D8):
+    `issue_policy` creates the policy, emits `policy.created`, and advances the
+    opportunity to *Policy Active*. On **decline**: `Submitted → Declined`, emit
+    `application.declined` (the opportunity-return + supersession are Epic 10). All on
+    the request transaction. Returns `(application, policy)` — the policy is `None` on
+    a decline.
     """
     assert_transition(ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED)
     application.status = ApplicationStatus.SUBMITTED.value
@@ -246,7 +251,7 @@ async def submit_application(
             actor_role=actor_role,
             demo_session_id=demo_session_id,
         )
-        return application
+        return application, None
 
     assert_transition(ApplicationStatus.SUBMITTED, ApplicationStatus.APPROVED)
     application.status = ApplicationStatus.APPROVED.value
@@ -271,4 +276,17 @@ async def submit_application(
         actor_role=actor_role,
         demo_session_id=demo_session_id,
     )
-    return application
+
+    # Auto-issue the policy in this same approve transaction (D8): the policy row +
+    # `policy.created` + the opportunity's advance to *Policy Active*.
+    policy = await issue_policy(
+        db,
+        tenant_id,
+        application=application,
+        opportunity=opportunity,
+        policy_prefix=policy_prefix,
+        actor_user_id=actor_user_id,
+        actor_role=actor_role,
+        demo_session_id=demo_session_id,
+    )
+    return application, policy

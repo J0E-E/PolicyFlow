@@ -234,7 +234,20 @@ describe("OpportunityDetailPage", () => {
     selectQuoteMock.mockResolvedValue(draft);
     submitApplicationMock.mockResolvedValue({
       application: { ...draft, status: "Approved", decision: "approved", decided_at: "2026-06-26T00:00:00Z" },
-      opportunity_stage: "Approved",
+      opportunity_stage: "Policy Active",
+      policy: {
+        id: "policy-1",
+        opportunity_id: "opp-1",
+        application_id: "app-1",
+        policy_number: "POL-SUN-2026-ABCDEF",
+        status: "Active",
+        carrier: "Humana",
+        product_label: "Gold Plus HMO",
+        coverage_amount: 7500,
+        premium_monthly: 29,
+        premium_annual: 348,
+        issued_at: "2026-06-26T00:00:00Z",
+      },
     });
     renderAt("opp-1");
 
@@ -261,6 +274,11 @@ describe("OpportunityDetailPage", () => {
     expect(
       document.getElementById("opportunity-detail-application-status")!.textContent,
     ).toBe("Approved");
+    // The issued policy view renders with its number.
+    expect(document.getElementById("opportunity-detail-policy")).toBeInTheDocument();
+    expect(
+      document.getElementById("opportunity-detail-policy-number")!.textContent,
+    ).toBe("POL-SUN-2026-ABCDEF");
     expect(submitApplicationMock).toHaveBeenCalledWith("app-1");
   });
 });

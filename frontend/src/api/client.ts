@@ -21,6 +21,7 @@ import type {
   Application,
   OpportunityBoard,
   OpportunityRow,
+  Policy,
   PublicIntakeRequest,
   QuoteRequestPoll,
   QuoteRequestSummary,
@@ -346,11 +347,16 @@ export async function patchApplication(
  */
 export async function submitApplication(
   applicationId: string,
-): Promise<{ application: Application; opportunity_stage: string }> {
-  return request<{ application: Application; opportunity_stage: string }>(
-    "POST",
-    `/api/applications/${applicationId}/submit`,
-  );
+): Promise<{
+  application: Application;
+  opportunity_stage: string;
+  policy: Policy | null;
+}> {
+  return request<{
+    application: Application;
+    opportunity_stage: string;
+    policy: Policy | null;
+  }>("POST", `/api/applications/${applicationId}/submit`);
 }
 
 /**

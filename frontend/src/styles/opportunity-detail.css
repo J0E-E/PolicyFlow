@@ -242,6 +242,60 @@
   margin: 0 0 var(--space-5);
 }
 
+/* ---- Issued policy view (Epic 8) ---- */
+
+.policy-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4);
+  background-color: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-1);
+}
+
+.policy-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.policy-summary-heading {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.policy-summary-number {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.policy-summary-carrier {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface);
+}
+
+.policy-summary-premium {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-surface-variant);
+}
+
 /* ---- Product-specific application step form (Epic 6) ---- */
 
 .application-step {

@@ -96,6 +96,9 @@ def include_object(object_, name, type_, reflected, compare_to) -> bool:
         # P2.3 applications twin — physical table lands in 0017, the ORM model
         # alongside; excluded so neither surfaces as phantom drift.
         "applications",
+        # P2.3 policies twin — physical table lands in 0018, the ORM model
+        # alongside; excluded so neither surfaces as phantom drift.
+        "policies",
     }:
         return False
     if (

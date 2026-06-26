@@ -1,0 +1,38 @@
+import StampTag from "../components/StampTag.tsx";
+import type { Policy } from "../api";
+
+interface PolicySummaryProperties {
+  /** Required so every rendered element is uniquely targetable (CLAUDE.md). */
+  id: string;
+  /** The issued policy to summarize. */
+  policy: Policy;
+}
+
+// The issued-policy view (P2.3 Epic 8) on the opportunity detail page — the
+// customer-visible end of the happy path: the human-readable policy number, the
+// Active status, and the carrier / product / coverage / premium snapshot. A focused,
+// read-only component (Frontend Philosophy); Epic 11 adds the masked Tenant-1
+// Medicare ID. Tokens + design-system primitives only.
+export default function PolicySummary({ id, policy }: PolicySummaryProperties) {
+  return (
+    <section id={id} className="policy-summary" aria-labelledby={`${id}-heading`}>
+      <div id={`${id}-header`} className="policy-summary-header">
+        <h2 id={`${id}-heading`} className="policy-summary-heading">
+          Policy
+        </h2>
+        <StampTag id={`${id}-status`} status="success">
+          {policy.status}
+        </StampTag>
+      </div>
+      <p id={`${id}-number`} className="policy-summary-number">
+        {policy.policy_number}
+      </p>
+      <p id={`${id}-carrier`} className="policy-summary-carrier">
+        {`${policy.carrier} · ${policy.product_label}`}
+      </p>
+      <p id={`${id}-premium`} className="policy-summary-premium">
+        {`$${policy.coverage_amount.toLocaleString()} coverage · $${policy.premium_annual.toLocaleString()}/yr`}
+      </p>
+    </section>
+  );
+}

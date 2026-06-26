@@ -3,10 +3,11 @@ import { Link, useParams } from "react-router-dom";
 import QuotePanel from "./QuotePanel.tsx";
 import ApplicationSummary from "./ApplicationSummary.tsx";
 import ApplicationStep from "./ApplicationStep.tsx";
+import PolicySummary from "./PolicySummary.tsx";
 import Button from "../components/Button.tsx";
 import { useCapability } from "../session";
 import { ApiError, getOpportunityBoard, selectQuote, submitApplication } from "../api";
-import type { Application, OpportunityRow } from "../api";
+import type { Application, OpportunityRow, Policy } from "../api";
 
 // Whether a Draft application's product step is captured (or it has no step), so it
 // is ready to submit.
@@ -58,6 +59,8 @@ export default function OpportunityDetailPage() {
   // The submit-in-flight flag and a non-destructive submit error.
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // The issued policy once an application is approved + submitted.
+  const [policy, setPolicy] = useState<Policy | null>(null);
   const isMountedRef = useRef(true);
 
   const loadOpportunity = useCallback(() => {
@@ -129,6 +132,7 @@ export default function OpportunityDetailPage() {
       .then((result) => {
         setApplication(result.application);
         setStage(result.opportunity_stage);
+        setPolicy(result.policy);
         setIsSubmitting(false);
       })
       .catch((error: unknown) => {
@@ -154,6 +158,7 @@ export default function OpportunityDetailPage() {
         canRequest={canRequest}
         opportunityId={opportunityId ?? ""}
         application={application}
+        policy={policy}
         selectingQuoteId={selectingQuoteId}
         selectError={selectError}
         isSubmitting={isSubmitting}
@@ -176,6 +181,7 @@ function OpportunityDetailBody({
   canRequest,
   opportunityId,
   application,
+  policy,
   selectingQuoteId,
   selectError,
   isSubmitting,
@@ -191,6 +197,7 @@ function OpportunityDetailBody({
   canRequest: boolean;
   opportunityId: string;
   application: Application | null;
+  policy: Policy | null;
   selectingQuoteId: string | null;
   selectError: string | null;
   isSubmitting: boolean;
@@ -263,6 +270,7 @@ function OpportunityDetailBody({
       {application && (
         <ApplicationSummary id="opportunity-detail-application" application={application} />
       )}
+      {policy && <PolicySummary id="opportunity-detail-policy" policy={policy} />}
       {application &&
         application.status === "Draft" &&
         (application.application_step === "beneficiary"

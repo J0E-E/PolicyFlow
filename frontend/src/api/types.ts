@@ -564,3 +564,32 @@ export interface Application {
   /** When the decision was made (ISO timestamp), or `null` until submitted. */
   decided_at: string | null;
 }
+
+/**
+ * An issued insurance policy (P2.3) — created on approval with a deterministic
+ * human-readable number and the terms copied from the application.
+ */
+export interface Policy {
+  /** Raw policy UUID string. */
+  id: string;
+  /** The opportunity this policy belongs to. */
+  opportunity_id: string;
+  /** The application this policy was issued from. */
+  application_id: string;
+  /** The human-readable policy number (`POL-<PREFIX>-<YEAR>-<6HEX>`). */
+  policy_number: string;
+  /** The policy status (`"Active"`). */
+  status: string;
+  /** The carrier, copied from the application. */
+  carrier: string;
+  /** The carrier's plan name, copied from the application. */
+  product_label: string;
+  /** The coverage amount in whole dollars. */
+  coverage_amount: number;
+  /** The monthly premium in whole dollars. */
+  premium_monthly: number;
+  /** The annualized premium in whole dollars. */
+  premium_annual: number;
+  /** When the policy was issued (ISO timestamp). */
+  issued_at: string | null;
+}

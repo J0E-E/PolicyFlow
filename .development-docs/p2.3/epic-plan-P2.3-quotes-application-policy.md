@@ -69,12 +69,15 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
   - _`POST /api/applications/{id}/submit` → `applications/service.py::submit_application`: Draft→Submitted (opp→Submitted via setter, `application.submitted`), then the inline decision — `decrypt_field(tenant_id, contact.email_encrypted)`, `deny` substring → declined. The plaintext is used only for the membership test, never stored/logged/returned; only the outcome is stored on `Application.decision` (`approved`/`declined`) + `decided_at`. Approve → `application.approved` + opp→**Approved** via the setter (Epic 8 adds policy issuance + Policy Active on this approve path). Decline → `application.declined`, opp left at **Submitted** (Epic 10 returns it to Quoted)._
   - _Submit requires the product step **complete** (409 otherwise) — a line with a step must have captured it. `serialize_application` now also returns `decision` + `decided_at`._
 
-## Epic 8 — Policy issuance [UI]
+## Epic 8 — Policy issuance [UI] — **COMPLETED** (14m56s)
 - **Goal:** On approval, an issued Policy lands atomically in the same transaction with a human-readable number, and the opportunity reaches *Policy Active* — the customer-visible end of the happy path.
 - **Rough scope:** `policies` table (follow-on migration); auto-issue on approval (create the row + `policy.created`); deterministic policy number derived from the application; opportunity → *Approved* → *Policy Active* via the internal stage-setter; the agent-workspace policy view.
-- **Open questions / decisions for stakeholders:** none expected — issuance + number scheme locked (TDD §5.5/D8).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 7.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - _Migration **0018** (policies). New `app/policies/` package: `service.py::issue_policy` (+ `policy_number` helper) + `read.py::serialize_policy`. Issuance hooks into `submit_application`'s **approve branch** (D8) — create the policy + `policy.created` + opp → *Policy Active* via the setter, all in the approve transaction. `submit_application` now returns `(application, policy|None)` and takes a `policy_prefix`._
+  - _Policy number `POL-<PREFIX>-<YEAR>-<6HEX>`: PREFIX = `schema_name[:3].upper()` (Sunshine `SUN`, Florida `FLO`), YEAR = current year, 6HEX = first 6 of the application uuid (deterministic given the app, C6). The submit response now also carries `policy`._
+  - _Policy view (`PolicySummary`) shown **in-session** after issuance (no GET-policy endpoint — same reload limitation as quotes/applications; the generalized read is P2.5). Epic 7's approve test updated here (opp now → *Policy Active*, response carries the policy)._
 
 ## Epic 9 — Application↔Opportunity coupling lockdown [UI]
 - **Goal:** Make automation-owned stages unreachable by the manual machine — the manual stage endpoint rejects them and the board never offers an Advance that would fail — and migrate the pre-existing P2.2 stage tests that this breaks.

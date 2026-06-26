@@ -27,6 +27,7 @@ from ..models.application import Application
 from ..models.contact import Contact
 from ..models.opportunity import Opportunity
 from ..models.user import Role
+from ..policies.read import serialize_policy
 from ..tenancy.registry import TenantConfig, tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
 from .read import serialize_application
@@ -259,13 +260,17 @@ async def submit(
     if opportunity is None or contact is None:
         raise HTTPException(status_code=409, detail="application is missing its links")
 
+    # The policy number's tenant prefix is the first three letters of the schema name
+    # (e.g. `sunshine` → `SUN`, `florida` → `FLO`) — a stable per-tenant token.
+    policy_prefix = tenant_config.schema_name[:3].upper()
     try:
-        await submit_application(
+        _, policy = await submit_application(
             db,
             identity.tenant_id,
             application=application,
             opportunity=opportunity,
             contact=contact,
+            policy_prefix=policy_prefix,
             actor_user_id=identity.user_id,
             actor_role=identity.role,
             demo_session_id=demo_session_id,
@@ -276,4 +281,5 @@ async def submit(
     return {
         "application": serialize_application(application, application_step),
         "opportunity_stage": opportunity.stage,
+        "policy": serialize_policy(policy) if policy is not None else None,
     }
