@@ -338,6 +338,22 @@ export async function patchApplication(
 }
 
 /**
+ * Submit a Draft application via `POST /api/applications/{id}/submit`, running the
+ * inline carrier decision server-side. Returns the decided application (now
+ * `Approved` or `Declined`) and the opportunity's new stage. Throws an `ApiError`
+ * carrying the status for a refused submit — `404`, `403`, `409` (not Draft, or the
+ * step is not complete).
+ */
+export async function submitApplication(
+  applicationId: string,
+): Promise<{ application: Application; opportunity_stage: string }> {
+  return request<{ application: Application; opportunity_stage: string }>(
+    "POST",
+    `/api/applications/${applicationId}/submit`,
+  );
+}
+
+/**
  * Get one lead's event timeline from `GET /api/leads/{id}/timeline`, unwrapping the
  * `{ rows }` envelope into the oldest-first row array. The rows are the lead's own
  * domain events (P1.9 Epic 1 tracer — events only). Throws an `ApiError` with

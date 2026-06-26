@@ -35,4 +35,10 @@ def serialize_application(
         "application_step": application_step,
         "beneficiary": application.beneficiary,
         "health_answers": application.health_answers,
+        "decision": application.decision,
+        "decided_at": (
+            application.decided_at.isoformat()
+            if application.decided_at is not None
+            else None
+        ),
     }

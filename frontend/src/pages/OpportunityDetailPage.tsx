@@ -3,9 +3,22 @@ import { Link, useParams } from "react-router-dom";
 import QuotePanel from "./QuotePanel.tsx";
 import ApplicationSummary from "./ApplicationSummary.tsx";
 import ApplicationStep from "./ApplicationStep.tsx";
+import Button from "../components/Button.tsx";
 import { useCapability } from "../session";
-import { ApiError, getOpportunityBoard, selectQuote } from "../api";
+import { ApiError, getOpportunityBoard, selectQuote, submitApplication } from "../api";
 import type { Application, OpportunityRow } from "../api";
+
+// Whether a Draft application's product step is captured (or it has no step), so it
+// is ready to submit.
+function isStepComplete(application: Application): boolean {
+  if (application.application_step === "beneficiary") {
+    return application.beneficiary !== null;
+  }
+  if (application.application_step === "health") {
+    return application.health_answers !== null;
+  }
+  return true;
+}
 
 // The agent-workspace OPPORTUNITY DETAIL page at `/app/opportunities/:id` (P2.3
 // Epic 3). The minimal first slice: an opportunity header (contact, product line,
@@ -42,6 +55,9 @@ export default function OpportunityDetailPage() {
   // non-destructive selection error shown above the panel.
   const [selectingQuoteId, setSelectingQuoteId] = useState<string | null>(null);
   const [selectError, setSelectError] = useState<string | null>(null);
+  // The submit-in-flight flag and a non-destructive submit error.
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const isMountedRef = useRef(true);
 
   const loadOpportunity = useCallback(() => {
@@ -101,6 +117,30 @@ export default function OpportunityDetailPage() {
       });
   };
 
+  // Submit the Draft application → the inline carrier decision runs server-side. On
+  // success the decided application + the opportunity's new stage are reflected.
+  const handleSubmit = () => {
+    if (application === null) {
+      return;
+    }
+    setSubmitError(null);
+    setIsSubmitting(true);
+    submitApplication(application.id)
+      .then((result) => {
+        setApplication(result.application);
+        setStage(result.opportunity_stage);
+        setIsSubmitting(false);
+      })
+      .catch((error: unknown) => {
+        setSubmitError(
+          error instanceof ApiError
+            ? error.message
+            : "We couldn't submit the application. Please try again.",
+        );
+        setIsSubmitting(false);
+      });
+  };
+
   return (
     <div id="opportunity-detail-page" className="opportunity-detail-page">
       <p id="opportunity-detail-back-row" className="opportunity-detail-back-row">
@@ -116,9 +156,12 @@ export default function OpportunityDetailPage() {
         application={application}
         selectingQuoteId={selectingQuoteId}
         selectError={selectError}
+        isSubmitting={isSubmitting}
+        submitError={submitError}
         onStageChange={setStage}
         onSelectQuote={handleSelectQuote}
         onStepCaptured={setApplication}
+        onSubmit={handleSubmit}
         onRetry={loadOpportunity}
       />
     </div>
@@ -135,9 +178,12 @@ function OpportunityDetailBody({
   application,
   selectingQuoteId,
   selectError,
+  isSubmitting,
+  submitError,
   onStageChange,
   onSelectQuote,
   onStepCaptured,
+  onSubmit,
   onRetry,
 }: {
   detailLoad: DetailLoadState;
@@ -147,9 +193,12 @@ function OpportunityDetailBody({
   application: Application | null;
   selectingQuoteId: string | null;
   selectError: string | null;
+  isSubmitting: boolean;
+  submitError: string | null;
   onStageChange: (stage: string) => void;
   onSelectQuote: (quoteId: string) => void;
   onStepCaptured: (application: Application) => void;
+  onSubmit: () => void;
   onRetry: () => void;
 }) {
   if (detailLoad.kind === "loading") {
@@ -226,6 +275,26 @@ function OpportunityDetailBody({
             application={application}
             onCaptured={onStepCaptured}
           />
+        )}
+      {application &&
+        application.status === "Draft" &&
+        isStepComplete(application) &&
+        canRequest && (
+          <div id="opportunity-detail-submit-row" className="opportunity-detail-submit-row">
+            {submitError && (
+              <p id="opportunity-detail-submit-error" className="opportunity-detail-status" role="alert">
+                {submitError}
+              </p>
+            )}
+            <Button
+              id="opportunity-detail-submit"
+              variant="filled"
+              isPending={isSubmitting}
+              onClick={onSubmit}
+            >
+              Submit application
+            </Button>
+          </div>
         )}
       <QuotePanel
         id="opportunity-detail-quotes"

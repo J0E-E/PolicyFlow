@@ -60,12 +60,14 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
   - _**Shared application serializer** `app/applications/read.py::serialize_application` is now the single application wire shape — the create endpoint (Epic 5) switched to it and the old `opportunities/router._application_row` was removed. The application response now carries `application_step` + `beneficiary` + `health_answers` so the workspace knows which step form to render._
   - _**Flake fix (folded in):** the broker drain helpers (`drain_for_event_id` / `deliver_for_event_id` in `test_demo_session_acceptance.py` + `test_event_bus_acceptance.py`) capped at `max_messages=50`, but `publish_pending_once` flushes the **whole suite's** accumulated unpublished outbox and `sync.logger` binds `#`, so under full-suite load the target event sat past position 50 in the backlog → intermittent "event never arrived on sync.logger". Raised the budget to 5000 (+ reset the consecutive-empty counter, + a bounded async-publish wait). Pre-existing latent issue surfaced by the growing suite; validated green over the full suite._
 
-## Epic 7 — Submit + inline carrier decision [UI]
+## Epic 7 — Submit + inline carrier decision [UI] — **COMPLETED** (14m51s)
 - **Goal:** Submitting an application runs the deterministic inline carrier decision (approved by default; declined when the contact's email contains `deny`) and couples the outcome to the opportunity stage.
 - **Rough scope:** The submit endpoint (`Draft → Submitted`, opportunity → *Submitted*, `application.submitted`); the inline decision (decrypt the contact email, `deny` substring → declined, value never logged/returned); on approve → `application.approved` + opportunity advance via the internal stage-setter; on decline → `application.declined`. (Policy issuance is Epic 8; the full decline → supersession loop is Epic 10.)
-- **Open questions / decisions for stakeholders:** none expected — the decision rule is locked (TDD §5.6/D7).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 6.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - _`POST /api/applications/{id}/submit` → `applications/service.py::submit_application`: Draft→Submitted (opp→Submitted via setter, `application.submitted`), then the inline decision — `decrypt_field(tenant_id, contact.email_encrypted)`, `deny` substring → declined. The plaintext is used only for the membership test, never stored/logged/returned; only the outcome is stored on `Application.decision` (`approved`/`declined`) + `decided_at`. Approve → `application.approved` + opp→**Approved** via the setter (Epic 8 adds policy issuance + Policy Active on this approve path). Decline → `application.declined`, opp left at **Submitted** (Epic 10 returns it to Quoted)._
+  - _Submit requires the product step **complete** (409 otherwise) — a line with a step must have captured it. `serialize_application` now also returns `decision` + `decided_at`._
 
 ## Epic 8 — Policy issuance [UI]
 - **Goal:** On approval, an issued Policy lands atomically in the same transaction with a human-readable number, and the opportunity reaches *Policy Active* — the customer-visible end of the happy path.

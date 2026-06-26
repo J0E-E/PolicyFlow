@@ -15,6 +15,7 @@ vi.mock("../api", () => ({
   requestQuotes: vi.fn(),
   getQuoteRequest: vi.fn(),
   selectQuote: vi.fn(),
+  submitApplication: vi.fn(),
   ApiError: class ApiError extends Error {
     status: number;
     constructor(status: number, message: string) {
@@ -28,12 +29,19 @@ vi.mock("../session", () => ({
   useCapability: () => true,
 }));
 
-import { getOpportunityBoard, getQuoteRequest, requestQuotes, selectQuote } from "../api";
+import {
+  getOpportunityBoard,
+  getQuoteRequest,
+  requestQuotes,
+  selectQuote,
+  submitApplication,
+} from "../api";
 
 const getOpportunityBoardMock = vi.mocked(getOpportunityBoard);
 const requestQuotesMock = vi.mocked(requestQuotes);
 const getQuoteRequestMock = vi.mocked(getQuoteRequest);
 const selectQuoteMock = vi.mocked(selectQuote);
+const submitApplicationMock = vi.mocked(submitApplication);
 
 function makeRow(overrides: Partial<OpportunityRow>): OpportunityRow {
   return {
@@ -74,6 +82,7 @@ beforeEach(() => {
   requestQuotesMock.mockReset();
   getQuoteRequestMock.mockReset();
   selectQuoteMock.mockReset();
+  submitApplicationMock.mockReset();
 });
 
 afterEach(() => {
@@ -181,5 +190,77 @@ describe("OpportunityDetailPage", () => {
       document.getElementById("opportunity-detail-application-status")!.textContent,
     ).toBe("Draft");
     expect(selectQuoteMock).toHaveBeenCalledWith("opp-1", "quote-1");
+  });
+
+  it("submits the application and shows the carrier decision", async () => {
+    getOpportunityBoardMock.mockResolvedValue(makeBoard([makeRow({})]));
+    requestQuotesMock.mockResolvedValue({
+      id: "qr-1",
+      opportunity_id: "opp-1",
+      status: "pending",
+      product_line: "final_expense",
+    });
+    getQuoteRequestMock.mockResolvedValue({
+      quote_request: { id: "qr-1", opportunity_id: "opp-1", status: "completed", product_line: "final_expense" },
+      quotes: [
+        {
+          id: "quote-1",
+          carrier: "Humana",
+          product_label: "Gold Plus HMO",
+          coverage_amount: 7500,
+          premium_monthly: 29,
+          premium_annual: 348,
+        },
+      ],
+      opportunity_stage: "Quoted",
+    });
+    const draft = {
+      id: "app-1",
+      opportunity_id: "opp-1",
+      product_line: "final_expense",
+      selected_quote_id: "quote-1",
+      status: "Draft",
+      carrier: "Humana",
+      product_label: "Gold Plus HMO",
+      coverage_amount: 7500,
+      premium_monthly: 29,
+      premium_annual: 348,
+      application_step: null,
+      beneficiary: null,
+      health_answers: null,
+      decision: null,
+      decided_at: null,
+    };
+    selectQuoteMock.mockResolvedValue(draft);
+    submitApplicationMock.mockResolvedValue({
+      application: { ...draft, status: "Approved", decision: "approved", decided_at: "2026-06-26T00:00:00Z" },
+      opportunity_stage: "Approved",
+    });
+    renderAt("opp-1");
+
+    await waitFor(() => {
+      expect(document.getElementById("opportunity-detail-quotes-request")).toBeInTheDocument();
+    });
+    fireEvent.click(document.getElementById("opportunity-detail-quotes-request")!);
+    await waitFor(() => {
+      expect(document.getElementById("opportunity-detail-quotes-quote-quote-1-select")).toBeInTheDocument();
+    });
+    fireEvent.click(document.getElementById("opportunity-detail-quotes-quote-quote-1-select")!);
+
+    // The step-less Draft is ready to submit.
+    await waitFor(() => {
+      expect(document.getElementById("opportunity-detail-submit")).toBeInTheDocument();
+    });
+    fireEvent.click(document.getElementById("opportunity-detail-submit")!);
+
+    await waitFor(() => {
+      expect(
+        document.getElementById("opportunity-detail-application-decision"),
+      ).toBeInTheDocument();
+    });
+    expect(
+      document.getElementById("opportunity-detail-application-status")!.textContent,
+    ).toBe("Approved");
+    expect(submitApplicationMock).toHaveBeenCalledWith("app-1");
   });
 });

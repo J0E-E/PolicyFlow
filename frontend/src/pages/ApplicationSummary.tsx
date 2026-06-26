@@ -1,4 +1,5 @@
 import StampTag from "../components/StampTag.tsx";
+import type { StampStatus } from "../components/StampTag.tsx";
 import type { Application } from "../api";
 
 interface ApplicationSummaryProperties {
@@ -6,6 +7,18 @@ interface ApplicationSummaryProperties {
   id: string;
   /** The application to summarize. */
   application: Application;
+}
+
+// Map the lifecycle status to the Guide's signal hue: an approval is success, a
+// decline is error, everything in between is neutral.
+function statusHue(status: string): StampStatus {
+  if (status === "Approved") {
+    return "success";
+  }
+  if (status === "Declined") {
+    return "error";
+  }
+  return "neutral";
 }
 
 // The Draft Application summary (P2.3 Epic 5) on the opportunity detail page: the
@@ -23,7 +36,7 @@ export default function ApplicationSummary({
         <h2 id={`${id}-heading`} className="application-summary-heading">
           Application
         </h2>
-        <StampTag id={`${id}-status`} status="neutral">
+        <StampTag id={`${id}-status`} status={statusHue(application.status)}>
           {application.status}
         </StampTag>
       </div>
@@ -36,6 +49,13 @@ export default function ApplicationSummary({
       <p id={`${id}-premium`} className="application-summary-premium">
         {`$${application.premium_monthly.toLocaleString()}/mo · $${application.premium_annual.toLocaleString()}/yr`}
       </p>
+      {application.decision && (
+        <p id={`${id}-decision`} className="application-summary-decision">
+          {application.decision === "approved"
+            ? "Carrier decision: approved"
+            : "Carrier decision: declined"}
+        </p>
+      )}
     </section>
   );
 }

@@ -558,4 +558,9 @@ export interface Application {
   beneficiary: Record<string, string> | null;
   /** The captured health answers (yes/no), or `null` until the step is captured. */
   health_answers: Record<string, boolean> | null;
+  /** The inline carrier-decision outcome (`"approved"` / `"declined"`), or `null`
+   *  until the application is submitted. */
+  decision: string | null;
+  /** When the decision was made (ISO timestamp), or `null` until submitted. */
+  decided_at: string | null;
 }

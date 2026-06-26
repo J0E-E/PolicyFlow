@@ -224,6 +224,24 @@
   color: var(--on-surface-variant);
 }
 
+.application-summary-decision {
+  margin: var(--space-1) 0 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+/* ---- Submit control (Epic 7) ---- */
+
+.opportunity-detail-submit-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-5);
+}
+
 /* ---- Product-specific application step form (Epic 6) ---- */
 
 .application-step {

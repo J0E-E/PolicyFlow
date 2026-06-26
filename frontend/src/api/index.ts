@@ -24,6 +24,7 @@ export {
   getQuoteRequest,
   selectQuote,
   patchApplication,
+  submitApplication,
   resetDemoSession,
   resolveDuplicate,
   revealLeadField,
