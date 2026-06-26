@@ -136,11 +136,55 @@
   gap: var(--space-2);
 }
 
-.opportunity-card-contact {
-  font-family: var(--font-mono);
+/* The card's product-line label and owner sub-lines. */
+.opportunity-card-product-line {
+  margin: 0 0 var(--space-2);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.opportunity-card-owner {
+  margin: var(--space-2) 0 0;
   font-size: 12px;
   line-height: 18px;
   color: var(--on-surface-variant);
+}
+
+/* The value fields (premium + target close), a compact definition list. */
+.opportunity-value-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.opportunity-value-field {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.opportunity-value-label {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--on-surface-variant);
+}
+
+.opportunity-value-amount {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--on-surface);
+}
+
+/* The Medicare eligibility marker row beneath the value fields. */
+.opportunity-card-eligibility {
+  margin-top: var(--space-2);
 }
 
 /* The terminal note where a card has no further forward move. */

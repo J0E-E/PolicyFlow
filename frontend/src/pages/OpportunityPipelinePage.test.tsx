@@ -183,7 +183,7 @@ describe("OpportunityPipelinePage", () => {
 
     expect(queryById("opportunity-advance-opp-1")).toBeNull();
     expect(queryById("opportunity-mark-lost-opp-1")).toBeNull();
-    expect(getById("opportunity-terminal-opp-1")).toBeTruthy();
+    expect(getById("opportunity-card-opp-1-terminal")).toBeTruthy();
   });
 
   it("marks an opportunity Lost then refetches, showing it in the Lost lane", async () => {

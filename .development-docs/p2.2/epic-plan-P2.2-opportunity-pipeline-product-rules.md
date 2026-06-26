@@ -57,12 +57,12 @@ Source TDD: [./tdd-P2.2-opportunity-pipeline-product-rules.md](./tdd-P2.2-opport
 - **Depends on:** Epic 2.
 - **Implementation notes:** GET `/api/opportunities` is scoped via `_scope_to_session` (seed `NULL` ∪ caller's session; mirrors `leads.visibility` for `Opportunity`) and the row is enriched (`household_id`, `product_line_label`, `estimated_annual_premium`/`target_close_date` as str/ISO or `null`, plaintext `contact_first_name`/`contact_last_name`, `owner_username`, `eligibility: {medicare_gated, age_eligible}`). POST guarded by `_guard_opportunity_for_session` (foreign session → 404, shared-seed in a live session → 409), reusing the resolved session id to stamp events. **FE: `OpportunityRow` + new `OpportunityEligibility` type gained the enriched fields but they are NOT rendered yet — Epic 8 renders the value fields (em-dash when null, D7), names, owner, and eligibility on the card.**
 
-## Epic 8 — Board UI polish [UI]
+## Epic 8 — Board UI polish [UI] — **COMPLETED** (9m57s)
 - **Goal:** Finish the board as small, focused components: per-stage columns with cards showing contact name, product-line label, value fields (em-dash when null), and owner, plus the per-card Advance / Mark Lost controls and a `SimulatedBadge` where appropriate. Component tests cover each piece.
 - **Rough scope:** split into `PipelineBoard` / `PipelineColumn` / `OpportunityCard` / `OpportunityValueFields` per the Frontend Philosophy; render the enriched payload (value fields, names, eligibility); Vitest per component; every element gets an `id`.
 - **Open questions / decisions for stakeholders:** none expected — value fields render empty (em-dash) in P2.2 until P2.3 populates them (Risk R2, accepted per D7).
 - **Depends on:** Epics 4, 7.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** Board split into `PipelineBoard` → `PipelineColumn` → `OpportunityCard` → `OpportunityValueFields` (in `frontend/src/pages/`); the page (`OpportunityPipelinePage`) is now thin (fetch + change-stage state + header). Cards render the enriched payload: contact name, `product_line_label`, value fields (em-dash when null — **P2.3 populates them**), owner, and a Medicare eligibility `StampTag` (warning when gated + under-65). A board-level `SimulatedBadge` (new `opportunityValuesSimulatedNotice` in `simulatedNotice.ts`) marks the value fields as filled by simulated carrier quoting (**P2.3**). Per-component Vitest added.
 
 ## Epic 9 — Seed nudge for the Medicare-gate demo
 - **Goal:** Make the scripted gate demo (walkthrough step 8) reliable: ensure a converted under-65 Sunshine opportunity on a Medicare line exists, so the agent can demonstrate the block to *Quoted* without ad-hoc data entry.

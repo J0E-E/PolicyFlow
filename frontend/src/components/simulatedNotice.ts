@@ -82,3 +82,30 @@ export const reactionSimulatedNotice: SimulatedNotice = {
     "Each consumer sits behind one small adapter interface. The demo wires in these stub effects; M3 swaps in the real enrichment and sync sidecars as a drop-in, with no change to the bus that fans out to them.",
   ],
 };
+
+// ---- Opportunity board value fields (P2.2 Epic 8) ----
+// Badges the card's value fields (premium, target close date), which a simulated
+// carrier-quoting surface fills in P2.3. Scoped tightly to those fields — the
+// pipeline, stages, transitions, gate, and events the board drives are all real, so
+// a board-wide "simulated" claim would be wrong.
+
+/** The official notice for the opportunity value fields: the quoted values are
+ *  mocked (filled by simulated carrier quoting in P2.3); the pipeline engine is
+ *  real; carrier quoting sits behind the shared adapter seam. */
+export const opportunityValuesSimulatedNotice: SimulatedNotice = {
+  whatIsMocked: [
+    "Only the value fields — the estimated annual premium and target close date. A real carrier quote sets them (arriving in P2.3); until then they show an em-dash. No real carrier is ever quoted.",
+  ],
+  whatIsReal: [
+    "The pipeline itself is real, working code: the per-tenant stage config, the server-validated stage transitions, the Medicare eligibility gate, and the ",
+    { mono: "opportunity.stage_changed" },
+    " / ",
+    { mono: "opportunity.lost" },
+    " events each move emits on the transactional ",
+    { mono: "outbox" },
+    ".",
+  ],
+  theAdapterSeam: [
+    "Carrier quoting sits behind the same small adapter interface as the other external systems; pointing it at a real quoting client is a drop-in swap, with no change to the board or the stage machine.",
+  ],
+};

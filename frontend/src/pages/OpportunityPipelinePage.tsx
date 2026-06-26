@@ -1,27 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "../components/Button.tsx";
-import Card from "../components/Card.tsx";
 import ExplainerPopover from "../components/ExplainerPopover.tsx";
+import SimulatedBadge from "../components/SimulatedBadge.tsx";
 import { medicareGateExplainer } from "../components/explainerContent.ts";
+import { opportunityValuesSimulatedNotice } from "../components/simulatedNotice.ts";
+import PipelineBoard from "./PipelineBoard.tsx";
 import { useCapability } from "../session";
 import { ApiError, changeOpportunityStage, getOpportunityBoard } from "../api";
 import type { OpportunityBoard, OpportunityRow } from "../api";
 
 // The authenticated pipeline board at `/app/opportunities` (P2.2). It renders
 // INSIDE the AppShell chrome (masthead + left nav), so it carries its OWN Guide §5
-// page header (a Besley "Opportunities" headline + the Oxford double rule),
-// mirroring the leads list.
+// page header (a Besley "Opportunities" headline + the Oxford double rule).
 //
-// The board shows one COLUMN per the tenant's enabled stage (Epic 3/4), headed by
-// that tenant's stage label, with each opportunity card grouped into its stage's
-// column. A holder of `create_edit_records` gets a one-click Advance on each
-// non-terminal card that moves it to the server-computed next *enabled* stage
-// (a disabled optional stage is skipped); on success the board refetches.
-//
-// The columns + cards are rendered inline here; Epic 8 splits them into
-// PipelineBoard / PipelineColumn / OpportunityCard components and adds the value
-// fields. This epic owns the grouped, tenant-labeled columns and the skip-aware
-// Advance label.
+// The page is thin: it owns the fetch + the stage-change state (one change in
+// flight, the inline action error) and renders the header + `PipelineBoard`. The
+// board / columns / cards / value fields are their own focused components
+// (Frontend Philosophy). A holder of `create_edit_records` advances a card to its
+// next enabled stage or marks it Lost; on success the board refetches.
 
 /** What the board fetch is doing — each branch renders once. */
 type BoardLoadState =
@@ -29,8 +25,8 @@ type BoardLoadState =
   | { kind: "loaded"; board: OpportunityBoard }
   | { kind: "error" };
 
-// The page header — the same Besley headline + Oxford rule on every body state,
-// with the Medicare-gate explainer beside the title.
+// The page header — the Besley headline + Oxford rule, with the Medicare-gate
+// explainer and the "simulated values" badge beside the title.
 function OpportunitiesHeader() {
   return (
     <header id="opportunities-header" className="opportunities-header">
@@ -42,6 +38,11 @@ function OpportunitiesHeader() {
           id="opportunities-medicare-explainer"
           surfaceLabel="the Medicare eligibility gate"
           content={medicareGateExplainer}
+        />
+        <SimulatedBadge
+          id="opportunities-values-simulated"
+          surfaceLabel="the opportunity value fields"
+          notice={opportunityValuesSimulatedNotice}
         />
       </div>
       <hr id="opportunities-rule" className="oxford-double-rule" />
@@ -112,6 +113,14 @@ export default function OpportunityPipelinePage() {
     }
   };
 
+  const handleAdvance = (opportunity: OpportunityRow) => {
+    if (opportunity.next_stage !== null) {
+      changeStage(opportunity.id, opportunity.next_stage);
+    }
+  };
+  const handleMarkLost = (opportunity: OpportunityRow) =>
+    changeStage(opportunity.id, "Lost");
+
   if (boardLoad.kind === "loading") {
     return (
       <div id="opportunities-page" className="opportunities-page">
@@ -143,73 +152,7 @@ export default function OpportunityPipelinePage() {
     );
   }
 
-  const { pipeline, opportunities } = boardLoad.board;
-  // Map a canonical stage key to this tenant's display label (the Advance target
-  // names the next stage in the tenant's own words).
-  const labelForStage = (stageKey: string): string =>
-    pipeline.stages.find((stage) => stage.key === stageKey)?.label ?? stageKey;
-
-  const renderCard = (opportunity: OpportunityRow) => {
-    const nextStage = opportunity.next_stage;
-    const isTerminal = nextStage === null && !opportunity.can_mark_lost;
-    return (
-    <Card
-      key={opportunity.id}
-      id={`opportunity-card-${opportunity.id}`}
-      title={opportunity.product_line}
-      headingLevel={3}
-      footer={
-        isTerminal ? (
-          <p
-            id={`opportunity-terminal-${opportunity.id}`}
-            className="opportunity-card-terminal"
-          >
-            No further stage
-          </p>
-        ) : canAdvance ? (
-          <div
-            id={`opportunity-actions-${opportunity.id}`}
-            className="opportunity-card-actions"
-          >
-            {nextStage !== null && (
-              <Button
-                id={`opportunity-advance-${opportunity.id}`}
-                variant="filled"
-                isPending={changingId === opportunity.id}
-                onClick={() => changeStage(opportunity.id, nextStage)}
-              >
-                {`Advance to ${labelForStage(nextStage)}`}
-              </Button>
-            )}
-            {opportunity.can_mark_lost && (
-              <Button
-                id={`opportunity-mark-lost-${opportunity.id}`}
-                variant="outlined"
-                isPending={changingId === opportunity.id}
-                onClick={() => changeStage(opportunity.id, "Lost")}
-              >
-                Mark Lost
-              </Button>
-            )}
-          </div>
-        ) : undefined
-      }
-    >
-      <p
-        id={`opportunity-contact-${opportunity.id}`}
-        className="opportunity-card-contact"
-      >
-        {`Contact ${opportunity.contact_id}`}
-      </p>
-    </Card>
-    );
-  };
-
-  // Lost is terminal and off-spine, so it has no pipeline column; collect any Lost
-  // cards into their own lane so they stay visible on the board.
-  const lostOpportunities = opportunities.filter(
-    (opportunity) => opportunity.stage === "Lost",
-  );
+  const { board } = boardLoad;
 
   return (
     <div id="opportunities-page" className="opportunities-page">
@@ -225,7 +168,7 @@ export default function OpportunityPipelinePage() {
         </p>
       )}
 
-      {opportunities.length === 0 ? (
+      {board.opportunities.length === 0 ? (
         <div id="opportunities-empty" className="opportunities-empty">
           <p
             id="opportunities-empty-message"
@@ -235,64 +178,13 @@ export default function OpportunityPipelinePage() {
           </p>
         </div>
       ) : (
-        <div id="opportunities-board" className="opportunities-board">
-          {pipeline.stages.map((stage) => {
-            const cards = opportunities.filter(
-              (opportunity) => opportunity.stage === stage.key,
-            );
-            return (
-              <section
-                key={stage.key}
-                id={`pipeline-column-${stage.key}`}
-                className="pipeline-column"
-                aria-labelledby={`pipeline-column-${stage.key}-heading`}
-              >
-                <h2
-                  id={`pipeline-column-${stage.key}-heading`}
-                  className="pipeline-column-heading"
-                >
-                  {stage.label}
-                </h2>
-                <div
-                  id={`pipeline-column-${stage.key}-cards`}
-                  className="pipeline-column-cards"
-                >
-                  {cards.length === 0 ? (
-                    <p
-                      id={`pipeline-column-${stage.key}-empty`}
-                      className="pipeline-column-empty"
-                    >
-                      No opportunities
-                    </p>
-                  ) : (
-                    cards.map(renderCard)
-                  )}
-                </div>
-              </section>
-            );
-          })}
-
-          {lostOpportunities.length > 0 && (
-            <section
-              id="pipeline-column-lost"
-              className="pipeline-column pipeline-column-lost"
-              aria-labelledby="pipeline-column-lost-heading"
-            >
-              <h2
-                id="pipeline-column-lost-heading"
-                className="pipeline-column-heading pipeline-column-lost-heading"
-              >
-                Lost
-              </h2>
-              <div
-                id="pipeline-column-lost-cards"
-                className="pipeline-column-cards"
-              >
-                {lostOpportunities.map(renderCard)}
-              </div>
-            </section>
-          )}
-        </div>
+        <PipelineBoard
+          board={board}
+          canAdvance={canAdvance}
+          changingId={changingId}
+          onAdvance={handleAdvance}
+          onMarkLost={handleMarkLost}
+        />
       )}
     </div>
   );
