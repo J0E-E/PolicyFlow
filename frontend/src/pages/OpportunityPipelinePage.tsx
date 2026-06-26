@@ -1,27 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "../components/Button.tsx";
 import Card from "../components/Card.tsx";
-import StampTag from "../components/StampTag.tsx";
 import { useCapability } from "../session";
-import { changeOpportunityStage, listOpportunities } from "../api";
-import type { OpportunityRow } from "../api";
+import { changeOpportunityStage, getOpportunityBoard } from "../api";
+import type { OpportunityBoard, OpportunityRow } from "../api";
 
-// The authenticated pipeline board at `/app/opportunities` (P2.2 Epic 2 tracer).
-// It renders INSIDE the AppShell chrome (masthead + left nav), so it carries its
-// OWN Guide §5 page header (a Besley "Opportunities" headline + the Oxford double
-// rule), mirroring the leads list.
+// The authenticated pipeline board at `/app/opportunities` (P2.2). It renders
+// INSIDE the AppShell chrome (masthead + left nav), so it carries its OWN Guide §5
+// page header (a Besley "Opportunities" headline + the Oxford double rule),
+// mirroring the leads list.
 //
-// This is the thinnest demoable thread: it lists the session's converted
-// opportunities as a flat grid of cards (the stage-grouped columns + rich card
-// fields are later P2.2 epics), each showing its current stage. A holder of
-// `create_edit_records` gets a one-click Advance on each non-terminal card that
-// moves it to the server-computed next stage; on success the board refetches so
-// the card reflects its new stage.
+// The board shows one COLUMN per the tenant's enabled stage (Epic 3/4), headed by
+// that tenant's stage label, with each opportunity card grouped into its stage's
+// column. A holder of `create_edit_records` gets a one-click Advance on each
+// non-terminal card that moves it to the server-computed next *enabled* stage
+// (a disabled optional stage is skipped); on success the board refetches.
+//
+// The columns + cards are rendered inline here; Epic 8 splits them into
+// PipelineBoard / PipelineColumn / OpportunityCard components and adds the value
+// fields. This epic owns the grouped, tenant-labeled columns and the skip-aware
+// Advance label.
 
 /** What the board fetch is doing — each branch renders once. */
 type BoardLoadState =
   | { kind: "loading" }
-  | { kind: "loaded"; opportunities: OpportunityRow[] }
+  | { kind: "loaded"; board: OpportunityBoard }
   | { kind: "error" };
 
 // The page header — the same Besley headline + Oxford rule on every body state.
@@ -56,10 +59,10 @@ export default function OpportunityPipelinePage() {
   // Fetch the board; a resolve is ignored once the page has unmounted.
   const loadBoard = useCallback(() => {
     setBoardLoad({ kind: "loading" });
-    listOpportunities()
-      .then((opportunities) => {
+    getOpportunityBoard()
+      .then((board) => {
         if (isMountedRef.current) {
-          setBoardLoad({ kind: "loaded", opportunities });
+          setBoardLoad({ kind: "loaded", board });
         }
       })
       .catch(() => {
@@ -124,7 +127,46 @@ export default function OpportunityPipelinePage() {
     );
   }
 
-  const { opportunities } = boardLoad;
+  const { pipeline, opportunities } = boardLoad.board;
+  // Map a canonical stage key to this tenant's display label (the Advance target
+  // names the next stage in the tenant's own words).
+  const labelForStage = (stageKey: string): string =>
+    pipeline.stages.find((stage) => stage.key === stageKey)?.label ?? stageKey;
+
+  const renderCard = (opportunity: OpportunityRow) => (
+    <Card
+      key={opportunity.id}
+      id={`opportunity-card-${opportunity.id}`}
+      title={opportunity.product_line}
+      headingLevel={3}
+      footer={
+        canAdvance && opportunity.next_stage !== null ? (
+          <Button
+            id={`opportunity-advance-${opportunity.id}`}
+            variant="filled"
+            isPending={advancingId === opportunity.id}
+            onClick={() => advance(opportunity)}
+          >
+            {`Advance to ${labelForStage(opportunity.next_stage)}`}
+          </Button>
+        ) : (
+          <p
+            id={`opportunity-terminal-${opportunity.id}`}
+            className="opportunity-card-terminal"
+          >
+            No further stage
+          </p>
+        )
+      }
+    >
+      <p
+        id={`opportunity-contact-${opportunity.id}`}
+        className="opportunity-card-contact"
+      >
+        {`Contact ${opportunity.contact_id}`}
+      </p>
+    </Card>
+  );
 
   return (
     <div id="opportunities-page" className="opportunities-page">
@@ -150,51 +192,42 @@ export default function OpportunityPipelinePage() {
           </p>
         </div>
       ) : (
-        <div id="opportunities-grid" className="opportunities-grid">
-          {opportunities.map((opportunity) => (
-            <Card
-              key={opportunity.id}
-              id={`opportunity-card-${opportunity.id}`}
-              title={opportunity.product_line}
-              footer={
-                canAdvance && opportunity.next_stage !== null ? (
-                  <Button
-                    id={`opportunity-advance-${opportunity.id}`}
-                    variant="filled"
-                    isPending={advancingId === opportunity.id}
-                    onClick={() => advance(opportunity)}
-                  >
-                    {`Advance to ${opportunity.next_stage}`}
-                  </Button>
-                ) : (
-                  <p
-                    id={`opportunity-terminal-${opportunity.id}`}
-                    className="opportunity-card-terminal"
-                  >
-                    No further stage
-                  </p>
-                )
-              }
-            >
-              <div
-                id={`opportunity-stage-line-${opportunity.id}`}
-                className="opportunity-card-line"
+        <div id="opportunities-board" className="opportunities-board">
+          {pipeline.stages.map((stage) => {
+            const cards = opportunities.filter(
+              (opportunity) => opportunity.stage === stage.key,
+            );
+            return (
+              <section
+                key={stage.key}
+                id={`pipeline-column-${stage.key}`}
+                className="pipeline-column"
+                aria-labelledby={`pipeline-column-${stage.key}-heading`}
               >
-                <StampTag
-                  id={`opportunity-stage-${opportunity.id}`}
-                  status="neutral"
+                <h2
+                  id={`pipeline-column-${stage.key}-heading`}
+                  className="pipeline-column-heading"
                 >
-                  {opportunity.stage}
-                </StampTag>
-              </div>
-              <p
-                id={`opportunity-contact-${opportunity.id}`}
-                className="opportunity-card-contact"
-              >
-                {`Contact ${opportunity.contact_id}`}
-              </p>
-            </Card>
-          ))}
+                  {stage.label}
+                </h2>
+                <div
+                  id={`pipeline-column-${stage.key}-cards`}
+                  className="pipeline-column-cards"
+                >
+                  {cards.length === 0 ? (
+                    <p
+                      id={`pipeline-column-${stage.key}-empty`}
+                      className="pipeline-column-empty"
+                    >
+                      No opportunities
+                    </p>
+                  ) : (
+                    cards.map(renderCard)
+                  )}
+                </div>
+              </section>
+            );
+          })}
         </div>
       )}
     </div>

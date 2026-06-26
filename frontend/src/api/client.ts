@@ -18,6 +18,7 @@ import type {
   DemoSessionState,
   Identity,
   MaskedLead,
+  OpportunityBoard,
   OpportunityRow,
   PublicIntakeRequest,
   PublicIntakeResult,
@@ -231,16 +232,12 @@ export async function getLead(leadId: string): Promise<MaskedLead> {
 }
 
 /**
- * List the caller's opportunities from `GET /api/opportunities`, unwrapping the
- * `{ opportunities }` envelope into the board's rows. An empty array is a valid
- * result — a session with no converted opportunities yet.
+ * Get the pipeline board from `GET /api/opportunities` — the tenant's enabled,
+ * labeled `pipeline.stages` (the columns) plus the `opportunities` rows. An empty
+ * `opportunities` array is a valid result — a session with none converted yet.
  */
-export async function listOpportunities(): Promise<OpportunityRow[]> {
-  const responseBody = await request<{ opportunities: OpportunityRow[] }>(
-    "GET",
-    "/api/opportunities",
-  );
-  return responseBody.opportunities;
+export async function getOpportunityBoard(): Promise<OpportunityBoard> {
+  return request<OpportunityBoard>("GET", "/api/opportunities");
 }
 
 /**

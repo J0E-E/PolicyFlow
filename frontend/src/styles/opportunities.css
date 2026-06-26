@@ -75,22 +75,47 @@
   color: var(--on-surface-variant);
 }
 
-/* ---- The flat card grid (tracer; stage columns are a later epic) ---- */
+/* ---- The stage-grouped board: one column per enabled stage ---- */
 
-.opportunities-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+.opportunities-board {
+  display: flex;
   gap: var(--space-4);
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
 }
 
-.opportunity-card-line {
+.pipeline-column {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-2);
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 0 0 260px;
+  min-width: 260px;
+}
+
+.pipeline-column-heading {
+  margin: 0;
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--outline);
+  font-family: var(--font-ui);
   font-size: 14px;
   line-height: 20px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.pipeline-column-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.pipeline-column-empty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
   color: var(--on-surface-variant);
+  font-style: italic;
 }
 
 .opportunity-card-contact {

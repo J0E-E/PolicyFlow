@@ -15,7 +15,7 @@ registry, mirroring how `brand_primary_color` is registry config served to the F
 from dataclasses import dataclass
 
 from ..tenancy.registry import TenantConfig
-from .state import CANONICAL_FORWARD_ORDER, OPTIONAL_STAGES
+from .state import CANONICAL_FORWARD_ORDER, OPTIONAL_STAGES, OpportunityStage
 
 
 @dataclass(frozen=True)
@@ -50,3 +50,16 @@ def resolve_pipeline(tenant_config: TenantConfig) -> list[StageView]:
         label = tenant_config.stage_labels.get(stage.value, stage.value)
         views.append(StageView(key=stage.value, label=label, is_optional=is_optional))
     return views
+
+
+def enabled_stages_for(tenant_config: TenantConfig) -> frozenset[OpportunityStage]:
+    """Return the tenant's enabled spine stages, for the stage machine.
+
+    The set the machine's `next_enabled_stage` / `assert_transition` take so they
+    skip a disabled optional stage: every stage `resolve_pipeline` keeps for this
+    tenant, as `OpportunityStage` members. `Lost` is off-spine and intentionally
+    absent — the machine adds it for active stages on its own.
+    """
+    return frozenset(
+        OpportunityStage(view.key) for view in resolve_pipeline(tenant_config)
+    )

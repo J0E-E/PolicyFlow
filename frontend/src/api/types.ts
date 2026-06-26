@@ -430,3 +430,28 @@ export interface OpportunityRow {
   /** The next enabled stage to advance to, or `null` when terminal. */
   next_stage: string | null;
 }
+
+/**
+ * One enabled stage column on the pipeline board, mirroring the backend
+ * `resolve_pipeline` `StageView`. `key` is the canonical stage value (matches an
+ * `OpportunityRow.stage` / `next_stage`); `label` is this tenant's display string
+ * (the override or the canonical value); `is_optional` marks a toggleable stage.
+ */
+export interface PipelineStage {
+  /** The canonical stage value — the grouping key for cards. */
+  key: string;
+  /** This tenant's display label for the stage. */
+  label: string;
+  /** Whether this is a toggleable optional stage (`Quoted` / `Approved`). */
+  is_optional: boolean;
+}
+
+/**
+ * The pipeline board payload from `GET /api/opportunities`: the tenant's enabled,
+ * labeled `pipeline.stages` (the columns, in canonical order) plus the
+ * `opportunities` rows the board groups into those columns by `stage`.
+ */
+export interface OpportunityBoard {
+  pipeline: { stages: PipelineStage[] };
+  opportunities: OpportunityRow[];
+}

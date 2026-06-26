@@ -33,21 +33,15 @@ from ..models.opportunity import Opportunity
 from ..models.user import Role
 from ..tenancy.registry import tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
-from .pipeline import resolve_pipeline
+from .pipeline import enabled_stages_for, resolve_pipeline
 from .service import change_opportunity_stage
 from .state import (
-    CANONICAL_FORWARD_ORDER,
     InvalidStageTransition,
     OpportunityStage,
     next_enabled_stage,
 )
 
 router = APIRouter(prefix="/api/opportunities", tags=["opportunities"])
-
-# The tracer's enabled-stage set: every stage on the forward spine. The per-tenant
-# resolver (Epic 3) replaces this with the tenant's configured enabled set (Epic 4),
-# at which point disabled optional stages start being skipped.
-FULL_ENABLED_STAGES: frozenset[OpportunityStage] = frozenset(CANONICAL_FORWARD_ORDER)
 
 
 class ChangeStageRequest(BaseModel):
@@ -56,16 +50,33 @@ class ChangeStageRequest(BaseModel):
     target_stage: str
 
 
-def _opportunity_row(opportunity: Opportunity) -> dict:
-    """Serialize one opportunity to the board's minimal row shape (tracer payload).
+async def _active_enabled_stages(
+    db: AsyncSession,
+) -> frozenset[OpportunityStage]:
+    """Resolve the caller's tenant enabled-stage set from the scoped session.
+
+    Reads the session's `current_schema()` (the convert endpoint's pattern),
+    maps it to the tenant config, and returns that tenant's enabled spine stages
+    so the machine skips any disabled optional stage. `get_tenant_db` only ever
+    admits a known tenant schema, so the lookup never misses.
+    """
+    active_schema = (await db.execute(text("SELECT current_schema()"))).scalar_one()
+    return enabled_stages_for(tenant_by_schema(active_schema))
+
+
+def _opportunity_row(
+    opportunity: Opportunity, enabled_stages: frozenset[OpportunityStage]
+) -> dict:
+    """Serialize one opportunity to the board's minimal row shape.
 
     Carries the current `stage` and the server-computed `next_stage` (the next
-    enabled stage, or `None` at a terminal stage) so the board's Advance control
-    has its target without re-implementing the machine. The richer card fields
-    (value fields, contact name, owner, eligibility) land in Epic 7.
+    *enabled* stage for this tenant — a disabled optional stage is skipped — or
+    `None` at a terminal stage) so the board's Advance control has its target
+    without re-implementing the machine. The richer card fields (value fields,
+    contact name, owner, eligibility) land in Epic 7.
     """
     current_stage = OpportunityStage(opportunity.stage)
-    forward = next_enabled_stage(current_stage, FULL_ENABLED_STAGES)
+    forward = next_enabled_stage(current_stage, enabled_stages)
     return {
         "id": str(opportunity.id),
         "contact_id": str(opportunity.contact_id),
@@ -90,9 +101,11 @@ async def list_opportunities(
     Epic 7; the tracer returns the schema's rows directly.
     """
     # Resolve the caller's tenant config from the scoped session's schema (the
-    # convert endpoint's pattern) to build the board's pipeline columns.
+    # convert endpoint's pattern) to build the board's pipeline columns and the
+    # enabled-stage set each row's `next_stage` is computed against.
     active_schema = (await db.execute(text("SELECT current_schema()"))).scalar_one()
     tenant_config = tenant_by_schema(active_schema)
+    enabled_stages = enabled_stages_for(tenant_config)
     pipeline_stages = [
         {"key": stage.key, "label": stage.label, "is_optional": stage.is_optional}
         for stage in resolve_pipeline(tenant_config)
@@ -105,7 +118,10 @@ async def list_opportunities(
     ).scalars().all()
     return {
         "pipeline": {"stages": pipeline_stages},
-        "opportunities": [_opportunity_row(o) for o in opportunities],
+        "opportunities": [
+            _opportunity_row(opportunity, enabled_stages)
+            for opportunity in opportunities
+        ],
     }
 
 
@@ -162,6 +178,10 @@ async def change_stage(
             detail="only the opportunity's owner or a tenant admin can change its stage",
         )
 
+    # The tenant's enabled-stage set drives the transition, so a disabled optional
+    # stage is skipped (Florida's Submitted advances straight to Policy Active).
+    enabled_stages = await _active_enabled_stages(db)
+
     # Resolve the caller's demo session so the emitted event carries it (the tracer
     # does not yet *guard* on session — that isolation is Epic 7).
     demo_session = await current_demo_session(request, db)
@@ -173,7 +193,7 @@ async def change_stage(
             identity.tenant_id,
             opportunity=opportunity,
             target_stage=target_stage,
-            enabled_stages=FULL_ENABLED_STAGES,
+            enabled_stages=enabled_stages,
             actor_user_id=identity.user_id,
             actor_role=identity.role,
             demo_session_id=demo_session_id,
@@ -187,4 +207,4 @@ async def change_stage(
             ),
         )
 
-    return {"opportunity": _opportunity_row(opportunity)}
+    return {"opportunity": _opportunity_row(opportunity, enabled_stages)}

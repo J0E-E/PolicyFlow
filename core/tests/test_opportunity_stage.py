@@ -23,6 +23,7 @@ import uuid
 from sqlalchemy import text
 
 from app.events.catalog import EventType
+from app.leads.state import LeadStatus
 from app.models.user import Role
 from app.tenancy.registry import FLORIDA, SUNSHINE
 
@@ -32,7 +33,62 @@ from tests.test_lead_convert import (
     read_one,
 )
 from tests.test_lead_intake import read_outbox_rows_for_entity
-from tests.test_lead_reads import login_agent_for_slug
+from tests.test_lead_reads import (
+    insert_lead,
+    login_agent_for_slug,
+    tenant_id_for_slug,
+    unique_contact,
+    unique_marker,
+)
+
+
+async def convert_opportunity_for_slug(db_client, database_engine, tenant, product_line):
+    """Convert a held `Qualified` lead for `tenant` into one opportunity; return its id.
+
+    The tenant-parameterized sibling of `convert_one_opportunity` (which is
+    Sunshine-only): logs in that tenant's agent, inserts a `Qualified` lead they
+    own with the given `product_line`, converts it, and returns the new
+    opportunity's id. The `db_client` is left logged in as that agent.
+    """
+    login = await login_agent_for_slug(db_client, tenant.slug)
+    assert login.status_code == 200
+    agent_id = uuid.UUID(login.json()["user"]["id"])
+    tenant_id = await tenant_id_for_slug(database_engine, tenant.slug)
+    email, phone = unique_contact()
+    lead_id = await insert_lead(
+        database_engine,
+        tenant.schema_name,
+        tenant_id,
+        first_name=unique_marker(),
+        email=email,
+        phone=phone,
+        status=LeadStatus.QUALIFIED,
+        owner_user_id=agent_id,
+        owner_username=f"agent@{tenant.email_domain}",
+    )
+    response = await db_client.post(
+        f"/api/leads/{lead_id}/convert",
+        json={"household": {"mode": "new"}, "product_lines": [product_line]},
+    )
+    assert response.status_code == 200
+    contact_id = uuid.UUID(response.json()["lead"]["converted_contact_id"])
+    opportunity = await read_one(
+        database_engine,
+        f"SELECT id FROM {tenant.schema_name}.opportunities WHERE contact_id = :id",
+        {"id": contact_id},
+    )
+    return opportunity.id
+
+
+async def set_stage(database_engine, schema_name, opportunity_id, stage):
+    """Force an opportunity to `stage` directly, to reach a mid-pipeline start state."""
+    async with database_engine.begin() as connection:
+        await connection.execute(
+            text(
+                f"UPDATE {schema_name}.opportunities SET stage = :stage WHERE id = :id"
+            ),
+            {"stage": stage, "id": opportunity_id},
+        )
 
 
 async def convert_one_opportunity(db_client, database_engine):
@@ -243,3 +299,63 @@ async def test_board_carries_florida_pipeline_stages_with_approved_skipped(
     labels = {stage["key"]: stage["label"] for stage in board["pipeline"]["stages"]}
     assert labels["Quoted"] == "Proposal Sent"
     assert labels["Application Started"] == "App In Progress"
+
+
+# --- Enabled-set skip semantics in transitions (Epic 4) ----------------------
+
+
+def _board_row(board, opportunity_id):
+    rows = [
+        row for row in board["opportunities"] if row["id"] == str(opportunity_id)
+    ]
+    assert len(rows) == 1, rows
+    return rows[0]
+
+
+async def test_florida_submitted_skips_disabled_approved_to_policy_active(
+    seeded, db_client, database_engine
+):
+    """With Approved disabled, Florida's Submitted advances straight to Policy Active."""
+    opportunity_id = await convert_opportunity_for_slug(
+        db_client, database_engine, FLORIDA, "term_life"
+    )
+    await set_stage(database_engine, FLORIDA.schema_name, opportunity_id, "Submitted")
+
+    # The board's next_stage skips the disabled Approved stage.
+    board = (await db_client.get("/api/opportunities")).json()
+    row = _board_row(board, opportunity_id)
+    assert row["stage"] == "Submitted"
+    assert row["next_stage"] == "Policy Active"
+
+    # The skipped stage is not a legal target; the skip-to stage is.
+    blocked = await db_client.post(
+        f"/api/opportunities/{opportunity_id}/stage",
+        json={"target_stage": "Approved"},
+    )
+    assert blocked.status_code == 409
+    advanced = await db_client.post(
+        f"/api/opportunities/{opportunity_id}/stage",
+        json={"target_stage": "Policy Active"},
+    )
+    assert advanced.status_code == 200
+    assert advanced.json()["opportunity"]["stage"] == "Policy Active"
+
+
+async def test_sunshine_submitted_still_steps_through_approved(
+    seeded, db_client, database_engine
+):
+    """With Approved enabled, Sunshine's Submitted advances to Approved (no skip)."""
+    opportunity_id = await convert_opportunity_for_slug(
+        db_client, database_engine, SUNSHINE, "final_expense"
+    )
+    await set_stage(database_engine, SUNSHINE.schema_name, opportunity_id, "Submitted")
+
+    board = (await db_client.get("/api/opportunities")).json()
+    assert _board_row(board, opportunity_id)["next_stage"] == "Approved"
+
+    advanced = await db_client.post(
+        f"/api/opportunities/{opportunity_id}/stage",
+        json={"target_stage": "Approved"},
+    )
+    assert advanced.status_code == 200
+    assert advanced.json()["opportunity"]["stage"] == "Approved"
