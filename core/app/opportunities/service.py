@@ -27,7 +27,12 @@ from ..models.opportunity import Opportunity
 from ..models.user import Role
 from ..tenancy.registry import ProductLine
 from .eligibility import is_blocked_for_medicare, MedicareEligibilityError
-from .state import OpportunityStage, assert_transition
+from .state import (
+    AUTOMATION_OWNED_STAGES,
+    AutomationOwnedStageError,
+    OpportunityStage,
+    assert_transition,
+)
 
 
 async def _emit(
@@ -90,6 +95,14 @@ async def change_opportunity_stage(
     """
     current_stage = OpportunityStage(opportunity.stage)
     assert_transition(current_stage, target_stage, enabled_stages)
+
+    # The manual lockdown (D6): an otherwise-legal move into an automation-owned
+    # stage is rejected — those stages are driven only by the P2.3 automation (the
+    # internal stage-setter), never by an agent's manual `POST /stage`. Checked
+    # *after* `assert_transition`, so an illegal move stays a 409 and only a legal
+    # move into a lifecycle-driven stage becomes the 422.
+    if target_stage in AUTOMATION_OWNED_STAGES:
+        raise AutomationOwnedStageError(target_stage)
 
     if target_stage == OpportunityStage.QUOTED and is_blocked_for_medicare(
         product_line, age_band

@@ -34,7 +34,9 @@ __all__ = [
     "ANCHOR_STAGES",
     "TERMINAL_STAGES",
     "ACTIVE_STAGES",
+    "AUTOMATION_OWNED_STAGES",
     "InvalidStageTransition",
+    "AutomationOwnedStageError",
     "next_enabled_stage",
     "allowed_targets",
     "assert_transition",
@@ -105,6 +107,22 @@ ACTIVE_STAGES: frozenset[OpportunityStage] = frozenset(
 ) - {OpportunityStage.POLICY_ACTIVE}
 
 
+# The stages the P2.3 money-path **automation** owns (TDD §5.5 / D6): a quote
+# selection, a submit, the carrier decision, and policy issuance drive these via the
+# internal stage-setter, never the manual machine. Once P2.3 ships, a manual move
+# *into* one of these is rejected (the lockdown), so the automation is the single
+# writer of these stages. `Quoted` is **not** here — the agent still drives → Quoted
+# manually (or the quote round-trip advances it), so it stays manually reachable.
+AUTOMATION_OWNED_STAGES: frozenset[OpportunityStage] = frozenset(
+    {
+        OpportunityStage.APPLICATION_STARTED,
+        OpportunityStage.SUBMITTED,
+        OpportunityStage.APPROVED,
+        OpportunityStage.POLICY_ACTIVE,
+    }
+)
+
+
 class InvalidStageTransition(Exception):
     """Raised when an opportunity stage move is not allowed for the tenant.
 
@@ -117,6 +135,24 @@ class InvalidStageTransition(Exception):
         self.current = current
         self.target = target
         super().__init__(f"Illegal opportunity stage transition: {current} -> {target}")
+
+
+class AutomationOwnedStageError(Exception):
+    """Raised when the **manual** machine is asked to move into an automation-owned stage.
+
+    The move is otherwise legal (it passed `assert_transition`), but `target` is one
+    of `AUTOMATION_OWNED_STAGES` — reached only by the P2.3 automation (the internal
+    stage-setter), never by an agent's manual `POST /stage`. Carries the `target` so
+    the endpoint builds a useful HTTP 422 "lifecycle-driven" message. Framework-free
+    on purpose, like `InvalidStageTransition`. The internal setter does **not** raise
+    this — it is the very path that owns these stages.
+    """
+
+    def __init__(self, target: OpportunityStage) -> None:
+        self.target = target
+        super().__init__(
+            f"stage {target} is lifecycle-driven and cannot be set manually"
+        )
 
 
 def next_enabled_stage(

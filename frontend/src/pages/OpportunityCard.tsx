@@ -36,6 +36,10 @@ export default function OpportunityCard({
 }: OpportunityCardProperties) {
   const id = `opportunity-card-${opportunity.id}`;
   const nextStage = opportunity.next_stage;
+  // The Advance control shows only for a manually-reachable next stage; an
+  // automation-owned next stage is lifecycle-driven, so the board suppresses it
+  // (the agent drives that step from the opportunity detail page) — P2.3 D6.
+  const canAdvanceManually = opportunity.can_advance && nextStage !== null;
   const isTerminal = nextStage === null && !opportunity.can_mark_lost;
 
   const firstName = opportunity.contact_first_name ?? "";
@@ -48,7 +52,7 @@ export default function OpportunityCard({
     </p>
   ) : canAdvance ? (
     <div id={`${id}-actions`} className="opportunity-card-actions">
-      {nextStage !== null && (
+      {canAdvanceManually && (
         <Button
           id={`opportunity-advance-${opportunity.id}`}
           variant="filled"

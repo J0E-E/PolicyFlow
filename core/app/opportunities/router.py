@@ -46,6 +46,8 @@ from .pipeline import enabled_stages_for, resolve_pipeline
 from .service import change_opportunity_stage
 from .state import (
     ACTIVE_STAGES,
+    AUTOMATION_OWNED_STAGES,
+    AutomationOwnedStageError,
     InvalidStageTransition,
     OpportunityStage,
     next_enabled_stage,
@@ -146,6 +148,11 @@ def _opportunity_row(
     age_band = contact.age_band if contact is not None else None
     premium = opportunity.estimated_annual_premium
     close_date = opportunity.target_close_date
+    # The Advance control is offered only when the next stage is manually reachable:
+    # an automation-owned next stage (e.g. *Application Started* after *Quoted*) is
+    # driven by the money-path automation, so the board suppresses Advance for it
+    # rather than offer a button that would 422 (D6 lockdown).
+    can_advance = forward is not None and forward not in AUTOMATION_OWNED_STAGES
     return {
         "id": str(opportunity.id),
         "contact_id": str(opportunity.contact_id),
@@ -156,6 +163,7 @@ def _opportunity_row(
         ),
         "stage": current_stage.value,
         "next_stage": forward.value if forward is not None else None,
+        "can_advance": can_advance,
         "can_mark_lost": current_stage in ACTIVE_STAGES,
         "estimated_annual_premium": str(premium) if premium is not None else None,
         "target_close_date": close_date.isoformat() if close_date is not None else None,
@@ -338,6 +346,8 @@ async def change_stage(
                 f"to {target_stage.value}"
             ),
         )
+    except AutomationOwnedStageError as error:
+        raise HTTPException(status_code=422, detail=str(error))
     except MedicareEligibilityError as error:
         raise HTTPException(status_code=422, detail=str(error))
 

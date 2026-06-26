@@ -433,6 +433,10 @@ export interface OpportunityRow {
   stage: string;
   /** The next enabled stage to advance to, or `null` when terminal. */
   next_stage: string | null;
+  /** Whether the agent may **manually** advance to `next_stage` — false when
+   *  `next_stage` is automation-owned (lifecycle-driven), so the board suppresses
+   *  the Advance control rather than offer a button that would 422 (P2.3 D6). */
+  can_advance: boolean;
   /** Whether the opportunity is at an active (non-terminal) stage and so may be
    *  marked Lost — server-computed, so the board doesn't re-derive the rule. */
   can_mark_lost: boolean;

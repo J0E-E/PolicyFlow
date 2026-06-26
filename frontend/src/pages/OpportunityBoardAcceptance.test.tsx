@@ -55,6 +55,11 @@ function row(stage: string, nextStage: string | null): OpportunityRow {
     product_line_label: "Medicare Advantage",
     stage,
     next_stage: nextStage,
+    can_advance:
+      nextStage !== null &&
+      !["Application Started", "Submitted", "Approved", "Policy Active"].includes(
+        nextStage,
+      ),
     can_mark_lost: stage !== "Lost",
     estimated_annual_premium: null,
     target_close_date: null,

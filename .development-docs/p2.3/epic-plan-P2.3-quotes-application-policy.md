@@ -79,12 +79,14 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
   - _Policy number `POL-<PREFIX>-<YEAR>-<6HEX>`: PREFIX = `schema_name[:3].upper()` (Sunshine `SUN`, Florida `FLO`), YEAR = current year, 6HEX = first 6 of the application uuid (deterministic given the app, C6). The submit response now also carries `policy`._
   - _Policy view (`PolicySummary`) shown **in-session** after issuance (no GET-policy endpoint — same reload limitation as quotes/applications; the generalized read is P2.5). Epic 7's approve test updated here (opp now → *Policy Active*, response carries the policy)._
 
-## Epic 9 — Application↔Opportunity coupling lockdown [UI]
+## Epic 9 — Application↔Opportunity coupling lockdown [UI] — **COMPLETED** (20m37s)
 - **Goal:** Make automation-owned stages unreachable by the manual machine — the manual stage endpoint rejects them and the board never offers an Advance that would fail — and migrate the pre-existing P2.2 stage tests that this breaks.
 - **Rough scope:** `AUTOMATION_OWNED_STAGES`; the manual `POST /opportunities/{id}/stage` endpoint rejects any target in the set (422); the board suppresses its Advance control when the next stage is automation-owned; **update the affected P2.2 stage/pipeline tests** that previously advanced manually into those stages (TDD R2). The internal stage-setter itself already exists (Epic 5) — this epic is the manual-side lockdown only.
-- **Open questions / decisions for stakeholders:** confirm the lockdown is **purely additive** to the automation path — nothing in Epics 5–8 reaches a stage via the manual endpoint in a way this lockdown would retro-break (reviewer's check; expected clean since the automation path uses the internal setter).
+- **Open questions / decisions for stakeholders:** none — **confirmed clean** at plan time: every Epic 5–8 automation move uses `set_stage_internal` (never the manual `POST /stage`), so the lockdown is purely additive.
 - **Depends on:** Epic 8.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - _`AUTOMATION_OWNED_STAGES` + `AutomationOwnedStageError` in `opportunities/state.py`. The **manual** `change_opportunity_stage` rejects an automation-owned target **after** `assert_transition` (so an illegal move stays **409**, only a *legal* move into a lifecycle-driven stage is the **422**); `set_stage_internal` (the automation path) bypasses it. The board row gained `can_advance` (false when `next_stage` is automation-owned); `OpportunityCard` suppresses Advance accordingly._
+  - _**Migrated the P2.2 tests (R2)** broken by the lockdown: `test_machine_walks_the_full_enabled_spine` → walks the manual spine (→Quoted) then asserts *Application Started* 422s; `test_florida_submitted_skips...` / `test_sunshine_submitted...` / `test_florida_board_config_and_approved_skip` → legal manual advances into automation-owned stages now assert 422 + `can_advance` false. FE test row-helpers gained `can_advance`._
 
 ## Epic 10 — Decline → supersession [UI]
 - **Goal:** A declined application is retained read-only and returns the opportunity to *Quoted* (else *Qualified*); selecting a different attached quote creates a fresh Draft and marks the prior declined application Superseded — with one active application per opportunity enforced.

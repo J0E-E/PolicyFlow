@@ -343,50 +343,62 @@ def _board_row(board, opportunity_id):
 async def test_florida_submitted_skips_disabled_approved_to_policy_active(
     seeded, db_client, database_engine
 ):
-    """With Approved disabled, Florida's Submitted advances straight to Policy Active."""
+    """Florida's board skips the disabled Approved stage; the skip-target is automation-owned.
+
+    The board's `next_stage` still computes the skip (Submitted → Policy Active), but
+    *Policy Active* is automation-owned, so the board suppresses Advance (`can_advance`
+    is false) and a manual advance into it is a 422 (D6 lockdown).
+    """
     opportunity_id = await convert_opportunity_for_slug(
         db_client, database_engine, FLORIDA, "term_life"
     )
     await set_stage(database_engine, FLORIDA.schema_name, opportunity_id, "Submitted")
 
-    # The board's next_stage skips the disabled Approved stage.
+    # The board's next_stage skips the disabled Approved stage, but Advance is
+    # suppressed because the skip-target is automation-owned.
     board = (await db_client.get("/api/opportunities")).json()
     row = _board_row(board, opportunity_id)
     assert row["stage"] == "Submitted"
     assert row["next_stage"] == "Policy Active"
+    assert row["can_advance"] is False
 
-    # The skipped stage is not a legal target; the skip-to stage is.
+    # The disabled stage is an illegal target (409); the automation-owned skip-target
+    # is a 422 (lifecycle-driven), never a manual 200.
     blocked = await db_client.post(
         f"/api/opportunities/{opportunity_id}/stage",
         json={"target_stage": "Approved"},
     )
     assert blocked.status_code == 409
-    advanced = await db_client.post(
+    locked = await db_client.post(
         f"/api/opportunities/{opportunity_id}/stage",
         json={"target_stage": "Policy Active"},
     )
-    assert advanced.status_code == 200
-    assert advanced.json()["opportunity"]["stage"] == "Policy Active"
+    assert locked.status_code == 422
 
 
-async def test_sunshine_submitted_still_steps_through_approved(
+async def test_sunshine_submitted_to_approved_is_lifecycle_locked(
     seeded, db_client, database_engine
 ):
-    """With Approved enabled, Sunshine's Submitted advances to Approved (no skip)."""
+    """Sunshine's board shows Approved as the next stage, but it is automation-owned.
+
+    `next_stage` is *Approved* (no skip — it is enabled), yet a manual advance into it
+    is a 422 and the board suppresses Advance (D6 lockdown).
+    """
     opportunity_id = await convert_opportunity_for_slug(
         db_client, database_engine, SUNSHINE, "final_expense"
     )
     await set_stage(database_engine, SUNSHINE.schema_name, opportunity_id, "Submitted")
 
     board = (await db_client.get("/api/opportunities")).json()
-    assert _board_row(board, opportunity_id)["next_stage"] == "Approved"
+    row = _board_row(board, opportunity_id)
+    assert row["next_stage"] == "Approved"
+    assert row["can_advance"] is False
 
-    advanced = await db_client.post(
+    locked = await db_client.post(
         f"/api/opportunities/{opportunity_id}/stage",
         json={"target_stage": "Approved"},
     )
-    assert advanced.status_code == 200
-    assert advanced.json()["opportunity"]["stage"] == "Approved"
+    assert locked.status_code == 422
 
 
 # --- Medicare eligibility gate (Epic 5) --------------------------------------

@@ -19,6 +19,7 @@ function makeRow(overrides: Partial<OpportunityRow>): OpportunityRow {
     product_line_label: "Medicare Advantage",
     stage: "Qualified",
     next_stage: "Quoted",
+    can_advance: true,
     can_mark_lost: true,
     estimated_annual_premium: null,
     target_close_date: null,
@@ -98,6 +99,20 @@ describe("OpportunityCard", () => {
     );
     expect(getById("opportunity-card-opp-1-terminal")).toBeTruthy();
     expect(queryById("opportunity-advance-opp-1")).toBeNull();
+  });
+
+  it("suppresses Advance when the next stage is automation-owned (lifecycle-driven)", () => {
+    // A Quoted opportunity's next stage is Application Started (automation-owned), so
+    // the board offers no Advance — only Mark Lost remains (P2.3 D6 lockdown).
+    const { queryById } = renderCard(
+      makeRow({
+        stage: "Quoted",
+        next_stage: "Application Started",
+        can_advance: false,
+      }),
+    );
+    expect(queryById("opportunity-advance-opp-1")).toBeNull();
+    expect(queryById("opportunity-mark-lost-opp-1")).not.toBeNull();
   });
 
   it("shows a warning eligibility marker for a gated under-65 opportunity", () => {

@@ -25,6 +25,7 @@ function makeRow(overrides: Partial<OpportunityRow>): OpportunityRow {
     product_line_label: "Term Life Insurance",
     stage: "New",
     next_stage: "Qualified",
+    can_advance: true,
     can_mark_lost: true,
     estimated_annual_premium: null,
     target_close_date: null,

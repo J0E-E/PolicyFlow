@@ -14,6 +14,7 @@ import pytest
 from app.opportunities.state import (
     ACTIVE_STAGES,
     ANCHOR_STAGES,
+    AUTOMATION_OWNED_STAGES,
     CANONICAL_FORWARD_ORDER,
     OPTIONAL_STAGES,
     TERMINAL_STAGES,
@@ -23,6 +24,11 @@ from app.opportunities.state import (
     assert_transition,
     next_enabled_stage,
 )
+
+# Independent transcription of the P2.3 automation-owned stages (D6), hand-built
+# separate from the module — the stages the money-path automation drives and the
+# manual machine is locked out of. `Quoted` is deliberately absent.
+EXPECTED_AUTOMATION_OWNED = {"Application Started", "Submitted", "Approved", "Policy Active"}
 
 # Independent transcription of the TDD §5.1 stage values, member name -> expected
 # string. Hand-built here on purpose, separate from `OpportunityStage`.
@@ -223,3 +229,10 @@ def test_invalid_transition_carries_current_and_target():
         )
     assert raised.value.current == OpportunityStage.NEW
     assert raised.value.target == OpportunityStage.POLICY_ACTIVE
+
+
+def test_automation_owned_stages_match_the_spec():
+    """`AUTOMATION_OWNED_STAGES` is exactly the four money-path automation stages (D6)."""
+    assert {stage.value for stage in AUTOMATION_OWNED_STAGES} == EXPECTED_AUTOMATION_OWNED
+    # `Quoted` stays manually reachable, so it is never automation-owned.
+    assert OpportunityStage.QUOTED not in AUTOMATION_OWNED_STAGES

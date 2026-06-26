@@ -63,25 +63,26 @@ async def advance(db_client, opportunity_id, target_stage):
 # --- The machine ------------------------------------------------------------
 
 
-async def test_machine_walks_the_full_enabled_spine(
+async def test_machine_walks_the_manual_spine_then_locks_the_automation_stages(
     seeded, db_client, database_engine
 ):
-    """A Sunshine opportunity advances one-by-one along the whole enabled spine."""
+    """The manual machine drives New → Qualified → Quoted; the rest is automation-owned.
+
+    Post-P2.3 (D6) the agent manually drives only up to *Quoted*; the automation-owned
+    stages (*Application Started* onward) are reached by the money-path automation, so
+    a manual advance into the next one is rejected with a 422 (the lockdown).
+    """
     opportunity_id = await convert_opportunity_for_slug(
         db_client, database_engine, SUNSHINE, "final_expense"
     )
-    spine = [
-        "Qualified",
-        "Quoted",
-        "Application Started",
-        "Submitted",
-        "Approved",
-        "Policy Active",
-    ]
-    for target in spine:
+    for target in ("Qualified", "Quoted"):
         response = await advance(db_client, opportunity_id, target)
         assert response.status_code == 200, target
         assert response.json()["opportunity"]["stage"] == target
+
+    # The next stage, Application Started, is automation-owned — a manual advance 422s.
+    locked = await advance(db_client, opportunity_id, "Application Started")
+    assert locked.status_code == 422
 
 
 async def test_invalid_multi_step_move_is_refused(
@@ -145,8 +146,10 @@ async def test_florida_board_config_and_approved_skip(
     assert labels["Application Started"] == "App In Progress"
 
     await set_stage(database_engine, FLORIDA.schema_name, opportunity_id, "Submitted")
+    # Approved is disabled (an illegal target → 409); Policy Active is the enabled
+    # skip-target but is automation-owned, so a manual advance into it is a 422 (D6).
     assert (await advance(db_client, opportunity_id, "Approved")).status_code == 409
-    assert (await advance(db_client, opportunity_id, "Policy Active")).status_code == 200
+    assert (await advance(db_client, opportunity_id, "Policy Active")).status_code == 422
 
 
 # --- Isolation --------------------------------------------------------------
