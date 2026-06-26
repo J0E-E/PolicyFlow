@@ -20,13 +20,14 @@ from app.models import Role, Tenant, User
 from app.pii.masking import age_band_for
 from app.seed import (
     PLATFORM_ADMIN_EMAIL,
+    SESSION_LEAD_TEMPLATES,
     SHARED_HISTORICAL_LEADS,
     demo_tenants,
     demo_user_specs,
     demo_users_for,
     seed,
 )
-from app.tenancy.registry import TENANTS, tenant_by_slug
+from app.tenancy.registry import SUNSHINE, TENANTS, tenant_by_slug
 
 
 class FakeResult:
@@ -266,6 +267,33 @@ def test_shared_historical_leads_carry_a_positive_backdate_offset():
         for row in rows:
             assert isinstance(row["created_at_offset_days"], int)
             assert row["created_at_offset_days"] > 0
+
+
+def test_a_sunshine_session_lead_is_medicare_gated_and_under_65():
+    """A Sunshine session-lead template is on a Medicare-gated line AND under 65.
+
+    Converting such a lead yields a Medicare-gated, under-65 opportunity the agent
+    can demonstrate the *Quoted* block on (walkthrough step 8), so the scripted gate
+    demo is reliable (P2.2 Epic 9). Keyed off the registry `requires_medicare_age`
+    flag + the `age_band_for` helper (not a hard-coded name), so it survives a
+    future re-nudge and fails loudly if the gated-under-65 scenario ever regresses.
+    """
+    gated_keys = {
+        line.key for line in SUNSHINE.product_lines if line.requires_medicare_age
+    }
+    assert gated_keys, "Sunshine must offer at least one Medicare-gated line"
+
+    def is_gated_and_under_65(template: dict) -> bool:
+        on_gated_line = any(
+            key in gated_keys for key in template["product_lines_of_interest"]
+        )
+        under_65 = age_band_for(template["date_of_birth"]) != "65+"
+        return on_gated_line and under_65
+
+    assert any(
+        is_gated_and_under_65(template)
+        for template in SESSION_LEAD_TEMPLATES[SUNSHINE.slug]
+    )
 
 
 # --- Phase 3: seeding from empty inserts the full matrix ----------------------

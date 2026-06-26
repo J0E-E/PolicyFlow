@@ -205,15 +205,21 @@ SESSION_LEAD_TEMPLATES: dict[str, list[dict]] = {
             "product_lines_of_interest": ["medicare_supplement", "final_expense"],
         },
         {
+            # Priya is intentionally **under 65** (planning ahead before she ages in)
+            # **and** inquiring about a Medicare line, so converting her yields a
+            # Medicare-gated, under-65 opportunity the agent can demonstrate the
+            # *Quoted* block on (walkthrough step 8) — no ad-hoc data entry needed
+            # (P2.2 Epic 9, Risk R1). Her DOB sits comfortably under 65 so the scripted
+            # block stays reliable for years.
             "first_name": "Priya",
             "last_name": "Nakamura",
             "email": "priya.nakamura@example.com",
             "phone": "(786) 555-0156",
-            "date_of_birth": date(1962, 6, 11),
+            "date_of_birth": date(1965, 6, 11),
             "zip_code": "33156",
             "street_address": "640 Sunset Drive",
             "preferred_contact_method": "email",
-            "product_lines_of_interest": ["dental_vision_hearing"],
+            "product_lines_of_interest": ["medicare_advantage"],
         },
         {
             "first_name": "Jordan",

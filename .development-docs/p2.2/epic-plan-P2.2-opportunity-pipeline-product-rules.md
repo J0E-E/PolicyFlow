@@ -64,12 +64,12 @@ Source TDD: [./tdd-P2.2-opportunity-pipeline-product-rules.md](./tdd-P2.2-opport
 - **Depends on:** Epics 4, 7.
 - **Implementation notes:** Board split into `PipelineBoard` → `PipelineColumn` → `OpportunityCard` → `OpportunityValueFields` (in `frontend/src/pages/`); the page (`OpportunityPipelinePage`) is now thin (fetch + change-stage state + header). Cards render the enriched payload: contact name, `product_line_label`, value fields (em-dash when null — **P2.3 populates them**), owner, and a Medicare eligibility `StampTag` (warning when gated + under-65). A board-level `SimulatedBadge` (new `opportunityValuesSimulatedNotice` in `simulatedNotice.ts`) marks the value fields as filled by simulated carrier quoting (**P2.3**). Per-component Vitest added.
 
-## Epic 9 — Seed nudge for the Medicare-gate demo
+## Epic 9 — Seed nudge for the Medicare-gate demo — **COMPLETED** (6m44s)
 - **Goal:** Make the scripted gate demo (walkthrough step 8) reliable: ensure a converted under-65 Sunshine opportunity on a Medicare line exists, so the agent can demonstrate the block to *Quoted* without ad-hoc data entry.
 - **Rough scope:** adjust one Sunshine `SESSION_LEAD_TEMPLATES` entry (DOB/age band or product line) so converting it yields a gated under-65 opportunity; seed-only, no behavior change.
 - **Open questions / decisions for stakeholders:** confirm nudging the seed (recommended — cheap, seed-only, gives a deterministic step-8 block) vs leaving the agent to enter such a lead live (Risk R1).
 - **Depends on:** Epic 3.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** Seed-only: Priya Nakamura (Sunshine `SESSION_LEAD_TEMPLATES`) is now on `medicare_advantage` (was `dental_vision_hearing`) with an under-65 DOB (1965) — converting her yields a gated under-65 opportunity for the scripted step-8 block. Pinned by a date-robust `test_seed.py` assertion (registry `requires_medicare_age` + `age_band_for`, not a hard-coded name). **Epic 10's acceptance suite converts this Sunshine Medicare/under-65 template to exercise the gate on the real seed.**
 
 ## Epic 10 — Acceptance suite
 - **Goal:** Prove the whole phase end-to-end on the real substrate: the machine (advance through stages, invalid move refused, Lost terminal), the Medicare gate (under-65 blocked from Quoted, allowed at 65+), per-tenant config + the Florida skip, cross-tenant/session isolation, and both events on the outbox carrying `tenant_id` + `demo_session_id` + forwarded `correlation_id`; plus a frontend acceptance block for the board flow.
