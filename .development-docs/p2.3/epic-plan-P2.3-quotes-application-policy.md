@@ -15,12 +15,12 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
 - **Depends on:** none.
 - **Implementation notes:** _none — pure-vocabulary epic; the 7 `EventType` members + `carrier.quote→quote.requested` binding are already specified for the epics that consume them._
 
-## Epic 2 — Carrier/product catalog in the registry
+## Epic 2 — Carrier/product catalog in the registry — **COMPLETED** (11m13s)
 - **Goal:** Extend the registry with the per-tenant carriers and per-product option templates the quote stub will read, plus the two new per-product/per-tenant flags later epics key on — pure config, zero migration.
 - **Rough scope:** Registry config only: carriers + a per-`ProductLine` tuple of 2–3 option templates (`carrier`, `product_label`, `coverage_amount`, `premium_monthly`; annual = monthly × 12); the `ProductLine.application_step` attribute and the `TenantConfig.collects_medicare_id` flag; registry tests.
-- **Open questions / decisions for stakeholders:** the concrete catalog **content** — which carriers, and the exact coverage/premium numbers per product template (a content choice, not a design one).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time (catalog content auto-picked: plausible demo carriers + coverage/premium numbers, table in the plan; shape locked by D4).
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** _none — pure registry data. `QuoteOptionTemplate` (with derived `premium_annual` property) + `ProductLine.{application_step,quote_options}` + `TenantConfig.{carriers,collects_medicare_id}` consumed by Epic 3 (stub reads `quote_options`), Epic 6 (`application_step`), Epic 11 (`collects_medicare_id`)._
 
 ## Epic 3 — Quote round-trip tracer [UI]
 - **Goal:** The thinnest customer-visible end-to-end slice: from a *Qualified* opportunity an agent requests quotes, watches the broker round-trip go pending → completed, and sees the canned options attach — moving the opportunity to *Quoted*.

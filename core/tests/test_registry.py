@@ -203,3 +203,105 @@ def test_tenant_config_is_frozen():
     """A TenantConfig is immutable — assigning a field raises."""
     with pytest.raises(FrozenInstanceError):
         SUNSHINE.slug = "changed"  # type: ignore[misc]
+
+
+# --- P2.3 catalog: carriers, quote-option templates, and the two new flags -----
+
+# The product step each line captures (P2.3 D10), keyed by slug then product-line
+# key. Hand-built here separate from the registry: beneficiary for the life-style
+# lines, health for the health-style lines, None for lines that submit with no
+# extra step (Sunshine's Medicare + DVH lines). Epic 6 keys its step form on this.
+EXPECTED_APPLICATION_STEPS: dict[str, dict[str, str | None]] = {
+    "sunshine-senior-benefits": {
+        "medicare_advantage": None,
+        "medicare_supplement": None,
+        "final_expense": "beneficiary",
+        "dental_vision_hearing": None,
+    },
+    "florida-family-planning": {
+        "term_life": "beneficiary",
+        "whole_life": "beneficiary",
+        "health": "health",
+        "critical_illness": "health",
+    },
+}
+
+# The carriers each tenant sells (P2.3 D4), hand-built separate from the registry.
+EXPECTED_CARRIERS: dict[str, set[str]] = {
+    "sunshine-senior-benefits": {"Humana", "Aetna", "UnitedHealthcare", "Mutual of Omaha"},
+    "florida-family-planning": {"Prudential", "MetLife", "Cigna", "Aflac"},
+}
+
+# The tenant that captures a Medicare ID on its application step (P2.3 D9) — only
+# Sunshine. Hand-built separate from the registry.
+EXPECTED_COLLECTS_MEDICARE_ID: dict[str, bool] = {
+    "sunshine-senior-benefits": True,
+    "florida-family-planning": False,
+}
+
+# The only application-step values a product line may carry (P2.3 D10).
+VALID_APPLICATION_STEPS = {"beneficiary", "health", None}
+
+
+def test_application_step_matches_the_expected_value_per_line():
+    """Each product line's `application_step` matches the hand-written expectation."""
+    for tenant in TENANTS:
+        actual = {
+            product_line.key: product_line.application_step
+            for product_line in tenant.product_lines
+        }
+        assert actual == EXPECTED_APPLICATION_STEPS[tenant.slug], tenant.slug
+
+
+def test_application_step_is_always_one_of_the_valid_values():
+    """No product line carries an application step outside the valid set."""
+    for tenant in TENANTS:
+        for product_line in tenant.product_lines:
+            assert product_line.application_step in VALID_APPLICATION_STEPS, product_line.key
+
+
+def test_carriers_match_the_expected_set_per_tenant():
+    """Each tenant's carrier list matches the hand-written expectation."""
+    for tenant in TENANTS:
+        assert set(tenant.carriers) == EXPECTED_CARRIERS[tenant.slug], tenant.slug
+
+
+def test_collects_medicare_id_matches_the_expected_flag():
+    """Only the expected tenant collects a Medicare ID on its application step."""
+    for tenant in TENANTS:
+        assert tenant.collects_medicare_id == EXPECTED_COLLECTS_MEDICARE_ID[tenant.slug], (
+            tenant.slug
+        )
+
+
+def test_every_product_line_offers_two_or_three_quote_options():
+    """Each product line carries 2–3 canned quote-option templates (TDD D4)."""
+    for tenant in TENANTS:
+        for product_line in tenant.product_lines:
+            assert 2 <= len(product_line.quote_options) <= 3, product_line.key
+
+
+def test_every_quote_option_template_carrier_belongs_to_the_tenant():
+    """Each template's carrier is one of its owning tenant's carriers."""
+    for tenant in TENANTS:
+        carriers = set(tenant.carriers)
+        for product_line in tenant.product_lines:
+            for option in product_line.quote_options:
+                assert option.carrier in carriers, f"{product_line.key}:{option.carrier}"
+
+
+def test_every_quote_option_template_has_positive_amounts():
+    """Coverage and monthly premium are positive whole dollars on every template."""
+    for tenant in TENANTS:
+        for product_line in tenant.product_lines:
+            for option in product_line.quote_options:
+                assert option.coverage_amount > 0, product_line.key
+                assert option.premium_monthly > 0, product_line.key
+
+
+def test_quote_option_annual_premium_is_twelve_monthly_premiums():
+    """`premium_annual` is derived as exactly twelve monthly premiums (TDD D4)."""
+    for tenant in TENANTS:
+        for product_line in tenant.product_lines:
+            for option in product_line.quote_options:
+                assert option.premium_annual == option.premium_monthly * 12, product_line.key

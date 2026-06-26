@@ -16,6 +16,31 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
+class QuoteOptionTemplate:
+    """One canned quote option a product line offers, as static registry data.
+
+    The P2.3 ``carrier.quote`` stub (Epic 3) reads a product line's templates and
+    writes one ``quotes`` row per template when a quote is requested, so the demo's
+    options are deterministic and seed-free. ``carrier`` is one of the owning
+    tenant's ``carriers``; ``product_label`` is the human-facing plan name shown
+    on the quote card; ``coverage_amount`` and ``premium_monthly`` are whole
+    dollars. ``premium_annual`` is **derived** as twelve monthly premiums (TDD D4)
+    so the monthly figure stays the single source of truth and the two can never
+    drift.
+    """
+
+    carrier: str
+    product_label: str
+    coverage_amount: int
+    premium_monthly: int
+
+    @property
+    def premium_annual(self) -> int:
+        """The annualized premium — twelve monthly premiums (TDD D4)."""
+        return self.premium_monthly * 12
+
+
+@dataclass(frozen=True)
 class ProductLine:
     """One insurance product line a tenant offers, as static registry data.
 
@@ -28,11 +53,20 @@ class ProductLine:
     ``requires_medicare_age`` flags a Medicare-gated line (P2.2 D4): the stage
     machine blocks entry to *Quoted* for an under-65 contact on such a line. It
     defaults ``False`` so only the Medicare lines opt in.
+
+    ``application_step`` names the product-specific step a Draft application on
+    this line must capture (P2.3 D10): ``"beneficiary"`` (life-style lines),
+    ``"health"`` (health-style lines), or ``None`` for lines that submit with no
+    extra step. ``quote_options`` is this line's tuple of 2–3 canned quote
+    templates the ``carrier.quote`` stub turns into quotes. Both default empty so a
+    line with no step and no catalog is still valid registry data.
     """
 
     key: str
     label: str
     requires_medicare_age: bool = False
+    application_step: str | None = None
+    quote_options: tuple[QuoteOptionTemplate, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -53,6 +87,14 @@ class TenantConfig:
     email_domain: str
     brand_primary_color: str
     product_lines: tuple[ProductLine, ...]
+    # The carriers this tenant sells (P2.3 D4), seed-free registry data: every
+    # `QuoteOptionTemplate.carrier` on this tenant's product lines is one of these
+    # names. `collects_medicare_id` flags the tenant whose application step captures
+    # an encrypted, masked, audited Medicare ID (P2.3 D9 — Sunshine only); it
+    # defaults `False` so a tenant without the field opts out. Both default empty/off
+    # so a tenant predating the catalog stays valid.
+    carriers: tuple[str, ...] = ()
+    collects_medicare_id: bool = False
     # Per-tenant pipeline config (P2.2 D1), seed-free registry data served to the
     # board endpoint like `brand_primary_color`. `stage_labels` maps a canonical
     # `OpportunityStage` value to this tenant's display override (absent ⇒ the
@@ -81,15 +123,43 @@ SUNSHINE = TenantConfig(
             key="medicare_advantage",
             label="Medicare Advantage",
             requires_medicare_age=True,
+            quote_options=(
+                QuoteOptionTemplate("Humana", "Gold Plus HMO", 7500, 29),
+                QuoteOptionTemplate("Aetna", "Medicare Eagle PPO", 9000, 49),
+                QuoteOptionTemplate("UnitedHealthcare", "AARP Complete HMO", 8200, 39),
+            ),
         ),
         ProductLine(
             key="medicare_supplement",
             label="Medicare Supplement",
             requires_medicare_age=True,
+            quote_options=(
+                QuoteOptionTemplate("Mutual of Omaha", "Plan G", 6000, 142),
+                QuoteOptionTemplate("Aetna", "Plan N", 6000, 118),
+                QuoteOptionTemplate("UnitedHealthcare", "AARP Plan G", 6000, 155),
+            ),
         ),
-        ProductLine(key="final_expense", label="Final Expense"),
-        ProductLine(key="dental_vision_hearing", label="Dental, Vision & Hearing"),
+        ProductLine(
+            key="final_expense",
+            label="Final Expense",
+            application_step="beneficiary",
+            quote_options=(
+                QuoteOptionTemplate("Mutual of Omaha", "Living Promise Whole Life", 15000, 58),
+                QuoteOptionTemplate("Aetna", "Final Expense Whole Life", 10000, 41),
+                QuoteOptionTemplate("Humana", "Guaranteed Issue Whole Life", 8000, 36),
+            ),
+        ),
+        ProductLine(
+            key="dental_vision_hearing",
+            label="Dental, Vision & Hearing",
+            quote_options=(
+                QuoteOptionTemplate("Humana", "Dental Preventive Plus", 1500, 32),
+                QuoteOptionTemplate("Aetna", "Dental, Vision & Hearing Bundle", 2000, 45),
+            ),
+        ),
     ),
+    carriers=("Humana", "Aetna", "UnitedHealthcare", "Mutual of Omaha"),
+    collects_medicare_id=True,
     # Sunshine runs the full pipeline (both optional stages on) and relabels the
     # Medicare journey (P2.2 D13).
     stage_labels={
@@ -107,11 +177,47 @@ FLORIDA = TenantConfig(
     email_domain="florida.example",
     brand_primary_color="#0F6A72",
     product_lines=(
-        ProductLine(key="term_life", label="Term Life Insurance"),
-        ProductLine(key="whole_life", label="Whole Life Insurance"),
-        ProductLine(key="health", label="Health Insurance"),
-        ProductLine(key="critical_illness", label="Critical Illness"),
+        ProductLine(
+            key="term_life",
+            label="Term Life Insurance",
+            application_step="beneficiary",
+            quote_options=(
+                QuoteOptionTemplate("Prudential", "Term Essential 20", 250000, 28),
+                QuoteOptionTemplate("MetLife", "Level Term 30", 500000, 47),
+                QuoteOptionTemplate("Cigna", "Term Life 20", 100000, 16),
+            ),
+        ),
+        ProductLine(
+            key="whole_life",
+            label="Whole Life Insurance",
+            application_step="beneficiary",
+            quote_options=(
+                QuoteOptionTemplate("Prudential", "Whole Life Advantage", 100000, 96),
+                QuoteOptionTemplate("MetLife", "Whole Life Premier", 50000, 58),
+            ),
+        ),
+        ProductLine(
+            key="health",
+            label="Health Insurance",
+            application_step="health",
+            quote_options=(
+                QuoteOptionTemplate("Cigna", "Connect Bronze HMO", 9000, 312),
+                QuoteOptionTemplate("Aflac", "Major Medical Silver", 7000, 389),
+                QuoteOptionTemplate("MetLife", "Health Select Gold", 5000, 465),
+            ),
+        ),
+        ProductLine(
+            key="critical_illness",
+            label="Critical Illness",
+            application_step="health",
+            quote_options=(
+                QuoteOptionTemplate("Aflac", "Critical Care Protection", 20000, 34),
+                QuoteOptionTemplate("MetLife", "Critical Illness Plus", 30000, 48),
+            ),
+        ),
     ),
+    carriers=("Prudential", "MetLife", "Cigna", "Aflac"),
+    collects_medicare_id=False,
     # Florida disables the optional *Approved* stage (Submitted → Policy Active
     # skips it, proving the skip) and relabels two stages (P2.2 D13). No Medicare
     # lines, so no product line is `requires_medicare_age`.
