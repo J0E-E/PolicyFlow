@@ -25,6 +25,7 @@ EXPECTED_DEAD_LETTER_EXCHANGE = "policyflow.events.dlx"
 # (expected routing keys, expected dead-letter queue). Hand-built here on purpose.
 EXPECTED_TOPOLOGY: dict[str, tuple[tuple[str, ...], str]] = {
     "enrichment.stub": (("record.created", "lead.created"), "enrichment.stub.dlq"),
+    "carrier.quote": (("quote.requested",), "carrier.quote.dlq"),
     "sync.logger": (("#",), "sync.logger.dlq"),
 }
 

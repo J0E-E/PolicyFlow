@@ -8,12 +8,12 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
 
 > High-level agile roadmap. Each epic's design specifics are confirmed with stakeholders at epic time (`4-plan-epic`) before any code is written.
 
-## Epic 1 — Event vocabulary + catalog binding
+## Epic 1 — Event vocabulary + catalog binding — **COMPLETED** (5m59s)
 - **Goal:** Add the seven new domain event types and the single new consumer binding so every later epic can publish/consume on a real seam. No behavior change yet — just the vocabulary.
 - **Rough scope:** The event catalog: the `EventType` members (`quote.requested`, `quote.completed`, `application.started`, `application.submitted`, `application.approved`, `application.declined`, `policy.created`) and the `carrier.quote` → `quote.requested` binding; `sync.logger` continues to cover everything. Update the catalog test.
-- **Open questions / decisions for stakeholders:** none expected — vocabulary fixed in TDD §5.8/D12.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** _none — pure-vocabulary epic; the 7 `EventType` members + `carrier.quote→quote.requested` binding are already specified for the epics that consume them._
 
 ## Epic 2 — Carrier/product catalog in the registry
 - **Goal:** Extend the registry with the per-tenant carriers and per-product option templates the quote stub will read, plus the two new per-product/per-tenant flags later epics key on — pure config, zero migration.

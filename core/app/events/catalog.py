@@ -23,6 +23,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "ENRICHMENT_STUB",
     "SYNC_LOGGER",
+    "CARRIER_QUOTE",
     "ConsumerBinding",
     "CONSUMER_BINDINGS",
     "consumers_for_event_type",
@@ -39,9 +40,13 @@ class EventType(StrEnum):
     (`lead.converted`, `contact.created`, `household.created`,
     `opportunity.created`) are the P2.1 events the convert action emits; the two
     pipeline members (`opportunity.stage_changed`, `opportunity.lost`) are the
-    P2.2 events the stage-change action emits. None of the conversion or pipeline
-    members is bound by the enrichment stub, so each fans out to the `#`-binding
-    `sync.logger` alone (`CONSUMER_BINDINGS` is unchanged).
+    P2.2 events the stage-change action emits; the seven money-path members
+    (`quote.requested`, `quote.completed`, `application.started`,
+    `application.submitted`, `application.approved`, `application.declined`,
+    `policy.created`) are the P2.3 events the quote/application/policy flow emits
+    (TDD §5.8 / Decision 12). Of these, only `quote.requested` carries a literal
+    binding (the `carrier.quote` stub); every other conversion, pipeline, and
+    money-path member fans out to the `#`-binding `sync.logger` alone.
     """
 
     RECORD_CREATED = "record.created"
@@ -57,6 +62,13 @@ class EventType(StrEnum):
     OPPORTUNITY_CREATED = "opportunity.created"
     OPPORTUNITY_STAGE_CHANGED = "opportunity.stage_changed"
     OPPORTUNITY_LOST = "opportunity.lost"
+    QUOTE_REQUESTED = "quote.requested"
+    QUOTE_COMPLETED = "quote.completed"
+    APPLICATION_STARTED = "application.started"
+    APPLICATION_SUBMITTED = "application.submitted"
+    APPLICATION_APPROVED = "application.approved"
+    APPLICATION_DECLINED = "application.declined"
+    POLICY_CREATED = "policy.created"
 
 
 # The contract's schema version, stamped onto every envelope (TDD §5.3,
@@ -69,6 +81,9 @@ SCHEMA_VERSION = 1
 # bare string literal.
 ENRICHMENT_STUB = "enrichment.stub"
 SYNC_LOGGER = "sync.logger"
+# The P2.3 money-path stub: a non-terminal consumer bound to `quote.requested`
+# that generates the canned carrier options (TDD §5.8 / Decision 12).
+CARRIER_QUOTE = "carrier.quote"
 
 
 @dataclass(frozen=True)
@@ -84,14 +99,16 @@ class ConsumerBinding:
     routing_keys: tuple[str, ...]
 
 
-# The consumer→binding registry as pure data (TDD §5.3 / §5.4): the enrichment
-# stub binds `record.created` and `lead.created`; the sync logger binds `#`, so
-# every published event has at least one consumer.
+# The consumer→binding registry as pure data (TDD §5.3 / §5.4 / §5.8): the
+# enrichment stub binds `record.created` and `lead.created`; the carrier-quote
+# stub binds `quote.requested` (P2.3 / Decision 12); the sync logger binds `#`,
+# so every published event has at least one consumer.
 CONSUMER_BINDINGS: tuple[ConsumerBinding, ...] = (
     ConsumerBinding(
         name=ENRICHMENT_STUB,
         routing_keys=(EventType.RECORD_CREATED.value, EventType.LEAD_CREATED.value),
     ),
+    ConsumerBinding(name=CARRIER_QUOTE, routing_keys=(EventType.QUOTE_REQUESTED.value,)),
     ConsumerBinding(name=SYNC_LOGGER, routing_keys=("#",)),
 )
 

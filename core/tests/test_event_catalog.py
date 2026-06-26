@@ -10,6 +10,7 @@ spec rather than a tautology over the module under test.
 """
 
 from app.events.catalog import (
+    CARRIER_QUOTE,
     CONSUMER_BINDINGS,
     ENRICHMENT_STUB,
     SCHEMA_VERSION,
@@ -34,12 +35,20 @@ EXPECTED_EVENT_TYPES: dict[str, str] = {
     "OPPORTUNITY_CREATED": "opportunity.created",
     "OPPORTUNITY_STAGE_CHANGED": "opportunity.stage_changed",
     "OPPORTUNITY_LOST": "opportunity.lost",
+    "QUOTE_REQUESTED": "quote.requested",
+    "QUOTE_COMPLETED": "quote.completed",
+    "APPLICATION_STARTED": "application.started",
+    "APPLICATION_SUBMITTED": "application.submitted",
+    "APPLICATION_APPROVED": "application.approved",
+    "APPLICATION_DECLINED": "application.declined",
+    "POLICY_CREATED": "policy.created",
 }
 
 # Independent transcription of the TDD §5.3 / §5.4 consumer→binding registry,
 # consumer name -> expected routing-key tuple. Hand-built here on purpose.
 EXPECTED_CONSUMER_BINDINGS: dict[str, tuple[str, ...]] = {
     "enrichment.stub": ("record.created", "lead.created"),
+    "carrier.quote": ("quote.requested",),
     "sync.logger": ("#",),
 }
 
@@ -64,6 +73,7 @@ def test_consumer_name_constants_match_the_expected_values():
     """The exported consumer-name constants match the hand-written expectation."""
     assert ENRICHMENT_STUB == "enrichment.stub"
     assert SYNC_LOGGER == "sync.logger"
+    assert CARRIER_QUOTE == "carrier.quote"
 
 
 def test_every_consumer_binds_its_expected_routing_keys():
@@ -122,6 +132,33 @@ def test_pipeline_events_fan_out_to_sync_logger_only():
     `opportunity.lost` fan out to the sync logger, no stub reaction.
     """
     for event_type in ("opportunity.stage_changed", "opportunity.lost"):
+        assert consumers_for_event_type(event_type) == (SYNC_LOGGER,), event_type
+
+
+def test_quote_requested_fans_out_to_carrier_quote_then_sync_logger():
+    """`quote.requested` reacts via the carrier-quote stub (literal) *and* the sync logger (`#`).
+
+    Registry order puts the `carrier.quote` stub before the `#` logger, so the
+    money-path round-trip has its non-terminal stub plus the catch-all reaction.
+    """
+    assert consumers_for_event_type("quote.requested") == (CARRIER_QUOTE, SYNC_LOGGER)
+
+
+def test_other_money_path_events_fan_out_to_sync_logger_only():
+    """The six non-`quote.requested` P2.3 events reach the sync logger alone (no stub bind).
+
+    `carrier.quote` binds only `quote.requested`, so every other money-path event
+    matches the `#` catch-all only — `quote.completed` and the application/policy
+    members fan out to the sync logger, no stub reaction.
+    """
+    for event_type in (
+        "quote.completed",
+        "application.started",
+        "application.submitted",
+        "application.approved",
+        "application.declined",
+        "policy.created",
+    ):
         assert consumers_for_event_type(event_type) == (SYNC_LOGGER,), event_type
 
 
