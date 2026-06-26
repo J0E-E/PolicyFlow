@@ -429,6 +429,9 @@ export interface OpportunityRow {
   stage: string;
   /** The next enabled stage to advance to, or `null` when terminal. */
   next_stage: string | null;
+  /** Whether the opportunity is at an active (non-terminal) stage and so may be
+   *  marked Lost — server-computed, so the board doesn't re-derive the rule. */
+  can_mark_lost: boolean;
 }
 
 /**

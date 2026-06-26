@@ -442,3 +442,80 @@ async def test_non_medicare_line_under_65_is_not_gated_into_quoted(
     )
     assert response.status_code == 200
     assert response.json()["opportunity"]["stage"] == "Quoted"
+
+
+# --- Mark Lost (Epic 6) ------------------------------------------------------
+
+
+async def test_mark_lost_moves_to_lost_and_emits_both_events(
+    seeded, db_client, database_engine
+):
+    """Marking an active opportunity Lost → 200, terminal, and BOTH events fire."""
+    _, opportunity_id, contact_id, household_id = await convert_one_opportunity(
+        db_client, database_engine
+    )
+
+    response = await db_client.post(
+        f"/api/opportunities/{opportunity_id}/stage",
+        json={"target_stage": "Lost"},
+    )
+    assert response.status_code == 200
+    moved = response.json()["opportunity"]
+    assert moved["stage"] == "Lost"
+    assert moved["next_stage"] is None
+    assert moved["can_mark_lost"] is False
+
+    # Both events on the outbox, sharing the opportunity's correlation id.
+    stage_changed = await read_outbox_rows_for_entity(
+        database_engine,
+        SUNSHINE.schema_name,
+        EventType.OPPORTUNITY_STAGE_CHANGED,
+        opportunity_id,
+    )
+    lost = await read_outbox_rows_for_entity(
+        database_engine,
+        SUNSHINE.schema_name,
+        EventType.OPPORTUNITY_LOST,
+        opportunity_id,
+    )
+    assert len(stage_changed) == 1
+    assert stage_changed[0].payload["to_stage"] == "Lost"
+    assert len(lost) == 1
+    assert lost[0].payload == {
+        "entity_id": str(opportunity_id),
+        "from_stage": "New",
+        "contact_id": str(contact_id),
+        "household_id": str(household_id),
+    }
+    assert lost[0].correlation_id == stage_changed[0].correlation_id
+
+
+async def test_lost_is_terminal_no_further_moves(seeded, db_client, database_engine):
+    """A Lost opportunity cannot move anywhere — every target is a 409."""
+    _, opportunity_id, _, _ = await convert_one_opportunity(db_client, database_engine)
+    await set_stage(database_engine, SUNSHINE.schema_name, opportunity_id, "Lost")
+
+    for target in ("Qualified", "Lost", "Policy Active"):
+        response = await db_client.post(
+            f"/api/opportunities/{opportunity_id}/stage",
+            json={"target_stage": target},
+        )
+        assert response.status_code == 409, target
+
+
+async def test_can_mark_lost_flag_tracks_active_stages(
+    seeded, db_client, database_engine
+):
+    """`can_mark_lost` is true at an active stage, false once terminal."""
+    _, opportunity_id, _, _ = await convert_one_opportunity(db_client, database_engine)
+
+    def flag_for(board):
+        return _board_row(board, opportunity_id)["can_mark_lost"]
+
+    assert flag_for((await db_client.get("/api/opportunities")).json()) is True
+    await set_stage(
+        database_engine, SUNSHINE.schema_name, opportunity_id, "Policy Active"
+    )
+    assert flag_for((await db_client.get("/api/opportunities")).json()) is False
+    await set_stage(database_engine, SUNSHINE.schema_name, opportunity_id, "Lost")
+    assert flag_for((await db_client.get("/api/opportunities")).json()) is False

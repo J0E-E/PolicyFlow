@@ -11,9 +11,9 @@ The endpoint owns the guards (capability → load → holder → transition); th
 assumes an already-guarded, already-loaded opportunity and a tenant `enabled_stages`
 set computed by the caller, so the machine stays pure and tenant-agnostic.
 
-This is the **tracer slice**: it advances one stage and emits
-`opportunity.stage_changed`. The Medicare eligibility gate (Epic 5) and the
-`Lost` branch that also emits `opportunity.lost` (Epic 6) layer on here later.
+Every move emits `opportunity.stage_changed`; a move to `Lost` additionally emits
+the dedicated `opportunity.lost` event. A move to `Quoted` is gated by the Medicare
+eligibility rule (`MedicareEligibilityError` → 422 at the edge) before any write.
 """
 
 import uuid
@@ -115,5 +115,25 @@ async def change_opportunity_stage(
         correlation_id=opportunity.correlation_id,
         demo_session_id=demo_session_id,
     )
+
+    # Marking an opportunity Lost also emits the dedicated `opportunity.lost`
+    # event (D9), so a consumer can react to the loss specifically rather than
+    # parse a generic stage change. Both events share the correlation id.
+    if target_stage == OpportunityStage.LOST:
+        await _emit(
+            db,
+            event_type=EventBusEventType.OPPORTUNITY_LOST,
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            payload={
+                "entity_id": str(opportunity.id),
+                "from_stage": current_stage.value,
+                "contact_id": str(opportunity.contact_id),
+                "household_id": str(opportunity.household_id),
+            },
+            correlation_id=opportunity.correlation_id,
+            demo_session_id=demo_session_id,
+        )
 
     return opportunity

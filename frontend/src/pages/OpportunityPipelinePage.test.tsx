@@ -55,6 +55,7 @@ function makeRow(overrides: Partial<OpportunityRow>): OpportunityRow {
     product_line: "term_life",
     stage: "New",
     next_stage: "Qualified",
+    can_mark_lost: true,
     ...overrides,
   };
 }
@@ -161,17 +162,53 @@ describe("OpportunityPipelinePage", () => {
     expect(getOpportunityBoardMock).toHaveBeenCalledTimes(2);
   });
 
-  it("shows no Advance control on a terminal card (no next stage)", async () => {
+  it("shows no actions on a terminal card (no next stage, not Lost-able)", async () => {
     useCapabilityMock.mockReturnValue(true);
     getOpportunityBoardMock.mockResolvedValue(
-      makeBoard([makeRow({ stage: "Policy Active", next_stage: null })]),
+      makeBoard([
+        makeRow({ stage: "Policy Active", next_stage: null, can_mark_lost: false }),
+      ]),
     );
 
     const { getById, queryById } = renderPage();
     await waitFor(() => getById("opportunity-card-opp-1"));
 
     expect(queryById("opportunity-advance-opp-1")).toBeNull();
+    expect(queryById("opportunity-mark-lost-opp-1")).toBeNull();
     expect(getById("opportunity-terminal-opp-1")).toBeTruthy();
+  });
+
+  it("marks an opportunity Lost then refetches, showing it in the Lost lane", async () => {
+    useCapabilityMock.mockReturnValue(true);
+    getOpportunityBoardMock
+      .mockResolvedValueOnce(
+        makeBoard([makeRow({ stage: "New", next_stage: "Qualified" })]),
+      )
+      .mockResolvedValueOnce(
+        makeBoard([
+          makeRow({ stage: "Lost", next_stage: null, can_mark_lost: false }),
+        ]),
+      );
+    changeOpportunityStageMock.mockResolvedValue(
+      makeRow({ stage: "Lost", next_stage: null, can_mark_lost: false }),
+    );
+
+    const { getById } = renderPage();
+    await waitFor(() => getById("opportunity-mark-lost-opp-1"));
+
+    fireEvent.click(getById("opportunity-mark-lost-opp-1"));
+
+    await waitFor(() =>
+      expect(changeOpportunityStageMock).toHaveBeenCalledWith("opp-1", "Lost"),
+    );
+    // After the refetch the card sits in the Lost lane.
+    await waitFor(() =>
+      expect(
+        getById("pipeline-column-lost-cards").contains(
+          getById("opportunity-card-opp-1"),
+        ),
+      ).toBe(true),
+    );
   });
 
   it("hides Advance for a user without create_edit_records", async () => {
@@ -208,7 +245,7 @@ describe("OpportunityPipelinePage", () => {
     await waitFor(() => getById("opportunities-advance-error"));
     // A non-ApiError shows the generic fallback, not the raw error text.
     expect(getById("opportunities-advance-error").textContent).toContain(
-      "Could not advance",
+      "Could not change",
     );
     expect(getById("opportunity-card-opp-1")).toBeTruthy();
   });

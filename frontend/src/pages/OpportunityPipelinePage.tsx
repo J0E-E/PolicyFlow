@@ -55,11 +55,12 @@ export default function OpportunityPipelinePage() {
   const [boardLoad, setBoardLoad] = useState<BoardLoadState>({
     kind: "loading",
   });
-  // The id of the opportunity whose Advance is in flight (its button spins), or
-  // null when none is pending. One at a time keeps the refetch reconcile simple.
-  const [advancingId, setAdvancingId] = useState<string | null>(null);
-  // A non-destructive advance error: the board stays intact and the notice shows
-  // above it. Cleared on the next advance attempt.
+  // The id of the opportunity whose stage change (Advance or Mark Lost) is in
+  // flight (its button spins), or null when none is pending. One at a time keeps
+  // the refetch reconcile simple.
+  const [changingId, setChangingId] = useState<string | null>(null);
+  // A non-destructive action error: the board stays intact and the notice shows
+  // above it. Cleared on the next attempt.
   const [advanceError, setAdvanceError] = useState<string | null>(null);
   // True while the page is mounted. Both the mount fetch and the post-advance
   // refetch read it before they `setState`, so a fetch in flight when the page
@@ -90,14 +91,13 @@ export default function OpportunityPipelinePage() {
     };
   }, [loadBoard]);
 
-  const advance = async (opportunity: OpportunityRow) => {
-    if (opportunity.next_stage === null) {
-      return;
-    }
+  // One handler for both Advance (to the next enabled stage) and Mark Lost (to the
+  // terminal `Lost`); on success the board refetches so the card moves.
+  const changeStage = async (opportunityId: string, targetStage: string) => {
     setAdvanceError(null);
-    setAdvancingId(opportunity.id);
+    setChangingId(opportunityId);
     try {
-      await changeOpportunityStage(opportunity.id, opportunity.next_stage);
+      await changeOpportunityStage(opportunityId, targetStage);
       loadBoard();
     } catch (error) {
       // An ApiError carries the server's reason (e.g. the Medicare-gate 422), which
@@ -105,10 +105,10 @@ export default function OpportunityPipelinePage() {
       setAdvanceError(
         error instanceof ApiError
           ? error.message
-          : "Could not advance the opportunity. Please try again.",
+          : "Could not change the opportunity's stage. Please try again.",
       );
     } finally {
-      setAdvancingId(null);
+      setChangingId(null);
     }
   };
 
@@ -149,30 +149,50 @@ export default function OpportunityPipelinePage() {
   const labelForStage = (stageKey: string): string =>
     pipeline.stages.find((stage) => stage.key === stageKey)?.label ?? stageKey;
 
-  const renderCard = (opportunity: OpportunityRow) => (
+  const renderCard = (opportunity: OpportunityRow) => {
+    const nextStage = opportunity.next_stage;
+    const isTerminal = nextStage === null && !opportunity.can_mark_lost;
+    return (
     <Card
       key={opportunity.id}
       id={`opportunity-card-${opportunity.id}`}
       title={opportunity.product_line}
       headingLevel={3}
       footer={
-        canAdvance && opportunity.next_stage !== null ? (
-          <Button
-            id={`opportunity-advance-${opportunity.id}`}
-            variant="filled"
-            isPending={advancingId === opportunity.id}
-            onClick={() => advance(opportunity)}
-          >
-            {`Advance to ${labelForStage(opportunity.next_stage)}`}
-          </Button>
-        ) : (
+        isTerminal ? (
           <p
             id={`opportunity-terminal-${opportunity.id}`}
             className="opportunity-card-terminal"
           >
             No further stage
           </p>
-        )
+        ) : canAdvance ? (
+          <div
+            id={`opportunity-actions-${opportunity.id}`}
+            className="opportunity-card-actions"
+          >
+            {nextStage !== null && (
+              <Button
+                id={`opportunity-advance-${opportunity.id}`}
+                variant="filled"
+                isPending={changingId === opportunity.id}
+                onClick={() => changeStage(opportunity.id, nextStage)}
+              >
+                {`Advance to ${labelForStage(nextStage)}`}
+              </Button>
+            )}
+            {opportunity.can_mark_lost && (
+              <Button
+                id={`opportunity-mark-lost-${opportunity.id}`}
+                variant="outlined"
+                isPending={changingId === opportunity.id}
+                onClick={() => changeStage(opportunity.id, "Lost")}
+              >
+                Mark Lost
+              </Button>
+            )}
+          </div>
+        ) : undefined
       }
     >
       <p
@@ -182,6 +202,13 @@ export default function OpportunityPipelinePage() {
         {`Contact ${opportunity.contact_id}`}
       </p>
     </Card>
+    );
+  };
+
+  // Lost is terminal and off-spine, so it has no pipeline column; collect any Lost
+  // cards into their own lane so they stay visible on the board.
+  const lostOpportunities = opportunities.filter(
+    (opportunity) => opportunity.stage === "Lost",
   );
 
   return (
@@ -244,6 +271,27 @@ export default function OpportunityPipelinePage() {
               </section>
             );
           })}
+
+          {lostOpportunities.length > 0 && (
+            <section
+              id="pipeline-column-lost"
+              className="pipeline-column pipeline-column-lost"
+              aria-labelledby="pipeline-column-lost-heading"
+            >
+              <h2
+                id="pipeline-column-lost-heading"
+                className="pipeline-column-heading pipeline-column-lost-heading"
+              >
+                Lost
+              </h2>
+              <div
+                id="pipeline-column-lost-cards"
+                className="pipeline-column-cards"
+              >
+                {lostOpportunities.map(renderCard)}
+              </div>
+            </section>
+          )}
         </div>
       )}
     </div>

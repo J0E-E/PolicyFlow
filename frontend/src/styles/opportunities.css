@@ -124,6 +124,18 @@
   font-style: italic;
 }
 
+/* The Lost lane — off-spine terminal cards, with a muted heading. */
+.pipeline-column-lost-heading {
+  color: var(--on-surface-variant);
+}
+
+/* The per-card action row: Advance + Mark Lost stacked. */
+.opportunity-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 .opportunity-card-contact {
   font-family: var(--font-mono);
   font-size: 12px;

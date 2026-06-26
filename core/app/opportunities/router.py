@@ -38,6 +38,7 @@ from .eligibility import MedicareEligibilityError
 from .pipeline import enabled_stages_for, resolve_pipeline
 from .service import change_opportunity_stage
 from .state import (
+    ACTIVE_STAGES,
     InvalidStageTransition,
     OpportunityStage,
     next_enabled_stage,
@@ -69,11 +70,12 @@ def _opportunity_row(
 ) -> dict:
     """Serialize one opportunity to the board's minimal row shape.
 
-    Carries the current `stage` and the server-computed `next_stage` (the next
+    Carries the current `stage`, the server-computed `next_stage` (the next
     *enabled* stage for this tenant — a disabled optional stage is skipped — or
-    `None` at a terminal stage) so the board's Advance control has its target
-    without re-implementing the machine. The richer card fields (value fields,
-    contact name, owner, eligibility) land in Epic 7.
+    `None` at a terminal stage) so the board's Advance control has its target, and
+    `can_mark_lost` (true while the opportunity is at an active, non-terminal stage)
+    so the board shows the Mark Lost action without re-deriving the rule. The richer
+    card fields (value fields, contact name, owner, eligibility) land in Epic 7.
     """
     current_stage = OpportunityStage(opportunity.stage)
     forward = next_enabled_stage(current_stage, enabled_stages)
@@ -83,6 +85,7 @@ def _opportunity_row(
         "product_line": opportunity.product_line,
         "stage": current_stage.value,
         "next_stage": forward.value if forward is not None else None,
+        "can_mark_lost": current_stage in ACTIVE_STAGES,
     }
 
 
