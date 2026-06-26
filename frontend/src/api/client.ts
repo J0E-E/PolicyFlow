@@ -328,6 +328,7 @@ export async function patchApplication(
   body: {
     beneficiary?: Record<string, string>;
     health_answers?: Record<string, boolean>;
+    medicare_id?: string;
   },
 ): Promise<Application> {
   const responseBody = await request<{ application: Application }>(
@@ -336,6 +337,22 @@ export async function patchApplication(
     body,
   );
   return responseBody.application;
+}
+
+/**
+ * Reveal the unmasked Medicare ID of one application via
+ * `POST /api/applications/{id}/reveal-medicare-id` — the audited, capability-gated
+ * reveal (Tenant-1). Returns `{ field, value }` (`value` is `null` when none was
+ * captured). Throws an `ApiError` for a refused reveal — `403` (no `REVEAL_PII`),
+ * `404`, `422` (the tenant collects no Medicare ID).
+ */
+export function revealMedicareId(
+  applicationId: string,
+): Promise<{ field: string; value: string | null }> {
+  return request<{ field: string; value: string | null }>(
+    "POST",
+    `/api/applications/${applicationId}/reveal-medicare-id`,
+  );
 }
 
 /**

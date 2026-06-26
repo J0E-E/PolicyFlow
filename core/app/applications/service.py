@@ -177,18 +177,23 @@ async def capture_application_step(
     application: Application,
     beneficiary: dict | None = None,
     health_answers: dict | None = None,
+    medicare_id_encrypted: bytes | None = None,
 ) -> Application:
-    """Record the captured product step on a Draft application (Epic 6).
+    """Record the captured product step on a Draft application (Epics 6 / 11).
 
-    Sets whichever of `beneficiary` / `health_answers` the caller supplies onto the
-    application's jsonb columns and flushes — the endpoint owns the validation that
-    the right one is supplied for the product line's step. Runs on the caller's
-    request session and does **not** commit. Returns the same application instance.
+    Sets whichever of `beneficiary` / `health_answers` / `medicare_id_encrypted` the
+    caller supplies onto the application's columns and flushes — the endpoint owns the
+    validation (which step the line takes, and whether the tenant collects a Medicare
+    ID). The `medicare_id_encrypted` blob is already encrypted by the endpoint; this
+    only stores it. Runs on the caller's request session and does **not** commit.
+    Returns the same application instance.
     """
     if beneficiary is not None:
         application.beneficiary = beneficiary
     if health_answers is not None:
         application.health_answers = health_answers
+    if medicare_id_encrypted is not None:
+        application.medicare_id_encrypted = medicare_id_encrypted
     await db.flush()
     return application
 

@@ -39,6 +39,10 @@ function makeApplication(overrides: Partial<Application>): Application {
     application_step: "beneficiary",
     beneficiary: null,
     health_answers: null,
+    decision: null,
+    decided_at: null,
+    collects_medicare_id: false,
+    medicare_id_masked: null,
     ...overrides,
   };
 }

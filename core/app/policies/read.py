@@ -8,8 +8,14 @@ All non-PII — the Tenant-1 Medicare ID is added masked by Epic 11, never raw h
 from ..models.policy import Policy
 
 
-def serialize_policy(policy: Policy) -> dict:
-    """Return one policy's non-PII wire shape."""
+def serialize_policy(policy: Policy, medicare_id_masked: str | None = None) -> dict:
+    """Return one policy's non-PII wire shape.
+
+    `medicare_id_masked` is the masked Medicare ID of the policy's application (D9 —
+    masked on Policy reads too), or `None` when the tenant does not collect one or the
+    application captured none. The policy itself stores no Medicare ID; the reveal
+    rides the linked `application_id`. Never the plaintext.
+    """
     return {
         "id": str(policy.id),
         "opportunity_id": str(policy.opportunity_id),
@@ -22,4 +28,5 @@ def serialize_policy(policy: Policy) -> dict:
         "premium_monthly": policy.premium_monthly,
         "premium_annual": policy.premium_annual,
         "issued_at": policy.issued_at.isoformat() if policy.issued_at is not None else None,
+        "medicare_id_masked": medicare_id_masked,
     }

@@ -567,6 +567,12 @@ export interface Application {
   decision: string | null;
   /** When the decision was made (ISO timestamp), or `null` until submitted. */
   decided_at: string | null;
+  /** Whether this tenant collects a Medicare ID (Tenant-1 only) — tells the workspace
+   *  whether to render the field at all (P2.3 D9). */
+  collects_medicare_id: boolean;
+  /** The masked Medicare ID, or `null` when the tenant collects none or none is
+   *  captured yet. Never the plaintext — the reveal endpoint returns that. */
+  medicare_id_masked: string | null;
 }
 
 /**
@@ -596,4 +602,7 @@ export interface Policy {
   premium_annual: number;
   /** When the policy was issued (ISO timestamp). */
   issued_at: string | null;
+  /** The masked Medicare ID of the policy's application (Tenant-1), or `null`. The
+   *  reveal rides the linked `application_id`. */
+  medicare_id_masked: string | null;
 }

@@ -10,7 +10,7 @@ import { ApiError, getOpportunityBoard, selectQuote, submitApplication } from ".
 import type { Application, OpportunityRow, Policy } from "../api";
 
 // Whether a Draft application's product step is captured (or it has no step), so it
-// is ready to submit.
+// is ready to submit. The Medicare ID is optional and does not gate submission.
 function isStepComplete(application: Application): boolean {
   if (application.application_step === "beneficiary") {
     return application.beneficiary !== null;
@@ -19,6 +19,14 @@ function isStepComplete(application: Application): boolean {
     return application.health_answers !== null;
   }
   return true;
+}
+
+// Whether the capture form should render — an uncaptured product step, or an
+// uncaptured Tenant-1 Medicare ID.
+function needsCapture(application: Application): boolean {
+  const medicareUncaptured =
+    application.collects_medicare_id && application.medicare_id_masked === null;
+  return !isStepComplete(application) || medicareUncaptured;
 }
 
 // The agent-workspace OPPORTUNITY DETAIL page at `/app/opportunities/:id` (P2.3
@@ -276,11 +284,7 @@ function OpportunityDetailBody({
       {policy && <PolicySummary id="opportunity-detail-policy" policy={policy} />}
       {application &&
         application.status === "Draft" &&
-        (application.application_step === "beneficiary"
-          ? application.beneficiary === null
-          : application.application_step === "health"
-            ? application.health_answers === null
-            : false) && (
+        needsCapture(application) && (
           <ApplicationStep
             id="opportunity-detail-step"
             application={application}

@@ -231,6 +231,8 @@ describe("OpportunityDetailPage", () => {
       health_answers: null,
       decision: null,
       decided_at: null,
+      collects_medicare_id: false,
+      medicare_id_masked: null,
     };
     selectQuoteMock.mockResolvedValue(draft);
     submitApplicationMock.mockResolvedValue({
@@ -248,6 +250,7 @@ describe("OpportunityDetailPage", () => {
         premium_monthly: 29,
         premium_annual: 348,
         issued_at: "2026-06-26T00:00:00Z",
+        medicare_id_masked: null,
       },
     });
     renderAt("opp-1");
@@ -321,6 +324,8 @@ describe("OpportunityDetailPage", () => {
       health_answers: null,
       decision: null,
       decided_at: null,
+      collects_medicare_id: false,
+      medicare_id_masked: null,
     };
     selectQuoteMock.mockResolvedValue(draft);
     submitApplicationMock.mockResolvedValue({

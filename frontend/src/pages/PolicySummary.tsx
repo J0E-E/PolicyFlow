@@ -1,4 +1,5 @@
 import StampTag from "../components/StampTag.tsx";
+import MedicareReveal from "./MedicareReveal.tsx";
 import type { Policy } from "../api";
 
 interface PolicySummaryProperties {
@@ -33,6 +34,13 @@ export default function PolicySummary({ id, policy }: PolicySummaryProperties) {
       <p id={`${id}-premium`} className="policy-summary-premium">
         {`$${policy.coverage_amount.toLocaleString()} coverage · $${policy.premium_annual.toLocaleString()}/yr`}
       </p>
+      {policy.medicare_id_masked !== null && (
+        <MedicareReveal
+          id={`${id}-medicare`}
+          applicationId={policy.application_id}
+          masked={policy.medicare_id_masked}
+        />
+      )}
     </section>
   );
 }

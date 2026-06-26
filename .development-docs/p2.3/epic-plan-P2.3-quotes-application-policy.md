@@ -98,12 +98,15 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
   - _`select_quote` now enforces **one active** (`OneActiveApplicationError` → 409) and **supersedes** any `Declined` application on re-selection (`Declined → Superseded` + `superseded_by_application_id`). `submit_application`'s decline branch returns the opportunity to `decline_return_stage` (*Quoted* if enabled else *Qualified*) via `set_stage_internal` (a backward move) — so the Epic 7 decline test was updated (opp now → *Quoted*)._
   - _FE: the detail page re-enables quote **Select** when the application is `null` **or** `Declined`, and clears the policy view on re-select. (The deny-contact thread keeps declining on re-submit — re-approval reuses Epic 8's issuance for a non-deny contact; the full end-to-end re-approval is Epic 14's acceptance.)_
 
-## Epic 11 — Medicare ID (Tenant-1) [UI]
+## Epic 11 — Medicare ID (Tenant-1) [UI] — **COMPLETED** (25m00s)
 - **Goal:** For Tenant 1, the agent enters a Medicare ID during the application step; it is encrypted at rest, masked by default on Application and Policy reads, and revealed only through an audited capability-gated endpoint. Tenant 2 never sees the field.
 - **Rough scope:** Encrypt on capture (reusing the P1.3 field encryption); masked render on Application + Policy; the reveal endpoint mirroring the leads-reveal pattern (capability → decrypt → audit seam → return); field presence gated by `collects_medicare_id`; the masked + click-to-reveal UI.
-- **Open questions / decisions for stakeholders:** none expected — the reveal pattern + registry gating are locked (TDD §5.7/D9).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 6 (the step that captures it), Epic 8 (Policy read masking).
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - _`PATCH /api/applications/{id}` now also captures `medicare_id` — `encrypt_field` on capture, gated on `collects_medicare_id` (Tenant-2 → 422). `serialize_application` gained `collects_medicare_id` + `medicare_id_masked` (the masked value, never plaintext); `serialize_policy` gained `medicare_id_masked` (from its application — the policy stores none). The PATCH validation was restructured so a no-step Sunshine line (e.g. medicare_advantage) can capture the Medicare ID alone._
+  - _**Reveal:** `POST /api/applications/{id}/reveal-medicare-id` (`REVEAL_PII` → `decrypt_field` → `on_pii_revealed(db, identity, "application", id, "medicare_id")` → return) — entity_type is a free string, no audit-enum change. `_guard_application_for_session` gained `refuse_seed` (the reveal allows seed reads, the leads precedent)._
+  - _FE: `MedicareReveal` (masked + click-to-reveal) on the application + policy views; `ApplicationStep` gained a Medicare input (also renders standalone for no-step Sunshine lines). Capture is **optional** — it does not gate submit._
 
 ## Epic 12 — Demo-session isolation
 - **Goal:** Every new record and the quote stub respect demo-session isolation — a visitor never sees or mutates another session's quotes, applications, or policies, and the stub propagates the session through the round-trip.

@@ -22,18 +22,18 @@ const HEALTH_QUESTIONS: { key: string; prompt: string }[] = [
 interface ApplicationStepProperties {
   /** Required so every rendered element is uniquely targetable (CLAUDE.md). */
   id: string;
-  /** The Draft application whose product step is being captured. */
+  /** The Draft application whose product step / Medicare ID is being captured. */
   application: Application;
   /** Fired with the updated application once the step is captured. */
   onCaptured: (application: Application) => void;
 }
 
-// The product-specific application step form (P2.3 Epic 6): the beneficiary details
-// (life lines) or the five health questions (health lines), chosen by the
-// application's `application_step`. A focused component (Frontend Philosophy) the
-// detail page renders while the application is Draft and its step is uncaptured.
-// Tokens + design-system primitives only (the Guide wins). Medicare-ID capture is
-// Epic 11.
+// The product-step + Medicare-ID capture form (P2.3 Epics 6 / 11): the beneficiary
+// details (life lines) or the five health questions (health lines), plus the
+// Tenant-1 Medicare ID, chosen by the application's `application_step` and
+// `collects_medicare_id`. A focused component (Frontend Philosophy) the detail page
+// renders while the application is Draft and something is uncaptured. The Medicare ID
+// is sent to the audited, encrypt-on-capture endpoint. Tokens + primitives only.
 export default function ApplicationStep({
   id,
   application,
@@ -47,13 +47,37 @@ export default function ApplicationStep({
   const [healthAnswers, setHealthAnswers] = useState<Record<string, boolean>>(
     Object.fromEntries(HEALTH_QUESTIONS.map((question) => [question.key, false])),
   );
+  const [medicareId, setMedicareId] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = (body: {
-    beneficiary?: Record<string, string>;
-    health_answers?: Record<string, boolean>;
-  }) => {
+  const needsBeneficiary = application.application_step === "beneficiary";
+  const needsHealth = application.application_step === "health";
+  const needsMedicare =
+    application.collects_medicare_id && application.medicare_id_masked === null;
+
+  const heading = needsBeneficiary
+    ? "Beneficiary details"
+    : needsHealth
+      ? "Health questions"
+      : "Medicare ID";
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const body: {
+      beneficiary?: Record<string, string>;
+      health_answers?: Record<string, boolean>;
+      medicare_id?: string;
+    } = {};
+    if (needsBeneficiary) {
+      body.beneficiary = beneficiary;
+    }
+    if (needsHealth) {
+      body.health_answers = healthAnswers;
+    }
+    if (needsMedicare && medicareId.trim() !== "") {
+      body.medicare_id = medicareId.trim();
+    }
     setError(null);
     setIsSaving(true);
     patchApplication(application.id, body)
@@ -71,63 +95,45 @@ export default function ApplicationStep({
   return (
     <section id={id} className="application-step" aria-labelledby={`${id}-heading`}>
       <h2 id={`${id}-heading`} className="application-step-heading">
-        {application.application_step === "beneficiary"
-          ? "Beneficiary details"
-          : "Health questions"}
+        {heading}
       </h2>
       {error && (
         <p id={`${id}-error`} className="application-step-error" role="alert">
           {error}
         </p>
       )}
-      {application.application_step === "beneficiary" ? (
-        <form
-          id={`${id}-beneficiary-form`}
-          className="application-step-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit({ beneficiary });
-          }}
-        >
-          <BeneficiaryField
-            id={`${id}-full-name`}
-            label="Full name"
-            type="text"
-            value={beneficiary.full_name}
-            onChange={(value) => setBeneficiary((prior) => ({ ...prior, full_name: value }))}
-          />
-          <BeneficiaryField
-            id={`${id}-relationship`}
-            label="Relationship"
-            type="text"
-            value={beneficiary.relationship}
-            onChange={(value) =>
-              setBeneficiary((prior) => ({ ...prior, relationship: value }))
-            }
-          />
-          <BeneficiaryField
-            id={`${id}-date-of-birth`}
-            label="Date of birth"
-            type="date"
-            value={beneficiary.date_of_birth}
-            onChange={(value) =>
-              setBeneficiary((prior) => ({ ...prior, date_of_birth: value }))
-            }
-          />
-          <Button id={`${id}-submit`} type="submit" variant="filled" isPending={isSaving}>
-            Save beneficiary
-          </Button>
-        </form>
-      ) : (
-        <form
-          id={`${id}-health-form`}
-          className="application-step-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit({ health_answers: healthAnswers });
-          }}
-        >
-          {HEALTH_QUESTIONS.map((question) => (
+      <form id={`${id}-form`} className="application-step-form" onSubmit={submit}>
+        {needsBeneficiary && (
+          <>
+            <BeneficiaryField
+              id={`${id}-full-name`}
+              label="Full name"
+              type="text"
+              value={beneficiary.full_name}
+              onChange={(value) => setBeneficiary((prior) => ({ ...prior, full_name: value }))}
+            />
+            <BeneficiaryField
+              id={`${id}-relationship`}
+              label="Relationship"
+              type="text"
+              value={beneficiary.relationship}
+              onChange={(value) =>
+                setBeneficiary((prior) => ({ ...prior, relationship: value }))
+              }
+            />
+            <BeneficiaryField
+              id={`${id}-date-of-birth`}
+              label="Date of birth"
+              type="date"
+              value={beneficiary.date_of_birth}
+              onChange={(value) =>
+                setBeneficiary((prior) => ({ ...prior, date_of_birth: value }))
+              }
+            />
+          </>
+        )}
+        {needsHealth &&
+          HEALTH_QUESTIONS.map((question) => (
             <label
               key={question.key}
               id={`${id}-${question.key}-row`}
@@ -148,27 +154,38 @@ export default function ApplicationStep({
               <span id={`${id}-${question.key}-prompt`}>{question.prompt}</span>
             </label>
           ))}
-          <Button id={`${id}-submit`} type="submit" variant="filled" isPending={isSaving}>
-            Save health answers
-          </Button>
-        </form>
-      )}
+        {needsMedicare && (
+          <BeneficiaryField
+            id={`${id}-medicare-id`}
+            label="Medicare ID"
+            type="text"
+            value={medicareId}
+            required={!needsBeneficiary && !needsHealth}
+            onChange={setMedicareId}
+          />
+        )}
+        <Button id={`${id}-submit`} type="submit" variant="filled" isPending={isSaving}>
+          Save
+        </Button>
+      </form>
     </section>
   );
 }
 
-// One labeled beneficiary input — text or date.
+// One labeled input — text or date.
 function BeneficiaryField({
   id,
   label,
   type,
   value,
+  required,
   onChange,
 }: {
   id: string;
   label: string;
   type: "text" | "date";
   value: string;
+  required?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -181,6 +198,7 @@ function BeneficiaryField({
         type={type}
         className="application-step-input"
         value={value}
+        required={required}
         onChange={(event) => onChange(event.target.value)}
       />
     </div>

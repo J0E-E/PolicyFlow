@@ -1,5 +1,6 @@
 import StampTag from "../components/StampTag.tsx";
 import type { StampStatus } from "../components/StampTag.tsx";
+import MedicareReveal from "./MedicareReveal.tsx";
 import type { Application } from "../api";
 
 interface ApplicationSummaryProperties {
@@ -55,6 +56,13 @@ export default function ApplicationSummary({
             ? "Carrier decision: approved"
             : "Carrier decision: declined"}
         </p>
+      )}
+      {application.medicare_id_masked !== null && (
+        <MedicareReveal
+          id={`${id}-medicare`}
+          applicationId={application.id}
+          masked={application.medicare_id_masked}
+        />
       )}
     </section>
   );

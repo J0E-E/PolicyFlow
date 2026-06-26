@@ -610,4 +610,8 @@ async def create_application(
         )
     tenant_config = await _active_tenant_config(db)
     application_step = application_step_for(opportunity.product_line, tenant_config)
-    return {"application": serialize_application(application, application_step)}
+    return {
+        "application": serialize_application(
+            application, application_step, tenant_config.collects_medicare_id
+        )
+    }

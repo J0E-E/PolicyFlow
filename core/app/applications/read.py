@@ -11,15 +11,37 @@ non-PII — the Tenant-1 Medicare ID is added masked by Epic 11, never raw here.
 
 from ..models.application import Application
 
+# The fixed mask shown for a present-but-unrevealed Medicare ID (D9). A constant, not
+# derived from the plaintext — the masked read never decrypts, so no PII is exposed.
+MEDICARE_ID_MASK = "•••-••-••••"
+
+
+def mask_medicare_id(application: Application, collects_medicare_id: bool) -> str | None:
+    """Return the masked Medicare ID, or `None` when there is nothing to mask.
+
+    `None` both when the tenant does not collect a Medicare ID (Tenant-2 never renders
+    the field, D9) and when the application has not captured one yet. Otherwise the
+    fixed `MEDICARE_ID_MASK` — the real value is only ever returned by the audited
+    reveal endpoint.
+    """
+    if not collects_medicare_id or application.medicare_id_encrypted is None:
+        return None
+    return MEDICARE_ID_MASK
+
 
 def serialize_application(
-    application: Application, application_step: str | None
+    application: Application,
+    application_step: str | None,
+    collects_medicare_id: bool = False,
 ) -> dict:
     """Return one application's non-PII wire shape, with its product step.
 
     `application_step` is resolved by the caller from the registry (the step the
     product line captures, or `None`). The `beneficiary` / `health_answers` jsonb are
-    returned as-is — `None` until the step is captured.
+    returned as-is — `None` until the step is captured. `collects_medicare_id` (the
+    tenant's registry flag) tells the workspace whether to render the Medicare-ID
+    field at all; `medicare_id_masked` is the masked value (or `None`) — never the
+    plaintext, which only the reveal endpoint returns.
     """
     return {
         "id": str(application.id),
@@ -41,4 +63,6 @@ def serialize_application(
             if application.decided_at is not None
             else None
         ),
+        "collects_medicare_id": collects_medicare_id,
+        "medicare_id_masked": mask_medicare_id(application, collects_medicare_id),
     }

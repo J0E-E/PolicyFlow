@@ -242,6 +242,37 @@
   margin: 0 0 var(--space-5);
 }
 
+/* ---- Masked + click-to-reveal Medicare ID (Epic 11) ---- */
+
+.medicare-reveal {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+}
+
+.medicare-reveal-label {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--on-surface-variant);
+}
+
+.medicare-reveal-value {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface);
+}
+
+.medicare-reveal-error {
+  margin: 0;
+  flex-basis: 100%;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--error, var(--on-surface));
+}
+
 /* ---- Issued policy view (Epic 8) ---- */
 
 .policy-summary {

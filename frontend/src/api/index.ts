@@ -25,6 +25,7 @@ export {
   selectQuote,
   patchApplication,
   submitApplication,
+  revealMedicareId,
   resetDemoSession,
   resolveDuplicate,
   revealLeadField,
