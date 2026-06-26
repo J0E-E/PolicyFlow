@@ -193,9 +193,9 @@ async def test_run_expired_drives_the_engine_and_clears_only_expired(
 
     assert counts.session_ids == (expired,)
     assert counts.session_rows_deleted == 1
-    # Only the live session's row remains; only its overlay (4 per tenant) stays.
+    # Only the live session's row remains; only its overlay (5 per tenant) stays.
     assert await _count_demo_session_rows(db_session) == 1
     for tenant in (SUNSHINE, FLORIDA):
         assert (
-            await _count_session_tagged_leads(db_session, tenant.schema_name) == 4
+            await _count_session_tagged_leads(db_session, tenant.schema_name) == 5
         )

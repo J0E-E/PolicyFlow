@@ -28,7 +28,7 @@ tenants' `leads` tables — owning its precondition — then seeds. `pytest.ini`
 
 from sqlalchemy import text
 
-from app.seed import SHARED_HISTORICAL_LEADS, seed
+from app.seed import SESSION_LEAD_TEMPLATES, SHARED_HISTORICAL_LEADS, seed
 from app.tenancy.registry import FLORIDA, SUNSHINE, tenant_by_slug
 
 # The expected shared-historical row count per tenant (2 Working + 2 Qualified +
@@ -173,3 +173,26 @@ def test_shared_historical_leads_carry_six_per_tenant():
     # The keys resolve to known tenants (guards against a slug typo in the data).
     for tenant_slug in SHARED_HISTORICAL_LEADS:
         assert tenant_by_slug(tenant_slug) is not None
+
+
+def test_each_tenant_seeds_a_deny_decline_fixture_lead():
+    """Each tenant's session queue carries a lead whose email contains `deny` (P2.3).
+
+    The decline-thread prerequisite (R3 / C4): converting this lead and submitting its
+    application takes the deterministic carrier-decline path. It lives in the session
+    queue (not the shared baseline) so a live session can actually convert it, and on
+    a non-Medicare-gated line so the quote round-trip is unblocked.
+    """
+    for tenant_slug in (SUNSHINE.slug, FLORIDA.slug):
+        deny_leads = [
+            lead
+            for lead in SESSION_LEAD_TEMPLATES[tenant_slug]
+            if "deny" in lead["email"].lower()
+        ]
+        assert len(deny_leads) == 1, tenant_slug
+        # Non-Medicare-gated, so the round-trip to a quote is not blocked.
+        product_lines = deny_leads[0]["product_lines_of_interest"]
+        assert product_lines and all(
+            line not in {"medicare_advantage", "medicare_supplement"}
+            for line in product_lines
+        )

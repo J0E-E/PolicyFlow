@@ -182,9 +182,9 @@ async def test_session_scope_purges_one_session_across_both_schemas(
 
     # The return object reports exactly what it deleted.
     assert counts.session_ids == (session_a,)
-    assert counts.leads_deleted[SUNSHINE.schema_name] == 4
-    assert counts.leads_deleted[FLORIDA.schema_name] == 4
-    assert counts.total_leads_deleted == 8
+    assert counts.leads_deleted[SUNSHINE.schema_name] == 5
+    assert counts.leads_deleted[FLORIDA.schema_name] == 5
+    assert counts.total_leads_deleted == 10
     assert counts.ledger_deleted == 2  # one marker per tenant
     assert counts.session_rows_deleted == 0  # delete_session_row=False
 
@@ -206,7 +206,7 @@ async def test_session_scope_purges_one_session_across_both_schemas(
             await _count_leads_for_session(
                 db_session, tenant.schema_name, session_b
             )
-            == 4
+            == 5
         )
     assert await _count_ledger_rows(db_session, session_b) == 2
     assert await _demo_session_row_exists(db_session, session_b) is True

@@ -113,7 +113,7 @@ async def test_instantiation_inserts_the_session_tagged_set(
     """A first call tags the full template set into the tenant's own schema.
 
     Every inserted row carries the session id and is a `New` / unowned /
-    `public_form` queue lead; the count matches the canonical 4-per-tenant set, and
+    `public_form` queue lead; the count matches the canonical 5-per-tenant set, and
     nothing lands in the *other* tenant's schema.
     """
     await _reset_state(db_session)
@@ -121,12 +121,12 @@ async def test_instantiation_inserts_the_session_tagged_set(
 
     inserted = await ensure_session_leads(db_session, SUNSHINE, session_id)
 
-    assert inserted == len(SESSION_LEAD_TEMPLATES[SUNSHINE.slug]) == 4
+    assert inserted == len(SESSION_LEAD_TEMPLATES[SUNSHINE.slug]) == 5
     assert (
         await _count_leads_for_session(
             db_session, SUNSHINE.schema_name, session_id
         )
-        == 4
+        == 5
     )
     # The set landed only in Sunshine's schema, not Florida's.
     assert await _count_all_leads(db_session, FLORIDA.schema_name) == 0
@@ -143,7 +143,7 @@ async def test_instantiation_inserts_the_session_tagged_set(
             )
         )
     ).all()
-    assert len(rows) == 4
+    assert len(rows) == 5
     for status, lead_source, owner_user_id, row_session_id in rows:
         assert status == "New"
         assert lead_source == "public_form"
@@ -161,10 +161,10 @@ async def test_re_call_is_idempotent_via_ledger(
     first = await ensure_session_leads(db_session, SUNSHINE, session_id)
     second = await ensure_session_leads(db_session, SUNSHINE, session_id)
 
-    assert first == 4
+    assert first == 5
     assert second == 0  # no-op: ledger row already present
     # Still exactly the one instantiated set — no duplicate rows.
-    assert await _count_all_leads(db_session, SUNSHINE.schema_name) == 4
+    assert await _count_all_leads(db_session, SUNSHINE.schema_name) == 5
     # The ledger holds exactly one marker row for this (visit, tenant).
     ledger_count = (
         await db_session.execute(
@@ -196,19 +196,19 @@ async def test_second_visit_gets_its_own_copy_despite_shared_bait_email(
         db_session, SUNSHINE, second_session
     )
 
-    assert inserted_second == 4
+    assert inserted_second == 5
     # Each visit owns its own full copy, tagged by its own session id.
     assert (
         await _count_leads_for_session(
             db_session, SUNSHINE.schema_name, first_session
         )
-        == 4
+        == 5
     )
     assert (
         await _count_leads_for_session(
             db_session, SUNSHINE.schema_name, second_session
         )
-        == 4
+        == 5
     )
     # Eight rows total in the schema: two isolated copies of the same templates.
-    assert await _count_all_leads(db_session, SUNSHINE.schema_name) == 8
+    assert await _count_all_leads(db_session, SUNSHINE.schema_name) == 10

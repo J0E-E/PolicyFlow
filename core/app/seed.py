@@ -232,6 +232,25 @@ SESSION_LEAD_TEMPLATES: dict[str, list[dict]] = {
             "preferred_contact_method": "email",
             "product_lines_of_interest": ["medicare_advantage"],
         },
+        {
+            # The decline-thread fixture (P2.3 R3 / C4): a session-queue lead whose
+            # email contains `deny`, so once the agent converts it and submits its
+            # application the deterministic carrier decision DECLINES (the value is
+            # never surfaced — TDD §5.6). Contacts have no email-edit path, so the
+            # `deny` email must originate on a seeded lead. `final_expense` is
+            # non-Medicare-gated, so the round-trip to a quote is unblocked — the
+            # decline walkthrough (step 12) and the Epic 14 decline acceptance thread
+            # ride this lead. Analogous to Priya, the under-65 Medicare seed-nudge.
+            "first_name": "Darnell",
+            "last_name": "Updike",
+            "email": "darnell.deny@example.com",
+            "phone": "(305) 555-0244",
+            "date_of_birth": date(1950, 3, 12),
+            "zip_code": "33139",
+            "street_address": "77 Decline Court",
+            "preferred_contact_method": "email",
+            "product_lines_of_interest": ["final_expense"],
+        },
     ],
     "florida-family-planning": [
         {
@@ -275,6 +294,21 @@ SESSION_LEAD_TEMPLATES: dict[str, list[dict]] = {
             "date_of_birth": date(1958, 6, 15),
             "zip_code": "32801",
             "street_address": "742 Marina Bay Drive",
+            "preferred_contact_method": "email",
+            "product_lines_of_interest": ["term_life"],
+        },
+        {
+            # The decline-thread fixture (P2.3 R3 / C4), mirroring Sunshine's Darnell:
+            # a session-queue lead whose email contains `deny`, so submitting its
+            # application takes the deterministic carrier-decline path. `term_life` is
+            # non-Medicare-gated, so the round-trip to a quote is unblocked.
+            "first_name": "Bianca",
+            "last_name": "Denholm",
+            "email": "bianca.deny@example.com",
+            "phone": "(813) 555-0188",
+            "date_of_birth": date(1980, 7, 22),
+            "zip_code": "33602",
+            "street_address": "300 Harbour Island Boulevard",
             "preferred_contact_method": "email",
             "product_lines_of_interest": ["term_life"],
         },

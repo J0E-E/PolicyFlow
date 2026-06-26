@@ -309,7 +309,7 @@ async def test_first_assume_instantiates_the_private_new_queue(
 ):
     """A first tenant-scoped assume instantiates the visitor's own session-tagged queue.
 
-    Assuming a Sunshine Agent mints the demo session and seeds the canonical 4-row
+    Assuming a Sunshine Agent mints the demo session and seeds the canonical 5-row
     New-queue templates into Sunshine's schema, each tagged with the minted session
     id — the visitor's private, claimable queue (Epic 7).
     """
@@ -320,7 +320,7 @@ async def test_first_assume_instantiates_the_private_new_queue(
     count = await _count_session_tagged_leads(
         database_engine, SUNSHINE.schema_name, minted_id
     )
-    assert count == 4
+    assert count == 5
 
 
 async def test_re_assume_is_idempotent_for_the_same_visit_and_tenant(
@@ -346,7 +346,7 @@ async def test_re_assume_is_idempotent_for_the_same_visit_and_tenant(
     count = await _count_session_tagged_leads(
         database_engine, SUNSHINE.schema_name, minted_id
     )
-    assert count == 4  # still one set, not two
+    assert count == 5  # still one set, not two
 
 
 async def test_second_visit_queue_is_isolated_from_the_first(
@@ -386,7 +386,7 @@ async def test_second_visit_queue_is_isolated_from_the_first(
         count = await _count_session_tagged_leads(
             database_engine, SUNSHINE.schema_name, minted_id
         )
-        assert count == 4
+        assert count == 5
 
 
 # --- read-back helpers (mirror test_auth_audit.py) --------------------------

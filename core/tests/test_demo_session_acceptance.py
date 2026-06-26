@@ -435,7 +435,7 @@ async def test_second_assume_inserts_no_new_session_leads(
         schema_name: await count_session_leads(database_engine, schema_name, minted_id)
         for schema_name in (SUNSHINE.schema_name, FLORIDA.schema_name)
     }
-    assert before[SUNSHINE.schema_name] == 4  # the assumed tenant's private queue
+    assert before[SUNSHINE.schema_name] == 5  # the assumed tenant's private queue
 
     # Re-assume within the same visit (a role switch) — the same cookie is reused.
     second = await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.READ_ONLY)
@@ -628,7 +628,7 @@ async def test_expired_scope_purges_only_expired_sessions_keeping_live_and_basel
     assert await demo_session_row_exists(database_engine, live_id) is True
     for schema_name in (SUNSHINE.schema_name, FLORIDA.schema_name):
         assert await count_session_leads(database_engine, schema_name, expired_id) == 0
-        assert await count_session_leads(database_engine, schema_name, live_id) == 4
+        assert await count_session_leads(database_engine, schema_name, live_id) == 5
         assert (
             await count_seed_baseline_leads(database_engine, schema_name)
             == baseline[schema_name]
@@ -648,7 +648,7 @@ async def test_all_scope_clears_every_session_overlay_keeping_the_baseline(
     phase wipes both tenants' leads + the ledger + the `demo_sessions` table and
     re-seeds (restoring the `NULL` baseline) before minting its own two sessions in
     both tenants. The `All` purge then removes every session overlay + row across BOTH
-    schemas — 2 sessions x 2 tenants x 4 leads = 16 leads, 4 ledger rows, 2 session
+    schemas — 2 sessions x 2 tenants x 5 leads = 20 leads, 4 ledger rows, 2 session
     rows — leaving the shared baseline untouched.
     """
     await reset_demo_sessions_state(database_engine)
@@ -687,7 +687,7 @@ async def test_all_scope_clears_every_session_overlay_keeping_the_baseline(
     counts = await purge_sessions(All(), delete_session_row=True)
 
     assert set(counts.session_ids) == {session_one, session_two}
-    assert counts.total_leads_deleted == 16  # 2 sessions x 2 tenants x 4 leads
+    assert counts.total_leads_deleted == 20  # 2 sessions x 2 tenants x 5 leads
     assert counts.ledger_deleted == 4
     assert counts.session_rows_deleted == 2
 

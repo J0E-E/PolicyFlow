@@ -145,7 +145,7 @@ async def test_expired_scope_purges_only_the_expired_session_footprint(
     counts = await purge_sessions(Expired(), delete_session_row=True)
 
     assert counts.session_ids == (expired_session,)
-    assert counts.total_leads_deleted == 8  # 4 per tenant, expired session only
+    assert counts.total_leads_deleted == 10  # 5 per tenant, expired session only
     assert counts.ledger_deleted == 2
     assert counts.session_rows_deleted == 1  # the expired row itself
 
@@ -159,14 +159,14 @@ async def test_expired_scope_purges_only_the_expired_session_footprint(
         )
     assert await _demo_session_row_exists(db_session, expired_session) is False
 
-    # The live session is wholly untouched (row + 4 leads per tenant).
+    # The live session is wholly untouched (row + 5 leads per tenant).
     assert await _demo_session_row_exists(db_session, live_session) is True
     for tenant in (SUNSHINE, FLORIDA):
         assert (
             await _count_leads_for_session(
                 db_session, tenant.schema_name, live_session
             )
-            == 4
+            == 5
         )
 
     # Baseline intact in both schemas.
@@ -191,7 +191,7 @@ async def test_all_scope_clears_every_session_overlay_baseline_intact(
     counts = await purge_sessions(All(), delete_session_row=True)
 
     assert set(counts.session_ids) == {session_one, session_two}
-    assert counts.total_leads_deleted == 16  # 2 sessions x 2 tenants x 4 leads
+    assert counts.total_leads_deleted == 20  # 2 sessions x 2 tenants x 5 leads
     assert counts.ledger_deleted == 4
     assert counts.session_rows_deleted == 2
 
@@ -241,7 +241,7 @@ async def test_empty_in_scope_run_deletes_nothing(
             await _count_leads_for_session(
                 db_session, tenant.schema_name, live_session
             )
-            == 4
+            == 5
         )
         assert (
             await _count_seed_baseline_leads(db_session, tenant.schema_name)

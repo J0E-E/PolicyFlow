@@ -117,12 +117,14 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
   - _The isolation guards (`_guard_opportunity_for_session` / `_guard_application_for_session` / `_scope_to_session`) and the stub's `demo_session_id` + `correlation_id` propagation were applied **as each endpoint was built** (Epics 3/5/6/7/11); this epic **verifies** them with acceptance tests (cross-session 404, stub propagation)._
   - _**Gap closed:** the demo-**purge** engine (`app/demo/purge.py`) did not sweep the 4 new tables — a reset would have orphaned them. Added `policies` / `applications` / `quotes` / `quote_requests` to the per-tenant sweep (children-first, no FKs) + 4 `PurgeCounts` fields. The migrations already granted `demo_purge` SELECT+DELETE on all four._
 
-## Epic 13 — Seed
+## Epic 13 — Seed — **COMPLETED** (23m44s)
 - **Goal:** Seed coherent quote/application/policy demo data plus the prerequisite contact whose decrypted email contains `deny`, so both the happy path and the decline thread are demoable and the acceptance suite has its fixtures.
 - **Rough scope:** Per-tenant + per-session seed for the new record types fitting the existing shared-baseline / per-session story; the `deny@…` decline contact (contacts have no email-edit path, so this is seed-only — TDD R3/C4).
-- **Open questions / decisions for stakeholders:** which tenant/persona carries the `deny@…` contact, and how much seeded quote/app/policy depth the demo wants (content, not design).
-- **Depends on:** Epic 8 (records to seed), Epic 10 (decline thread).
-- **Implementation notes:** _none yet_
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
+- **Implementation notes:**
+  - _**The `deny@` decline fixture** is a **session-queue** lead added to **both** tenants' `SESSION_LEAD_TEMPLATES` (Sunshine `darnell.deny@…`/final_expense, Florida `bianca.deny@…`/term_life). It must be a session lead (not shared baseline) so a **live session can convert it** (converting a shared seed lead is a seed-409); the line is non-Medicare-gated so the round-trip is unblocked. The Priya under-65 seed-nudge precedent._
+  - _The session queue is now **5 per tenant** (was 4) — **migrated ~20 count assertions** across 6 demo/session test files (`== 4`→`5`, totals `8`→`10`, `16`→`20`), leaving `ledger_deleted` untouched. Analogous to the P2.2 test migration (R2)._
+  - _**CONTENT DECISION — no seeded quote/application/policy chains.** The seed model is leads → **interactive** conversion (it seeds no converted opportunities/contacts), so completed money-path records would need seeded converted opportunities the seed does not create. The money path is created **interactively** (the demo) and by Epic 14's acceptance, so seeded depth is out of scope; the `deny@` fixture is the critical seeded prerequisite._
 
 ## Epic 14 — Acceptance suite
 - **Goal:** A named acceptance suite proving both threads end-to-end on the real Postgres + RabbitMQ substrate — happy path to issued Policy and decline → supersession → re-approval — plus the coupling and tenant/session isolation proofs.
