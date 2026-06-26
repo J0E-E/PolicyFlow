@@ -8,12 +8,12 @@ Source TDD: [./tdd-P2.2-opportunity-pipeline-product-rules.md](./tdd-P2.2-opport
 
 > High-level agile roadmap. Each epic's design specifics are confirmed with stakeholders at epic time (`4-plan-epic`) before any code is written.
 
-## Epic 1 — Stage vocabulary + machine
+## Epic 1 — Stage vocabulary + machine — **COMPLETED** (11m50s)
 - **Goal:** Stand up the pure, framework-free opportunity state machine: the canonical stage vocabulary, the forward spine, optional/anchor/terminal sets, and the transition functions (`next_enabled_stage` / `allowed_targets` / `assert_transition`) that take a tenant's enabled set so the logic stays pure. Policy: forward-by-one-to-next-enabled + any-active → Lost; no backward, no multi-skip, no exit from Policy Active/Lost. No wiring yet — this is the ground every later epic validates against.
 - **Rough scope:** a new `opportunities/state.py` mirroring `leads/state.py` (`OpportunityStage` StrEnum, canonical order, the stage sets, `InvalidStageTransition`); a hand-written state test asserting members + transitions against an independent expectation.
 - **Open questions / decisions for stakeholders:** none expected.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** `opportunities/state.py` transition functions (`assert_transition`/`next_enabled_stage`/`allowed_targets`) take `enabled_stages: frozenset[OpportunityStage]` — Epics 3/4 build that per-tenant set and pass it in.
 
 ## Epic 2 — Tracer slice — advance one stage end-to-end [UI]
 - **Goal:** The thinnest demoable thread through every layer. A minimal board at `/app/opportunities` lists a session's converted opportunities; an Advance control calls the stage endpoint, the server validates the move and emits `opportunity.stage_changed` on the request transaction, and the board refetches so the card reflects its new stage. Pierces machine → service → events → API → UI; later epics layer real config, the gate, and polish onto it.
