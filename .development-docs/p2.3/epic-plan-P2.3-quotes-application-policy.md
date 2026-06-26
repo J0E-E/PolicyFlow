@@ -33,12 +33,12 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
   - _**DEVIATION from TDD §5.4.4:** the opportunity → *Quoted* move rides the **`carrier.quote` consumer's** completing transaction, not the poll endpoint — this keeps the GET poll a pure read so a Read-Only viewer polling never triggers a mutation (resolving the §5.9 "Read-Only, no actions" tension). The consumer advances *Qualified → Quoted* directly (a normal forward stage, gate already cleared at request); Epic 5 formalizes this as the internal stage-setter for the automation-owned stages._
   - _The `POST …/quote-requests` endpoint requires the opportunity at *Qualified* (409 otherwise) — the coherent round-trip precondition; re-quote from later stages is deferred (D11)._
 
-## Epic 4 — Application state machine
+## Epic 4 — Application state machine — **COMPLETED** (2m59s)
 - **Goal:** The pure, framework-free application lifecycle machine — the single source of truth for valid status transitions — landed and tested before any code creates an application.
 - **Rough scope:** A pure `applications/state.py` mirroring the opportunities precedent: `ApplicationStatus` (`Draft`, `Submitted`, `Approved`, `Declined`, `Superseded`), the transition rules, the *Active* set, and a framework-free invalid-transition error; unit tests. No DB, no endpoints.
-- **Open questions / decisions for stakeholders:** none expected — states and transitions fixed in TDD §5.2/D5.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:** _none — pure static machine (`app/applications/state.py`: `ApplicationStatus`, `ALLOWED_TRANSITIONS`, `ACTIVE_STATUSES`={Draft,Submitted}, `TERMINAL_STATUSES`={Approved,Superseded}, `assert_transition`). Mirrors the lead machine (static, no tenant arg) since the application machine is tenant-independent. Consumed by Epic 5 (select→Draft), Epic 7 (submit/decision), Epic 10 (supersession)._
 
 ## Epic 5 — Quote selection → Application (Draft) [UI]
 - **Goal:** Selecting an attached quote creates a `Draft` Application (carrier/product/coverage/premium copied from the quote), advances the opportunity to *Application Started*, and updates its estimated annual premium.
