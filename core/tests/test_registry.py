@@ -147,6 +147,58 @@ def test_product_line_catalogs_match_the_expected_constant():
         assert actual == EXPECTED_PRODUCT_LINES[tenant.slug]
 
 
+# The product-line keys each tenant flags `requires_medicare_age` (P2.2 D4),
+# hand-built here separate from the registry. Only Sunshine's two Medicare lines.
+EXPECTED_MEDICARE_LINES: dict[str, set[str]] = {
+    "sunshine-senior-benefits": {"medicare_advantage", "medicare_supplement"},
+    "florida-family-planning": set(),
+}
+
+# The per-tenant pipeline config (P2.2 D13), hand-built separate from the registry.
+EXPECTED_STAGE_LABELS: dict[str, dict[str, str]] = {
+    "sunshine-senior-benefits": {
+        "Qualified": "Needs Assessment",
+        "Policy Active": "Enrolled",
+    },
+    "florida-family-planning": {
+        "Quoted": "Proposal Sent",
+        "Application Started": "App In Progress",
+    },
+}
+EXPECTED_ENABLED_OPTIONAL: dict[str, set[str]] = {
+    "sunshine-senior-benefits": {"Quoted", "Approved"},
+    "florida-family-planning": {"Quoted"},
+}
+# The only stages a tenant may switch on — the optional set (P2.2 §5.1).
+OPTIONAL_STAGE_VALUES = {"Quoted", "Approved"}
+
+
+def test_requires_medicare_age_flags_only_the_expected_lines():
+    """Each tenant flags `requires_medicare_age` on exactly its Medicare lines."""
+    for tenant in TENANTS:
+        flagged = {
+            product_line.key
+            for product_line in tenant.product_lines
+            if product_line.requires_medicare_age
+        }
+        assert flagged == EXPECTED_MEDICARE_LINES[tenant.slug], tenant.slug
+
+
+def test_stage_labels_match_the_expected_overrides():
+    """Each tenant's stage-label overrides match the hand-written expectation."""
+    for tenant in TENANTS:
+        assert tenant.stage_labels == EXPECTED_STAGE_LABELS[tenant.slug], tenant.slug
+
+
+def test_enabled_optional_stages_match_and_are_a_valid_subset():
+    """Each tenant's enabled optional stages match expectation ⊆ the optional set."""
+    for tenant in TENANTS:
+        assert set(tenant.enabled_optional_stages) == EXPECTED_ENABLED_OPTIONAL[
+            tenant.slug
+        ], tenant.slug
+        assert set(tenant.enabled_optional_stages) <= OPTIONAL_STAGE_VALUES, tenant.slug
+
+
 def test_tenant_config_is_frozen():
     """A TenantConfig is immutable — assigning a field raises."""
     with pytest.raises(FrozenInstanceError):

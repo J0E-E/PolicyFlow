@@ -12,7 +12,7 @@ seed reads every per-tenant value from here, so there is exactly one place that
 defines a tenant.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -24,10 +24,15 @@ class ProductLine:
     its tenant's keys, and the seed and reads carry the key verbatim. ``label``
     is the human-facing display string the intake forms and lead views render.
     Renaming a key is a cross-tenant contract change, so the keys are fixed here.
+
+    ``requires_medicare_age`` flags a Medicare-gated line (P2.2 D4): the stage
+    machine blocks entry to *Quoted* for an under-65 contact on such a line. It
+    defaults ``False`` so only the Medicare lines opt in.
     """
 
     key: str
     label: str
+    requires_medicare_age: bool = False
 
 
 @dataclass(frozen=True)
@@ -48,6 +53,14 @@ class TenantConfig:
     email_domain: str
     brand_primary_color: str
     product_lines: tuple[ProductLine, ...]
+    # Per-tenant pipeline config (P2.2 D1), seed-free registry data served to the
+    # board endpoint like `brand_primary_color`. `stage_labels` maps a canonical
+    # `OpportunityStage` value to this tenant's display override (absent ⇒ the
+    # canonical label); `enabled_optional_stages` is this tenant's switched-on
+    # subset of the optional stages `{"Quoted", "Approved"}`. Both default empty,
+    # so a tenant with no overrides shows canonical labels and no optional stages.
+    stage_labels: dict[str, str] = field(default_factory=dict)
+    enabled_optional_stages: frozenset[str] = frozenset()
 
 
 # The two demo tenants. Slugs and display names match the seed's current demo
@@ -64,11 +77,26 @@ SUNSHINE = TenantConfig(
     email_domain="sunshine.example",
     brand_primary_color="#9C4A1E",
     product_lines=(
-        ProductLine(key="medicare_advantage", label="Medicare Advantage"),
-        ProductLine(key="medicare_supplement", label="Medicare Supplement"),
+        ProductLine(
+            key="medicare_advantage",
+            label="Medicare Advantage",
+            requires_medicare_age=True,
+        ),
+        ProductLine(
+            key="medicare_supplement",
+            label="Medicare Supplement",
+            requires_medicare_age=True,
+        ),
         ProductLine(key="final_expense", label="Final Expense"),
         ProductLine(key="dental_vision_hearing", label="Dental, Vision & Hearing"),
     ),
+    # Sunshine runs the full pipeline (both optional stages on) and relabels the
+    # Medicare journey (P2.2 D13).
+    stage_labels={
+        "Qualified": "Needs Assessment",
+        "Policy Active": "Enrolled",
+    },
+    enabled_optional_stages=frozenset({"Quoted", "Approved"}),
 )
 
 FLORIDA = TenantConfig(
@@ -84,6 +112,14 @@ FLORIDA = TenantConfig(
         ProductLine(key="health", label="Health Insurance"),
         ProductLine(key="critical_illness", label="Critical Illness"),
     ),
+    # Florida disables the optional *Approved* stage (Submitted → Policy Active
+    # skips it, proving the skip) and relabels two stages (P2.2 D13). No Medicare
+    # lines, so no product line is `requires_medicare_age`.
+    stage_labels={
+        "Quoted": "Proposal Sent",
+        "Application Started": "App In Progress",
+    },
+    enabled_optional_stages=frozenset({"Quoted"}),
 )
 
 # Every tenant, in seed and migration order.

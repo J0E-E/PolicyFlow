@@ -22,7 +22,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.dependencies import require_authenticated, require_capability
@@ -31,7 +31,9 @@ from ..auth.rbac import Capability
 from ..demo.session import current_demo_session
 from ..models.opportunity import Opportunity
 from ..models.user import Role
+from ..tenancy.registry import tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
+from .pipeline import resolve_pipeline
 from .service import change_opportunity_stage
 from .state import (
     CANONICAL_FORWARD_ORDER,
@@ -82,15 +84,29 @@ async def list_opportunities(
 
     Any authenticated tenant user may read, so the guard is `require_authenticated`.
     There is **no tenant parameter** — `get_tenant_db` scopes the query to the
-    caller's schema. Full demo-session visibility scoping (NULL baseline ∪ the
-    caller's session) is Epic 7; the tracer returns the schema's rows directly.
+    caller's schema. The board carries the caller's resolved `pipeline.stages`
+    (the tenant's enabled, labeled stages in canonical order) alongside the rows.
+    Full demo-session visibility scoping (NULL baseline ∪ the caller's session) is
+    Epic 7; the tracer returns the schema's rows directly.
     """
+    # Resolve the caller's tenant config from the scoped session's schema (the
+    # convert endpoint's pattern) to build the board's pipeline columns.
+    active_schema = (await db.execute(text("SELECT current_schema()"))).scalar_one()
+    tenant_config = tenant_by_schema(active_schema)
+    pipeline_stages = [
+        {"key": stage.key, "label": stage.label, "is_optional": stage.is_optional}
+        for stage in resolve_pipeline(tenant_config)
+    ]
+
     opportunities = (
         await db.execute(
             select(Opportunity).order_by(Opportunity.created_at.desc())
         )
     ).scalars().all()
-    return {"opportunities": [_opportunity_row(o) for o in opportunities]}
+    return {
+        "pipeline": {"stages": pipeline_stages},
+        "opportunities": [_opportunity_row(o) for o in opportunities],
+    }
 
 
 @router.post("/{opportunity_id}/stage")

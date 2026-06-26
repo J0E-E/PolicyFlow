@@ -24,7 +24,7 @@ from sqlalchemy import text
 
 from app.events.catalog import EventType
 from app.models.user import Role
-from app.tenancy.registry import SUNSHINE
+from app.tenancy.registry import FLORIDA, SUNSHINE
 
 from tests.test_endpoints_db import login_as, seeded  # noqa: F401
 from tests.test_lead_convert import (
@@ -32,6 +32,7 @@ from tests.test_lead_convert import (
     read_one,
 )
 from tests.test_lead_intake import read_outbox_rows_for_entity
+from tests.test_lead_reads import login_agent_for_slug
 
 
 async def convert_one_opportunity(db_client, database_engine):
@@ -206,3 +207,39 @@ async def test_tenant_admin_can_advance_another_agents_opportunity(
     )
     assert response.status_code == 200
     assert response.json()["opportunity"]["stage"] == "Qualified"
+
+
+# --- Board pipeline config (Epic 3) ------------------------------------------
+
+
+async def test_board_carries_sunshine_pipeline_stages(seeded, db_client):
+    """The board payload carries Sunshine's enabled, relabeled stages in order."""
+    assert (await login_agent_for_slug(db_client, SUNSHINE.slug)).status_code == 200
+    board = (await db_client.get("/api/opportunities")).json()
+    stages = [
+        (stage["key"], stage["label"], stage["is_optional"])
+        for stage in board["pipeline"]["stages"]
+    ]
+    assert stages == [
+        ("New", "New", False),
+        ("Qualified", "Needs Assessment", False),
+        ("Quoted", "Quoted", True),
+        ("Application Started", "Application Started", False),
+        ("Submitted", "Submitted", False),
+        ("Approved", "Approved", True),
+        ("Policy Active", "Enrolled", False),
+    ]
+
+
+async def test_board_carries_florida_pipeline_stages_with_approved_skipped(
+    seeded, db_client
+):
+    """Florida's board omits the disabled Approved stage and uses its relabels."""
+    assert (await login_agent_for_slug(db_client, FLORIDA.slug)).status_code == 200
+    board = (await db_client.get("/api/opportunities")).json()
+    keys = [stage["key"] for stage in board["pipeline"]["stages"]]
+    assert "Approved" not in keys
+    assert len(keys) == 6
+    labels = {stage["key"]: stage["label"] for stage in board["pipeline"]["stages"]}
+    assert labels["Quoted"] == "Proposal Sent"
+    assert labels["Application Started"] == "App In Progress"
