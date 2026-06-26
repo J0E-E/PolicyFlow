@@ -32,9 +32,9 @@ from ..demo.session import current_demo_session
 from ..models.contact import Contact
 from ..models.opportunity import Opportunity
 from ..models.user import Role
-from ..tenancy.registry import TenantConfig, tenant_by_schema
+from ..tenancy.registry import ProductLine, TenantConfig, tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
-from .eligibility import MedicareEligibilityError
+from .eligibility import ELIGIBLE_AGE_BAND, MedicareEligibilityError
 from .pipeline import enabled_stages_for, resolve_pipeline
 from .service import change_opportunity_stage
 from .state import (
@@ -65,62 +65,150 @@ async def _active_tenant_config(db: AsyncSession) -> TenantConfig:
     return tenant_by_schema(active_schema)
 
 
-def _opportunity_row(
-    opportunity: Opportunity, enabled_stages: frozenset[OpportunityStage]
-) -> dict:
-    """Serialize one opportunity to the board's minimal row shape.
+def _scope_to_session(query, demo_session_id: uuid.UUID | None):
+    """Scope an `Opportunity` SELECT to the seed baseline plus the caller's session.
 
-    Carries the current `stage`, the server-computed `next_stage` (the next
-    *enabled* stage for this tenant — a disabled optional stage is skipped — or
-    `None` at a terminal stage) so the board's Advance control has its target, and
-    `can_mark_lost` (true while the opportunity is at an active, non-terminal stage)
-    so the board shows the Mark Lost action without re-deriving the rule. The richer
-    card fields (value fields, contact name, owner, eligibility) land in Epic 7.
+    Mirrors `leads.visibility.visible_to_session` for opportunities: with a live
+    session, `demo_session_id IS NULL OR demo_session_id = :session_id` (seed ∪ the
+    caller's own rows); without one, just `demo_session_id IS NULL` (seed-only), so
+    a session-less caller never sees a visitor's private rows.
+    """
+    if demo_session_id is None:
+        return query.where(Opportunity.demo_session_id.is_(None))
+    return query.where(
+        Opportunity.demo_session_id.is_(None)
+        | (Opportunity.demo_session_id == demo_session_id)
+    )
+
+
+async def _guard_opportunity_for_session(
+    opportunity: Opportunity, request: Request, db: AsyncSession
+) -> uuid.UUID | None:
+    """Enforce demo-session write-isolation on an already-loaded opportunity.
+
+    The mutation twin of `_scope_to_session` (mirrors the convert guard): resolves
+    the caller's demo session once and applies two guards in order — a row owned by
+    **another** session is a `404` (indistinguishable from not-found, so a visitor
+    can neither mutate nor probe for another's), and a shared **seed** row
+    (`demo_session_id IS NULL`) while the caller is in a live session is a `409` (a
+    visitor must never alter a row every visitor sees). Returns the resolved session
+    id so the caller reuses it to stamp events.
+    """
+    demo_session = await current_demo_session(request, db)
+    demo_session_id = demo_session.id if demo_session is not None else None
+
+    if (
+        opportunity.demo_session_id is not None
+        and opportunity.demo_session_id != demo_session_id
+    ):
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    if demo_session_id is not None and opportunity.demo_session_id is None:
+        raise HTTPException(
+            status_code=409, detail="seed opportunities cannot be modified"
+        )
+
+    return demo_session_id
+
+
+def _opportunity_row(
+    opportunity: Opportunity,
+    contact: Contact | None,
+    product_line: ProductLine | None,
+    enabled_stages: frozenset[OpportunityStage],
+) -> dict:
+    """Serialize one opportunity to the board's enriched row shape.
+
+    Carries the stage machinery (`stage`, the next *enabled* `next_stage`,
+    `can_mark_lost`) plus the card's display fields: the value fields
+    (`estimated_annual_premium` as a string / `target_close_date` as ISO, each
+    `null` until P2.3 populates them — the board renders an em-dash), the contact's
+    plaintext name, the owner, the tenant's `product_line_label`, and the
+    `eligibility` flags (`medicare_gated` from the product line, `age_eligible` from
+    the contact's plaintext age band). `contact` / `product_line` are tolerated as
+    `None` defensively, though every opportunity has both.
     """
     current_stage = OpportunityStage(opportunity.stage)
     forward = next_enabled_stage(current_stage, enabled_stages)
+    age_band = contact.age_band if contact is not None else None
+    premium = opportunity.estimated_annual_premium
+    close_date = opportunity.target_close_date
     return {
         "id": str(opportunity.id),
         "contact_id": str(opportunity.contact_id),
+        "household_id": str(opportunity.household_id),
         "product_line": opportunity.product_line,
+        "product_line_label": (
+            product_line.label if product_line is not None else opportunity.product_line
+        ),
         "stage": current_stage.value,
         "next_stage": forward.value if forward is not None else None,
         "can_mark_lost": current_stage in ACTIVE_STAGES,
+        "estimated_annual_premium": str(premium) if premium is not None else None,
+        "target_close_date": close_date.isoformat() if close_date is not None else None,
+        "contact_first_name": contact.first_name if contact is not None else None,
+        "contact_last_name": contact.last_name if contact is not None else None,
+        "owner_username": opportunity.owner_username,
+        "eligibility": {
+            "medicare_gated": (
+                product_line.requires_medicare_age if product_line is not None else False
+            ),
+            "age_eligible": age_band == ELIGIBLE_AGE_BAND,
+        },
     }
 
 
 @router.get("")
 async def list_opportunities(
+    request: Request,
     identity: Identity = Depends(require_authenticated),
     db: AsyncSession = Depends(get_tenant_db),
 ) -> dict:
-    """Return the caller's opportunities as the board's minimal rows, newest first.
+    """Return the caller's opportunities as the board's enriched rows, newest first.
 
     Any authenticated tenant user may read, so the guard is `require_authenticated`.
     There is **no tenant parameter** — `get_tenant_db` scopes the query to the
-    caller's schema. The board carries the caller's resolved `pipeline.stages`
-    (the tenant's enabled, labeled stages in canonical order) alongside the rows.
-    Full demo-session visibility scoping (NULL baseline ∪ the caller's session) is
-    Epic 7; the tracer returns the schema's rows directly.
+    caller's schema, and `_scope_to_session` further scopes it to the shared seed
+    baseline plus the caller's own demo session, so one visitor never sees another's
+    rows. The board carries the caller's resolved `pipeline.stages` alongside the
+    enriched opportunity rows (value fields, contact name, owner, eligibility).
     """
-    # Resolve the caller's tenant config to build the board's pipeline columns and
-    # the enabled-stage set each row's `next_stage` is computed against.
+    # Resolve the caller's tenant config to build the board's pipeline columns, the
+    # enabled-stage set, and the product-line registry the rows label/flag against.
     tenant_config = await _active_tenant_config(db)
     enabled_stages = enabled_stages_for(tenant_config)
+    product_lines_by_key = {line.key: line for line in tenant_config.product_lines}
     pipeline_stages = [
         {"key": stage.key, "label": stage.label, "is_optional": stage.is_optional}
         for stage in resolve_pipeline(tenant_config)
     ]
 
-    opportunities = (
-        await db.execute(
-            select(Opportunity).order_by(Opportunity.created_at.desc())
-        )
-    ).scalars().all()
+    # Scope to the seed baseline ∪ the caller's session (the lead read pattern).
+    demo_session = await current_demo_session(request, db)
+    demo_session_id = demo_session.id if demo_session is not None else None
+    query = _scope_to_session(
+        select(Opportunity).order_by(Opportunity.created_at.desc()), demo_session_id
+    )
+    opportunities = (await db.execute(query)).scalars().all()
+
+    # Load the listed opportunities' contacts in one query for the row name + age.
+    contact_ids = {opportunity.contact_id for opportunity in opportunities}
+    contacts_by_id: dict[uuid.UUID, Contact] = {}
+    if contact_ids:
+        contacts = (
+            await db.execute(select(Contact).where(Contact.id.in_(contact_ids)))
+        ).scalars().all()
+        contacts_by_id = {contact.id: contact for contact in contacts}
+
     return {
         "pipeline": {"stages": pipeline_stages},
         "opportunities": [
-            _opportunity_row(opportunity, enabled_stages)
+            _opportunity_row(
+                opportunity,
+                contacts_by_id.get(opportunity.contact_id),
+                product_lines_by_key.get(opportunity.product_line),
+                enabled_stages,
+            )
             for opportunity in opportunities
         ],
     }
@@ -145,17 +233,19 @@ async def change_stage(
 
     1. **Load** the opportunity by id in the caller's schema; missing / cross-tenant
        is a `404`.
-    2. **Holder** — the owner **or** any Tenant Admin may move it (D5); else `403`.
-    3. **Transition** — `assert_transition` (via the service) rejects an illegal
+    2. **Demo-session write-isolation** — a foreign session's row is a `404`, a
+       shared seed row (with a live session) a `409`. The resolved session id is
+       reused to stamp the events.
+    3. **Holder** — the owner **or** any Tenant Admin may move it (D5); else `403`.
+    4. **Transition** — `assert_transition` (via the service) rejects an illegal
        move with `InvalidStageTransition`, mapped to `409` naming current + target.
-    4. **Medicare gate** — a move to *Quoted* on a `requires_medicare_age` product
+    5. **Medicare gate** — a move to *Quoted* on a `requires_medicare_age` product
        line for an under-65 contact raises `MedicareEligibilityError`, mapped to a
        `422` (distinct from the 409) carrying a clear reason.
 
-    An unknown `target_stage` string is a `422`. Demo-session write isolation
-    (Epic 7) layers on here later. On success the service sets the stage and emits
-    the event on the request transaction; the updated row is returned under
-    `{"opportunity": …}` with a 200.
+    An unknown `target_stage` string is a `422`. On success the service sets the
+    stage and emits the event on the request transaction; the updated row is
+    returned under `{"opportunity": …}` with a 200.
     """
     try:
         target_stage = OpportunityStage(change.target_stage)
@@ -171,6 +261,11 @@ async def change_stage(
     ).scalar_one_or_none()
     if opportunity is None:
         raise HTTPException(status_code=404, detail="opportunity not found")
+
+    # Demo-session write-isolation, before the holder / transition guards: a foreign
+    # session's row is a 404, a shared seed row a 409. The resolved session id is
+    # reused for the events without a second `platform` read.
+    demo_session_id = await _guard_opportunity_for_session(opportunity, request, db)
 
     # Holder guard: the owning agent or any Tenant Admin may change the stage (D5) —
     # broader than convert's owner-only, because the BRD lets admins move cards.
@@ -209,11 +304,6 @@ async def change_stage(
     ).scalar_one_or_none()
     age_band = contact.age_band if contact is not None else None
 
-    # Resolve the caller's demo session so the emitted event carries it (the tracer
-    # does not yet *guard* on session — that isolation is Epic 7).
-    demo_session = await current_demo_session(request, db)
-    demo_session_id = demo_session.id if demo_session is not None else None
-
     try:
         await change_opportunity_stage(
             db,
@@ -238,4 +328,8 @@ async def change_stage(
     except MedicareEligibilityError as error:
         raise HTTPException(status_code=422, detail=str(error))
 
-    return {"opportunity": _opportunity_row(opportunity, enabled_stages)}
+    return {
+        "opportunity": _opportunity_row(
+            opportunity, contact, product_line, enabled_stages
+        )
+    }

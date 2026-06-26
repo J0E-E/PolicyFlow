@@ -52,10 +52,18 @@ function makeRow(overrides: Partial<OpportunityRow>): OpportunityRow {
   return {
     id: "opp-1",
     contact_id: "contact-1",
+    household_id: "household-1",
     product_line: "term_life",
+    product_line_label: "Term Life Insurance",
     stage: "New",
     next_stage: "Qualified",
     can_mark_lost: true,
+    estimated_annual_premium: null,
+    target_close_date: null,
+    contact_first_name: "Pat",
+    contact_last_name: "Quincy",
+    owner_username: "agent@florida.example",
+    eligibility: { medicare_gated: false, age_eligible: false },
     ...overrides,
   };
 }

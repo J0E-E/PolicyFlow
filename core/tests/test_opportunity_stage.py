@@ -22,6 +22,7 @@ import uuid
 
 from sqlalchemy import text
 
+from app.demo.session import DEMO_SESSION_COOKIE_NAME
 from app.events.catalog import EventType
 from app.leads.state import LeadStatus
 from app.models.user import Role
@@ -36,10 +37,25 @@ from tests.test_lead_intake import read_outbox_rows_for_entity
 from tests.test_lead_reads import (
     insert_lead,
     login_agent_for_slug,
+    mint_live_demo_session,
     tenant_id_for_slug,
     unique_contact,
     unique_marker,
 )
+
+
+async def set_opportunity_session(
+    database_engine, schema_name, opportunity_id, demo_session_id
+):
+    """Tag an opportunity with a demo session, to exercise session write-isolation."""
+    async with database_engine.begin() as connection:
+        await connection.execute(
+            text(
+                f"UPDATE {schema_name}.opportunities SET demo_session_id = :sid "
+                "WHERE id = :id"
+            ),
+            {"sid": demo_session_id, "id": opportunity_id},
+        )
 
 
 async def convert_opportunity_for_slug(db_client, database_engine, tenant, product_line):
@@ -519,3 +535,111 @@ async def test_can_mark_lost_flag_tracks_active_stages(
     assert flag_for((await db_client.get("/api/opportunities")).json()) is False
     await set_stage(database_engine, SUNSHINE.schema_name, opportunity_id, "Lost")
     assert flag_for((await db_client.get("/api/opportunities")).json()) is False
+
+
+# --- Session isolation + enriched read (Epic 7) ------------------------------
+
+
+async def test_list_is_scoped_to_seed_plus_caller_session(
+    seeded, db_client, database_engine
+):
+    """The board shows the seed baseline ∪ the caller's session, never another's."""
+    session_a = await mint_live_demo_session(database_engine)
+    session_b = await mint_live_demo_session(database_engine)
+    _, seed_opp, _, _ = await convert_one_opportunity(db_client, database_engine)
+    _, opp_a, _, _ = await convert_one_opportunity(db_client, database_engine)
+    _, opp_b, _, _ = await convert_one_opportunity(db_client, database_engine)
+    await set_opportunity_session(database_engine, SUNSHINE.schema_name, opp_a, session_a)
+    await set_opportunity_session(database_engine, SUNSHINE.schema_name, opp_b, session_b)
+
+    def ids_for(board):
+        return {row["id"] for row in board["opportunities"]}
+
+    # Session A's cookie: seed + A's row, never B's.
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_a))
+    visible = ids_for((await db_client.get("/api/opportunities")).json())
+    assert str(seed_opp) in visible
+    assert str(opp_a) in visible
+    assert str(opp_b) not in visible
+
+    # No demo cookie ⇒ seed-only.
+    db_client.cookies.delete(DEMO_SESSION_COOKIE_NAME)
+    seed_only = ids_for((await db_client.get("/api/opportunities")).json())
+    assert str(seed_opp) in seed_only
+    assert str(opp_a) not in seed_only
+    assert str(opp_b) not in seed_only
+
+
+async def test_list_row_carries_enriched_fields(
+    seeded, db_client, database_engine
+):
+    """A board row carries the value fields, contact name, owner, and eligibility."""
+    _, opportunity_id, _, household_id = await convert_one_opportunity(
+        db_client, database_engine
+    )
+    await set_contact_age_band(
+        database_engine, SUNSHINE.schema_name, opportunity_id, "65+"
+    )
+
+    row = _board_row((await db_client.get("/api/opportunities")).json(), opportunity_id)
+    assert row["household_id"] == str(household_id)
+    assert row["product_line"] == "medicare_advantage"
+    assert row["product_line_label"] == "Medicare Advantage"
+    assert row["contact_first_name"] is not None
+    assert row["contact_last_name"] is not None
+    assert row["owner_username"] is not None
+    # P2.1 conversion leaves the value fields null (the board renders em-dash).
+    assert row["estimated_annual_premium"] is None
+    assert row["target_close_date"] is None
+    # Medicare line + a 65+ contact → gated and age-eligible.
+    assert row["eligibility"] == {"medicare_gated": True, "age_eligible": True}
+
+
+async def test_mutation_refuses_a_foreign_session_row_with_404(
+    seeded, db_client, database_engine
+):
+    """Advancing another session's opportunity is a 404 (indistinguishable from absent)."""
+    session_a = await mint_live_demo_session(database_engine)
+    _, opportunity_id, _, _ = await convert_one_opportunity(db_client, database_engine)
+    await set_opportunity_session(
+        database_engine, SUNSHINE.schema_name, opportunity_id, session_a
+    )
+    # Caller has no demo session → the session_a row is foreign → 404.
+    response = await db_client.post(
+        f"/api/opportunities/{opportunity_id}/stage",
+        json={"target_stage": "Qualified"},
+    )
+    assert response.status_code == 404
+
+
+async def test_mutation_refuses_a_seed_row_in_a_live_session_with_409(
+    seeded, db_client, database_engine
+):
+    """A demo visitor cannot modify a shared seed opportunity (409)."""
+    session_a = await mint_live_demo_session(database_engine)
+    _, opportunity_id, _, _ = await convert_one_opportunity(db_client, database_engine)
+    # Caller is in a live session; the opportunity is a shared seed (NULL) row → 409.
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_a))
+    response = await db_client.post(
+        f"/api/opportunities/{opportunity_id}/stage",
+        json={"target_stage": "Qualified"},
+    )
+    assert response.status_code == 409
+
+
+async def test_mutation_allows_the_callers_own_session_row(
+    seeded, db_client, database_engine
+):
+    """Advancing an opportunity in the caller's own session succeeds (200)."""
+    session_a = await mint_live_demo_session(database_engine)
+    _, opportunity_id, _, _ = await convert_one_opportunity(db_client, database_engine)
+    await set_opportunity_session(
+        database_engine, SUNSHINE.schema_name, opportunity_id, session_a
+    )
+    db_client.cookies.set(DEMO_SESSION_COOKIE_NAME, str(session_a))
+    response = await db_client.post(
+        f"/api/opportunities/{opportunity_id}/stage",
+        json={"target_stage": "Qualified"},
+    )
+    assert response.status_code == 200
+    assert response.json()["opportunity"]["stage"] == "Qualified"

@@ -44,6 +44,7 @@ export type {
   LeadStatus,
   MaskedLead,
   OpportunityBoard,
+  OpportunityEligibility,
   OpportunityRow,
   PipelineStage,
   ProductLine,

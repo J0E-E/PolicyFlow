@@ -423,8 +423,12 @@ export interface OpportunityRow {
   id: string;
   /** Raw contact UUID string the opportunity belongs to. */
   contact_id: string;
+  /** Raw household UUID string the opportunity rolls up to. */
+  household_id: string;
   /** The product-line key (e.g. `medicare_advantage`). */
   product_line: string;
+  /** This tenant's display label for the product line. */
+  product_line_label: string;
   /** The canonical current stage value. */
   stage: string;
   /** The next enabled stage to advance to, or `null` when terminal. */
@@ -432,6 +436,27 @@ export interface OpportunityRow {
   /** Whether the opportunity is at an active (non-terminal) stage and so may be
    *  marked Lost — server-computed, so the board doesn't re-derive the rule. */
   can_mark_lost: boolean;
+  /** Estimated annual premium as a decimal string, or `null` until P2.3 sets it
+   *  (the board renders an em-dash). */
+  estimated_annual_premium: string | null;
+  /** Target close date as an ISO date string, or `null` until P2.3 sets it. */
+  target_close_date: string | null;
+  /** The contact's plaintext first name (no PII reveal needed), or `null`. */
+  contact_first_name: string | null;
+  /** The contact's plaintext last name, or `null`. */
+  contact_last_name: string | null;
+  /** The owning user's username, or `null` when unassigned. */
+  owner_username: string | null;
+  /** Per-opportunity Medicare eligibility flags for the board. */
+  eligibility: OpportunityEligibility;
+}
+
+/** The Medicare eligibility flags on an opportunity row (P2.2 Epic 7). */
+export interface OpportunityEligibility {
+  /** Whether the product line is Medicare-gated (`requires_medicare_age`). */
+  medicare_gated: boolean;
+  /** Whether the contact's stored age band clears the gate (`"65+"`). */
+  age_eligible: boolean;
 }
 
 /**
