@@ -22,6 +22,7 @@ export {
   rejectLead,
   requestQuotes,
   getQuoteRequest,
+  selectQuote,
   resetDemoSession,
   resolveDuplicate,
   revealLeadField,
@@ -29,6 +30,7 @@ export {
   submitPublicIntake,
 } from "./client";
 export type {
+  Application,
   Capability,
   ConversionPrefill,
   ConversionSummary,

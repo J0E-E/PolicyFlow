@@ -137,3 +137,49 @@ async def change_opportunity_stage(
         )
 
     return opportunity
+
+
+async def set_stage_internal(
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    opportunity: Opportunity,
+    target_stage: OpportunityStage,
+    actor_user_id: uuid.UUID | None,
+    actor_role: Role | None,
+    demo_session_id: uuid.UUID | None,
+) -> Opportunity:
+    """Move `opportunity` to `target_stage` from automation — directly, no manual gate.
+
+    The **internal stage-setter** (TDD §5.5 / D6): the mechanism the P2.3 automation
+    path (Epics 5–8) drives the *automation-owned* stages with — *Application
+    Started*, *Submitted*, *Approved*, *Policy Active* — and the backward decline
+    move. Unlike `change_opportunity_stage` it **bypasses `assert_transition` and the
+    Medicare gate** on purpose: those moves are exactly the ones the manual machine
+    forbids, and the gate was already cleared upstream when quotes were requested.
+    The move still emits `opportunity.stage_changed` for observability, reusing the
+    opportunity's `correlation_id`. Runs on the caller's request transaction and does
+    **not** commit, so it lands or rolls back with the application write that drives
+    it (the synchronous, in-transaction coupling of D6).
+    """
+    from_stage = opportunity.stage
+    opportunity.stage = target_stage.value
+    await db.flush()
+
+    await _emit(
+        db,
+        event_type=EventBusEventType.OPPORTUNITY_STAGE_CHANGED,
+        tenant_id=tenant_id,
+        actor_user_id=actor_user_id,
+        actor_role=actor_role,
+        payload={
+            "entity_id": str(opportunity.id),
+            "from_stage": from_stage,
+            "to_stage": target_stage.value,
+            "contact_id": str(opportunity.contact_id),
+            "household_id": str(opportunity.household_id),
+        },
+        correlation_id=opportunity.correlation_id,
+        demo_session_id=demo_session_id,
+    )
+    return opportunity

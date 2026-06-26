@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import QuotePanel from "./QuotePanel.tsx";
+import ApplicationSummary from "./ApplicationSummary.tsx";
 import { useCapability } from "../session";
-import { getOpportunityBoard } from "../api";
-import type { OpportunityRow } from "../api";
+import { ApiError, getOpportunityBoard, selectQuote } from "../api";
+import type { Application, OpportunityRow } from "../api";
 
 // The agent-workspace OPPORTUNITY DETAIL page at `/app/opportunities/:id` (P2.3
 // Epic 3). The minimal first slice: an opportunity header (contact, product line,
@@ -31,8 +32,15 @@ export default function OpportunityDetailPage() {
 
   const [detailLoad, setDetailLoad] = useState<DetailLoadState>({ kind: "loading" });
   // The opportunity's stage, tracked locally so the round-trip's move to *Quoted*
-  // reflects without a refetch (the poll returns the new stage).
+  // (and selection's move to *Application Started*) reflects without a refetch.
   const [stage, setStage] = useState<string | null>(null);
+  // The Draft Application once a quote is selected; the quote panel then renders its
+  // options read-only and the summary appears.
+  const [application, setApplication] = useState<Application | null>(null);
+  // The quote whose selection is in flight (its Select button spins), and a
+  // non-destructive selection error shown above the panel.
+  const [selectingQuoteId, setSelectingQuoteId] = useState<string | null>(null);
+  const [selectError, setSelectError] = useState<string | null>(null);
   const isMountedRef = useRef(true);
 
   const loadOpportunity = useCallback(() => {
@@ -67,6 +75,31 @@ export default function OpportunityDetailPage() {
     };
   }, [loadOpportunity]);
 
+  // Select a quote → create the Draft Application. On success the application
+  // appears and the opportunity advances to *Application Started* server-side, so we
+  // reflect both locally without a refetch.
+  const handleSelectQuote = (quoteId: string) => {
+    if (opportunityId === undefined) {
+      return;
+    }
+    setSelectError(null);
+    setSelectingQuoteId(quoteId);
+    selectQuote(opportunityId, quoteId)
+      .then((created) => {
+        setApplication(created);
+        setStage("Application Started");
+        setSelectingQuoteId(null);
+      })
+      .catch((error: unknown) => {
+        setSelectError(
+          error instanceof ApiError
+            ? error.message
+            : "We couldn't select that quote. Please try again.",
+        );
+        setSelectingQuoteId(null);
+      });
+  };
+
   return (
     <div id="opportunity-detail-page" className="opportunity-detail-page">
       <p id="opportunity-detail-back-row" className="opportunity-detail-back-row">
@@ -79,7 +112,11 @@ export default function OpportunityDetailPage() {
         stage={stage}
         canRequest={canRequest}
         opportunityId={opportunityId ?? ""}
+        application={application}
+        selectingQuoteId={selectingQuoteId}
+        selectError={selectError}
         onStageChange={setStage}
+        onSelectQuote={handleSelectQuote}
         onRetry={loadOpportunity}
       />
     </div>
@@ -93,14 +130,22 @@ function OpportunityDetailBody({
   stage,
   canRequest,
   opportunityId,
+  application,
+  selectingQuoteId,
+  selectError,
   onStageChange,
+  onSelectQuote,
   onRetry,
 }: {
   detailLoad: DetailLoadState;
   stage: string | null;
   canRequest: boolean;
   opportunityId: string;
+  application: Application | null;
+  selectingQuoteId: string | null;
+  selectError: string | null;
   onStageChange: (stage: string) => void;
+  onSelectQuote: (quoteId: string) => void;
   onRetry: () => void;
 }) {
   if (detailLoad.kind === "loading") {
@@ -157,12 +202,22 @@ function OpportunityDetailBody({
         </p>
         <hr id="opportunity-detail-rule" className="oxford-double-rule" />
       </header>
+      {selectError && (
+        <p id="opportunity-detail-select-error" className="opportunity-detail-status" role="alert">
+          {selectError}
+        </p>
+      )}
+      {application && (
+        <ApplicationSummary id="opportunity-detail-application" application={application} />
+      )}
       <QuotePanel
         id="opportunity-detail-quotes"
         opportunityId={opportunityId}
         stage={currentStage}
         canRequest={canRequest}
         onOpportunityStageChange={onStageChange}
+        onSelectQuote={application ? undefined : onSelectQuote}
+        selectingQuoteId={selectingQuoteId}
       />
     </>
   );

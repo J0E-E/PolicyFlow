@@ -525,3 +525,30 @@ export interface QuoteRequestPoll {
   quotes: QuoteOption[];
   opportunity_stage: string;
 }
+
+/**
+ * A Draft (or later) insurance application (P2.3) — created by selecting an
+ * attached quote, with the carrier / product / coverage / premium copied from it.
+ */
+export interface Application {
+  /** Raw application UUID string. */
+  id: string;
+  /** The opportunity this application belongs to. */
+  opportunity_id: string;
+  /** The product-line key. */
+  product_line: string;
+  /** The quote this application was created from. */
+  selected_quote_id: string;
+  /** The lifecycle status (`Draft`, `Submitted`, …). */
+  status: string;
+  /** The carrier, copied from the selected quote. */
+  carrier: string;
+  /** The carrier's plan name, copied from the selected quote. */
+  product_label: string;
+  /** The coverage amount in whole dollars. */
+  coverage_amount: number;
+  /** The monthly premium in whole dollars. */
+  premium_monthly: number;
+  /** The annualized premium in whole dollars. */
+  premium_annual: number;
+}

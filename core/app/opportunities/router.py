@@ -28,7 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth.dependencies import require_authenticated, require_capability
 from ..auth.provider import Identity
 from ..auth.rbac import Capability
+from ..applications.service import select_quote
 from ..demo.session import current_demo_session
+from ..models.application import Application
 from ..models.contact import Contact
 from ..models.opportunity import Opportunity
 from ..models.quote import Quote
@@ -54,6 +56,12 @@ class ChangeStageRequest(BaseModel):
     """The stage-change request body — the canonical stage to move the card to."""
 
     target_stage: str
+
+
+class SelectQuoteRequest(BaseModel):
+    """The quote-selection request body — the attached quote to turn into an Application."""
+
+    quote_id: uuid.UUID
 
 
 async def _active_tenant_config(db: AsyncSession) -> TenantConfig:
@@ -519,3 +527,88 @@ async def get_quote_request(
         "quotes": [_quote_row(quote) for quote in quotes],
         "opportunity_stage": OpportunityStage(opportunity.stage).value,
     }
+
+
+def _application_row(application: Application) -> dict:
+    """Serialize one `Application` to the detail page's summary shape (non-PII).
+
+    Carries the frozen carrier / product / coverage / premium snapshot copied from
+    the selected quote plus the lifecycle `status`. The product-step, decision, and
+    Medicare fields are added by later epics as they populate them.
+    """
+    return {
+        "id": str(application.id),
+        "opportunity_id": str(application.opportunity_id),
+        "product_line": application.product_line,
+        "selected_quote_id": str(application.selected_quote_id),
+        "status": application.status,
+        "carrier": application.carrier,
+        "product_label": application.product_label,
+        "coverage_amount": application.coverage_amount,
+        "premium_monthly": application.premium_monthly,
+        "premium_annual": application.premium_annual,
+    }
+
+
+@router.post("/{opportunity_id}/applications")
+async def create_application(
+    opportunity_id: uuid.UUID,
+    selection: SelectQuoteRequest,
+    request: Request,
+    identity: Identity = Depends(require_capability(Capability.CREATE_EDIT_RECORDS)),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Select an attached quote — create a Draft Application, advance the opportunity.
+
+    Guards in the `change_stage` order: load / `404`, demo-session write-isolation
+    (foreign `404`, seed `409`), holder (owner or Tenant Admin) / `403`. The
+    opportunity must be at *Quoted* (selection follows the quotes attaching) — else
+    `409`. The chosen quote must belong to this opportunity — else `404`. On success
+    `select_quote` creates the `Draft` Application, sets the estimated annual
+    premium, advances the opportunity to *Application Started* via the internal
+    setter, and emits `application.started`; the new Application is returned under
+    `{"application": …}`.
+    """
+    opportunity = (
+        await db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
+    ).scalar_one_or_none()
+    if opportunity is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    demo_session_id = await _guard_opportunity_for_session(opportunity, request, db)
+
+    is_owner = opportunity.owner_user_id == identity.user_id
+    is_tenant_admin = identity.role == Role.TENANT_ADMIN
+    if not (is_owner or is_tenant_admin):
+        raise HTTPException(
+            status_code=403,
+            detail="only the opportunity's owner or a tenant admin can select a quote",
+        )
+
+    if OpportunityStage(opportunity.stage) != OpportunityStage.QUOTED:
+        raise HTTPException(
+            status_code=409,
+            detail="a quote can only be selected for a quoted opportunity",
+        )
+
+    quote = (
+        await db.execute(
+            select(Quote).where(
+                Quote.id == selection.quote_id,
+                Quote.opportunity_id == opportunity_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if quote is None:
+        raise HTTPException(status_code=404, detail="quote not found")
+
+    application = await select_quote(
+        db,
+        identity.tenant_id,
+        opportunity=opportunity,
+        quote=quote,
+        actor_user_id=identity.user_id,
+        actor_role=identity.role,
+        demo_session_id=demo_session_id,
+    )
+    return {"application": _application_row(application)}

@@ -18,6 +18,7 @@ import type {
   DemoSessionState,
   Identity,
   MaskedLead,
+  Application,
   OpportunityBoard,
   OpportunityRow,
   PublicIntakeRequest,
@@ -292,6 +293,25 @@ export function getQuoteRequest(
     "GET",
     `/api/opportunities/${opportunityId}/quote-requests/${quoteRequestId}`,
   );
+}
+
+/**
+ * Select an attached quote via `POST /api/opportunities/{id}/applications`,
+ * unwrapping the `{ application }` envelope into the new Draft Application. The
+ * opportunity advances to *Application Started* server-side. Throws an `ApiError`
+ * carrying the status for a refused selection — `404` (unknown opportunity/quote),
+ * `403` (not owner/admin), `409` (opportunity not Quoted).
+ */
+export async function selectQuote(
+  opportunityId: string,
+  quoteId: string,
+): Promise<Application> {
+  const responseBody = await request<{ application: Application }>(
+    "POST",
+    `/api/opportunities/${opportunityId}/applications`,
+    { quote_id: quoteId },
+  );
+  return responseBody.application;
 }
 
 /**

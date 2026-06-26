@@ -120,6 +120,45 @@ describe("QuotePanel", () => {
     expect(props.onOpportunityStageChange).toHaveBeenCalledWith("Quoted");
   });
 
+  it("renders a Select control per option when selection is enabled, and fires it", async () => {
+    requestQuotesMock.mockResolvedValue({
+      id: "qr-1",
+      opportunity_id: "opp-1",
+      status: "pending",
+      product_line: "final_expense",
+    });
+    getQuoteRequestMock.mockResolvedValue(makePoll({}));
+    const onSelectQuote = vi.fn();
+    renderPanel({ onSelectQuote });
+
+    fireEvent.click(document.getElementById("quotes-request")!);
+    await waitFor(() => {
+      expect(document.getElementById("quotes-list")).toBeInTheDocument();
+    });
+
+    const selectButton = document.getElementById("quotes-quote-quote-1-select");
+    expect(selectButton).toBeInTheDocument();
+    fireEvent.click(selectButton!);
+    expect(onSelectQuote).toHaveBeenCalledWith("quote-1");
+  });
+
+  it("omits the Select control when selection is not enabled", async () => {
+    requestQuotesMock.mockResolvedValue({
+      id: "qr-1",
+      opportunity_id: "opp-1",
+      status: "pending",
+      product_line: "final_expense",
+    });
+    getQuoteRequestMock.mockResolvedValue(makePoll({}));
+    renderPanel(); // no onSelectQuote
+
+    fireEvent.click(document.getElementById("quotes-request")!);
+    await waitFor(() => {
+      expect(document.getElementById("quotes-list")).toBeInTheDocument();
+    });
+    expect(document.getElementById("quotes-quote-quote-1-select")).not.toBeInTheDocument();
+  });
+
   it("keeps polling while the request is still pending, then renders on completion", async () => {
     vi.useFakeTimers();
     requestQuotesMock.mockResolvedValue({

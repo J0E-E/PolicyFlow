@@ -26,6 +26,13 @@ interface QuotePanelProperties {
   /** Fired with the opportunity's new stage when the round-trip completes (it moves
    *  to *Quoted* server-side), so the page reflects the move. */
   onOpportunityStageChange?: (stage: string) => void;
+  /** Fired when the caller selects one of the returned options to turn into an
+   *  Application. Absent (e.g. once an Application already exists) hides the Select
+   *  controls — the options then render read-only. */
+  onSelectQuote?: (quoteId: string) => void;
+  /** The id of the quote whose selection is in flight (its Select button spins), or
+   *  null when none is pending. */
+  selectingQuoteId?: string | null;
 }
 
 // What the round-trip is doing — each branch renders once inside the panel.
@@ -47,6 +54,8 @@ export default function QuotePanel({
   stage,
   canRequest,
   onOpportunityStageChange,
+  onSelectQuote,
+  selectingQuoteId,
 }: QuotePanelProperties) {
   const [roundTrip, setRoundTrip] = useState<RoundTripState>({ kind: "idle" });
 
@@ -132,6 +141,8 @@ export default function QuotePanel({
         canRequest={canRequest}
         roundTrip={roundTrip}
         onRequest={startRoundTrip}
+        onSelectQuote={onSelectQuote}
+        selectingQuoteId={selectingQuoteId ?? null}
       />
     </section>
   );
@@ -144,12 +155,16 @@ function QuotePanelBody({
   canRequest,
   roundTrip,
   onRequest,
+  onSelectQuote,
+  selectingQuoteId,
 }: {
   id: string;
   stage: string;
   canRequest: boolean;
   roundTrip: RoundTripState;
   onRequest: () => void;
+  onSelectQuote?: (quoteId: string) => void;
+  selectingQuoteId: string | null;
 }) {
   if (roundTrip.kind === "pending" || roundTrip.kind === "requesting") {
     return (
@@ -185,7 +200,13 @@ function QuotePanelBody({
     return (
       <ul id={`${id}-list`} className="quote-panel-list">
         {roundTrip.quotes.map((quote) => (
-          <QuoteOptionItem key={quote.id} id={`${id}-quote-${quote.id}`} quote={quote} />
+          <QuoteOptionItem
+            key={quote.id}
+            id={`${id}-quote-${quote.id}`}
+            quote={quote}
+            onSelectQuote={onSelectQuote}
+            isSelecting={selectingQuoteId === quote.id}
+          />
         ))}
       </ul>
     );
@@ -219,8 +240,19 @@ function QuotePanelBody({
   );
 }
 
-// One returned option — carrier, plan label, coverage, and monthly + annual premium.
-function QuoteOptionItem({ id, quote }: { id: string; quote: QuoteOption }) {
+// One returned option — carrier, plan label, coverage, monthly + annual premium,
+// and (when selectable) a Select control that turns it into a Draft Application.
+function QuoteOptionItem({
+  id,
+  quote,
+  onSelectQuote,
+  isSelecting,
+}: {
+  id: string;
+  quote: QuoteOption;
+  onSelectQuote?: (quoteId: string) => void;
+  isSelecting: boolean;
+}) {
   return (
     <li id={id} className="quote-option">
       <div id={`${id}-header`} className="quote-option-header">
@@ -237,6 +269,16 @@ function QuoteOptionItem({ id, quote }: { id: string; quote: QuoteOption }) {
       <p id={`${id}-premium`} className="quote-option-premium">
         {`$${quote.premium_monthly.toLocaleString()}/mo · $${quote.premium_annual.toLocaleString()}/yr`}
       </p>
+      {onSelectQuote && (
+        <Button
+          id={`${id}-select`}
+          variant="filled"
+          isPending={isSelecting}
+          onClick={() => onSelectQuote(quote.id)}
+        >
+          Select this quote
+        </Button>
+      )}
     </li>
   );
 }

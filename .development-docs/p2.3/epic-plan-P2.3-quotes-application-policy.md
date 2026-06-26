@@ -40,12 +40,15 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
 - **Depends on:** none.
 - **Implementation notes:** _none — pure static machine (`app/applications/state.py`: `ApplicationStatus`, `ALLOWED_TRANSITIONS`, `ACTIVE_STATUSES`={Draft,Submitted}, `TERMINAL_STATUSES`={Approved,Superseded}, `assert_transition`). Mirrors the lead machine (static, no tenant arg) since the application machine is tenant-independent. Consumed by Epic 5 (select→Draft), Epic 7 (submit/decision), Epic 10 (supersession)._
 
-## Epic 5 — Quote selection → Application (Draft) [UI]
+## Epic 5 — Quote selection → Application (Draft) [UI] — **COMPLETED** (18m34s)
 - **Goal:** Selecting an attached quote creates a `Draft` Application (carrier/product/coverage/premium copied from the quote), advances the opportunity to *Application Started*, and updates its estimated annual premium.
 - **Rough scope:** `applications` table (minimal columns) in migration 0016; the select endpoint; the **internal stage-setter** mechanism (writes the opportunity stage directly + emits, bypassing the manual machine) introduced here for the *Application Started* move; `application.started` emission; minimal UI to select a quote and see the Application created.
-- **Open questions / decisions for stakeholders:** none expected — selection + premium-update behavior locked (TDD §5.5/D6).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 3, Epic 4.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - _**Internal stage-setter** `opportunities/service.py::set_stage_internal` lands here (D6) — writes `opportunity.stage` directly + emits, bypassing `assert_transition` + the Medicare gate. The mechanism Epics 5–8 drive the **automation-owned** stages with; Epic 9's manual lockdown must stay **purely additive** to it._
+  - _**Migration moved to 0017** (the plan said "0016", but Epic 3 took 0016 for the quote tables). The `applications` table is created with the **full D5 column set** (beneficiary/health_answers/medicare_id_encrypted/decision/decided_at/superseded_by) so Epics 6/7/10/11 **populate** columns rather than each ALTER-ing. The partial-unique "one-active" index is **Epic 10's** deliverable, not here._
+  - _The select endpoint (`POST …/applications`) requires the opportunity at *Quoted* (409 otherwise). UI selection works within the live session right after the round-trip; reloading a *Quoted* opp to select later is not supported (no list-quote-requests-for-opportunity endpoint — the generalized read is P2.5), same limitation as Epic 3's quote reload._
 
 ## Epic 6 — Product-specific application step [UI]
 - **Goal:** Capture the product-specific step on a Draft application — beneficiary details or health questions, chosen by the product line — so the application carries what submission needs.
