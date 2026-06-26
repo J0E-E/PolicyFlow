@@ -549,6 +549,7 @@ ordered so the system stays runnable/deployable after each.
 > Opportunity/Quote/Application/Policy/Renewal Management) pin most behavior — the
 > decisions here settle **sequencing, decomposition, faking, and the open seams**.
 
+
 **Cross-cutting M2 decisions (apply to every phase):**
 
 - **Lean event-seam wiring.** M2 publishes every new domain event (the real seam M3/M4
@@ -598,7 +599,7 @@ ordered so the system stays runnable/deployable after each.
   conversion runs under the per-tenant role; events carry `tenant_id` + `demo_session_id`.
 - **Size:** M.
 
-#### P2.2 — Opportunity pipeline & product rules `[UI]`
+#### P2.2 — Opportunity pipeline & product rules `[UI]` COMPLETED
 
 - **Goal:** The canonical opportunity stage machine with per-tenant configuration, the
   Medicare eligibility gate, and pipeline value fields.
@@ -747,7 +748,7 @@ M1  P1.1 ✓ Auth/RBAC → P1.2 ✓ Tenant schemas → P1.3 ✓ Encryption → P
         → P1.5 ✓ Event bus+stubs → P1.6 ✓ Demo shell [UI]
         → P1.7 ✓ Intake/queue/qualify/dup [UI] → P1.8 ✓ Seed+sessions → P1.9 ✓ Timeline [UI]
         |
-M2  P2.1 Conversion → P2.2 Pipeline [UI] → P2.3 Quote→App→Policy [UI]
+M2  P2.1 ✓ Conversion → P2.2 ✓ Pipeline [UI] → P2.3 Quote→App→Policy [UI]
         → P2.4 Renewals+cross-sell [UI] → P2.5 Timeline/trace [UI]
         |
 M3  P3.1 CRM Sync → P3.2 Enrichment → P3.3 Carrier Quote
@@ -1113,3 +1114,39 @@ shared baseline), and renewal jobs **extend the P1.8 in-process scheduler**; (9)
 is stored on each entity and copied forward** at creation (an M2 invariant P2.1–P2.4 honor),
 with a **renewal starting a new linked `correlation_id`**. **Next move (unchanged):** run
 `2-requirements-to-tdd` on **P2.1 (Lead conversion)** to open it.
+
+**2026-06-26** — **P2.2 COMPLETE — the opportunity pipeline + product rules are in.** All 10
+epics shipped behind a green gate (full backend + frontend suites green on the real Postgres +
+RabbitMQ substrate), built simplest-first behind a tracer bullet: the pure, framework-free stage
+machine (`opportunities/state.py`: 8-stage vocabulary, forward spine, optional/anchor/terminal
+sets, `next_enabled_stage`/`allowed_targets`/`assert_transition` taking the tenant enabled set —
+Epic 1); the thinnest advance-one-stage thread end-to-end (board → endpoint → service → events →
+UI — 2); per-tenant **seed-driven config** on the frozen `TenantConfig` (`stage_labels` +
+`enabled_optional_stages`, `ProductLine.requires_medicare_age`) + the pure `resolve_pipeline`
+resolver, **zero migrations** (3); enabled-set **skip semantics** wired into the endpoint +
+stage-grouped, tenant-labeled board columns (4); the **Medicare eligibility gate** (pure
+`is_blocked_for_medicare`, blocks `→ Quoted` for an under-65 contact on a `requires_medicare_age`
+line with a distinct **422**, enrichment never consulted — 5); **Mark Lost** as a terminal move
+emitting both `opportunity.stage_changed` + `opportunity.lost` (6); **demo-session write
+isolation** (foreign session 404 / seed 409) + the enriched board read (value fields, contact
+name, owner, eligibility) scoped to seed ∪ session (7); the board split into
+`PipelineBoard`/`PipelineColumn`/`OpportunityCard`/`OpportunityValueFields` with the value fields
+(em-dash until P2.3), eligibility marker, gate explainer + a **Simulated** badge (8); a **seed
+nudge** so a Sunshine under-65 Medicare lead exists for a reliable scripted step-8 block (9); and
+the named acceptance suite (`test_opportunity_pipeline_acceptance.py` + a frontend board-flow
+acceptance block) proving the machine, gate, per-tenant config + Florida skip, isolation, and
+**both events on the outbox carrying `tenant_id` + `demo_session_id` + the forwarded
+`correlation_id`** end-to-end (10). The stage machine lives in its own explicit, testable module
+(not controllers/UI); stored stage stays the canonical English key (tenant labels are render-time
+overrides); the two tenants differ visibly (Sunshine runs both optional stages + Medicare
+relabels; Florida disables *Approved* — proving the skip — + its own relabels). Tenant-isolation /
+PII invariant held throughout (the gate reads the plaintext `age_band`, never decrypting DOB;
+event payloads carry references only). Epic plan:
+`./p2.2/epic-plan-P2.2-opportunity-pipeline-product-rules.md`. **Faked / deferred per plan:** the
+Medicare rule's **quote-request** application rides the same `is_blocked_for_medicare` helper in
+**P2.3** (no quote surface exists yet); value fields stay em-dash until **P2.3** populates them
+from the selected quote; pipeline-value sorting / value-by-stage → **M4**. Along the way fixed one
+**pre-existing test flake** (low-entropy `unique_contact` phones false-flagging the shared-DB
+duplicate matcher) and recorded a second intermittent one (the public-intake rate-limiter timing
+window) for future runs. **Next move:** **P2.3 (Quotes → Application → Policy `[UI]`)** — run
+`2-requirements-to-tdd` on the P2.3 sketch to open it.
