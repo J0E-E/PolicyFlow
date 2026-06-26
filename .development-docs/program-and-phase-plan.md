@@ -572,7 +572,7 @@ ordered so the system stays runnable/deployable after each.
 - **Sequencing:** hard-sequential P2.1 → P2.2 → P2.3 → P2.4 → P2.5; each builds on the
   prior phase's entities.
 
-#### P2.1 — Lead conversion
+#### P2.1 — Lead conversion COMPLETED
 
 - **Goal:** One-transaction conversion of a qualified Lead into Contact + Household + one
   Opportunity per product line of interest; Lead frozen `Converted`.

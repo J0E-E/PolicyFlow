@@ -25,6 +25,7 @@ first call in a session.
 The vault is a shared Docker stack; a down vault means "fall back to the code," not a blocker.
 <!-- /memory-vault tool binding -->
 
+
 <!-- code-review-graph tool binding -->
 ## Code navigation — code-review-graph
 
