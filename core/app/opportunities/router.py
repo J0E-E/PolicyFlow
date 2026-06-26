@@ -29,7 +29,7 @@ from ..auth.dependencies import require_authenticated, require_capability
 from ..auth.provider import Identity
 from ..auth.rbac import Capability
 from ..applications.read import serialize_application
-from ..applications.service import select_quote
+from ..applications.service import OneActiveApplicationError, select_quote
 from ..applications.steps import application_step_for
 from ..demo.session import current_demo_session
 from ..models.application import Application
@@ -593,15 +593,21 @@ async def create_application(
     if quote is None:
         raise HTTPException(status_code=404, detail="quote not found")
 
-    application = await select_quote(
-        db,
-        identity.tenant_id,
-        opportunity=opportunity,
-        quote=quote,
-        actor_user_id=identity.user_id,
-        actor_role=identity.role,
-        demo_session_id=demo_session_id,
-    )
+    try:
+        application = await select_quote(
+            db,
+            identity.tenant_id,
+            opportunity=opportunity,
+            quote=quote,
+            actor_user_id=identity.user_id,
+            actor_role=identity.role,
+            demo_session_id=demo_session_id,
+        )
+    except OneActiveApplicationError:
+        raise HTTPException(
+            status_code=409,
+            detail="this opportunity already has an active application",
+        )
     tenant_config = await _active_tenant_config(db)
     application_step = application_step_for(opportunity.product_line, tenant_config)
     return {"application": serialize_application(application, application_step)}

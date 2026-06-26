@@ -88,12 +88,15 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
   - _`AUTOMATION_OWNED_STAGES` + `AutomationOwnedStageError` in `opportunities/state.py`. The **manual** `change_opportunity_stage` rejects an automation-owned target **after** `assert_transition` (so an illegal move stays **409**, only a *legal* move into a lifecycle-driven stage is the **422**); `set_stage_internal` (the automation path) bypasses it. The board row gained `can_advance` (false when `next_stage` is automation-owned); `OpportunityCard` suppresses Advance accordingly._
   - _**Migrated the P2.2 tests (R2)** broken by the lockdown: `test_machine_walks_the_full_enabled_spine` → walks the manual spine (→Quoted) then asserts *Application Started* 422s; `test_florida_submitted_skips...` / `test_sunshine_submitted...` / `test_florida_board_config_and_approved_skip` → legal manual advances into automation-owned stages now assert 422 + `can_advance` false. FE test row-helpers gained `can_advance`._
 
-## Epic 10 — Decline → supersession [UI]
+## Epic 10 — Decline → supersession [UI] — **COMPLETED** (19m47s)
 - **Goal:** A declined application is retained read-only and returns the opportunity to *Quoted* (else *Qualified*); selecting a different attached quote creates a fresh Draft and marks the prior declined application Superseded — with one active application per opportunity enforced.
 - **Rough scope:** Decline-path opportunity return; supersession on re-selection (`Declined → Superseded`, link the superseding application); service-level one-active enforcement plus the partial unique index backstop; the UI for re-selecting after a decline.
-- **Open questions / decisions for stakeholders:** none expected — supersession + return-target rules locked (TDD §5.5/D11/C3).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 7 (decline path), Epic 8 (issuance reused on re-approval).
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - _**Migration 0019** — partial unique index `(opportunity_id) WHERE status IN ('Draft','Submitted')` (one-active backstop, C5). **Gotcha:** alembic revision ids must be ≤32 chars (`alembic_version.version_num` is `varchar(32)`) — the first id was 33 chars and failed `upgrade head` at test setup; shortened to `0019_one_active_index`._
+  - _`select_quote` now enforces **one active** (`OneActiveApplicationError` → 409) and **supersedes** any `Declined` application on re-selection (`Declined → Superseded` + `superseded_by_application_id`). `submit_application`'s decline branch returns the opportunity to `decline_return_stage` (*Quoted* if enabled else *Qualified*) via `set_stage_internal` (a backward move) — so the Epic 7 decline test was updated (opp now → *Quoted*)._
+  - _FE: the detail page re-enables quote **Select** when the application is `null` **or** `Declined`, and clears the policy view on re-select. (The deny-contact thread keeps declining on re-submit — re-approval reuses Epic 8's issuance for a non-deny contact; the full end-to-end re-approval is Epic 14's acceptance.)_
 
 ## Epic 11 — Medicare ID (Tenant-1) [UI]
 - **Goal:** For Tenant 1, the agent enters a Medicare ID during the application step; it is encrypted at rest, masked by default on Application and Policy reads, and revealed only through an audited capability-gated endpoint. Tenant 2 never sees the field.

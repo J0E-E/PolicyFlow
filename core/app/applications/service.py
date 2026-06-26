@@ -19,6 +19,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..events.catalog import EventType
@@ -47,6 +48,22 @@ DECISION_DECLINED = "declined"
 DECLINE_EMAIL_MARKER = "deny"
 
 
+class OneActiveApplicationError(Exception):
+    """Raised when a second *active* application is attempted for one opportunity (C5).
+
+    An opportunity may carry any number of `Declined` / `Superseded` history rows but
+    only one `Draft` / `Submitted` application at a time. Framework-free on purpose —
+    the select endpoint maps it to HTTP 409. The DB's partial unique index
+    (migration 0019) is the backstop behind this service-level check.
+    """
+
+    def __init__(self, opportunity_id: uuid.UUID) -> None:
+        self.opportunity_id = opportunity_id
+        super().__init__(
+            f"opportunity {opportunity_id} already has an active application"
+        )
+
+
 async def select_quote(
     db: AsyncSession,
     tenant_id: uuid.UUID,
@@ -64,7 +81,26 @@ async def select_quote(
     annual premium, advances the opportunity to *Application Started* through the
     internal stage-setter, and emits `application.started` — all on the request
     transaction. Returns the new, flushed `Application`.
+
+    Enforces **one active application per opportunity** (C5): a second `Draft` /
+    `Submitted` application raises `OneActiveApplicationError`. On a re-selection
+    after a decline it **supersedes** the prior declined application(s) — `Declined →
+    Superseded`, linked to the new one (D11) — so the decline thread retains its
+    history read-only while the fresh attempt proceeds.
     """
+    existing_active = (
+        await db.execute(
+            select(Application).where(
+                Application.opportunity_id == opportunity.id,
+                Application.status.in_(
+                    [ApplicationStatus.DRAFT.value, ApplicationStatus.SUBMITTED.value]
+                ),
+            )
+        )
+    ).scalars().first()
+    if existing_active is not None:
+        raise OneActiveApplicationError(opportunity.id)
+
     application = Application(
         id=uuid.uuid4(),
         opportunity_id=opportunity.id,
@@ -82,6 +118,22 @@ async def select_quote(
     )
     db.add(application)
     await db.flush()
+
+    # Supersession (D11): a re-selection after a decline retires the prior declined
+    # application(s) — `Declined → Superseded`, linked to the new Draft — so the
+    # declined attempt is kept as read-only history, not a competing active row.
+    declined_applications = (
+        await db.execute(
+            select(Application).where(
+                Application.opportunity_id == opportunity.id,
+                Application.status == ApplicationStatus.DECLINED.value,
+            )
+        )
+    ).scalars().all()
+    for declined in declined_applications:
+        assert_transition(ApplicationStatus.DECLINED, ApplicationStatus.SUPERSEDED)
+        declined.status = ApplicationStatus.SUPERSEDED.value
+        declined.superseded_by_application_id = application.id
 
     # The selection sets the opportunity's headline value (BRD §6.2) — the quote's
     # annual premium, as the opportunity's `Numeric` estimated premium.
@@ -185,6 +237,7 @@ async def submit_application(
     opportunity: Opportunity,
     contact: Contact,
     policy_prefix: str,
+    decline_return_stage: OpportunityStage,
     actor_user_id: uuid.UUID | None,
     actor_role: Role | None,
     demo_session_id: uuid.UUID | None,
@@ -202,9 +255,11 @@ async def submit_application(
     opportunity to *Approved* via the setter, then **auto-issue the policy** (D8):
     `issue_policy` creates the policy, emits `policy.created`, and advances the
     opportunity to *Policy Active*. On **decline**: `Submitted → Declined`, emit
-    `application.declined` (the opportunity-return + supersession are Epic 10). All on
-    the request transaction. Returns `(application, policy)` — the policy is `None` on
-    a decline.
+    `application.declined`, and **return the opportunity** to `decline_return_stage`
+    (*Quoted* when enabled, else *Qualified* — D11/C3) via the setter, so the agent
+    can re-select a different attached quote (the supersession is handled by the next
+    selection). All on the request transaction. Returns `(application, policy)` — the
+    policy is `None` on a decline.
     """
     assert_transition(ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED)
     application.status = ApplicationStatus.SUBMITTED.value
@@ -247,6 +302,17 @@ async def submit_application(
             tenant_id=tenant_id,
             application=application,
             opportunity=opportunity,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            demo_session_id=demo_session_id,
+        )
+        # Return the opportunity to a re-selectable stage (D11): a backward move the
+        # manual machine forbids, driven here by the internal setter.
+        await set_stage_internal(
+            db,
+            tenant_id,
+            opportunity=opportunity,
+            target_stage=decline_return_stage,
             actor_user_id=actor_user_id,
             actor_role=actor_role,
             demo_session_id=demo_session_id,

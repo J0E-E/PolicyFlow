@@ -27,6 +27,8 @@ from ..models.application import Application
 from ..models.contact import Contact
 from ..models.opportunity import Opportunity
 from ..models.user import Role
+from ..opportunities.pipeline import enabled_stages_for
+from ..opportunities.state import OpportunityStage
 from ..policies.read import serialize_policy
 from ..tenancy.registry import TenantConfig, tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
@@ -263,6 +265,14 @@ async def submit(
     # The policy number's tenant prefix is the first three letters of the schema name
     # (e.g. `sunshine` → `SUN`, `florida` → `FLO`) — a stable per-tenant token.
     policy_prefix = tenant_config.schema_name[:3].upper()
+    # On a decline the opportunity returns to *Quoted* when the tenant enables it,
+    # else *Qualified* (D11/C3) — so the agent can re-select a different quote.
+    enabled_stages = enabled_stages_for(tenant_config)
+    decline_return_stage = (
+        OpportunityStage.QUOTED
+        if OpportunityStage.QUOTED in enabled_stages
+        else OpportunityStage.QUALIFIED
+    )
     try:
         _, policy = await submit_application(
             db,
@@ -271,6 +281,7 @@ async def submit(
             opportunity=opportunity,
             contact=contact,
             policy_prefix=policy_prefix,
+            decline_return_stage=decline_return_stage,
             actor_user_id=identity.user_id,
             actor_role=identity.role,
             demo_session_id=demo_session_id,

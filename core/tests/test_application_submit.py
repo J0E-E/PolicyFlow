@@ -168,8 +168,9 @@ async def test_submit_declines_when_the_contact_email_contains_deny(
     body = response.json()
     assert body["application"]["status"] == "Declined"
     assert body["application"]["decision"] == "declined"
-    # The decline does not advance the opportunity (Epic 10 returns it to Quoted).
-    assert body["opportunity_stage"] == "Submitted"
+    # The decline returns the opportunity to Quoted so a different quote can be
+    # re-selected (D11); both demo tenants enable Quoted.
+    assert body["opportunity_stage"] == "Quoted"
     # No policy is issued on a decline.
     assert body["policy"] is None
     # The decrypted email is never echoed back in the response.

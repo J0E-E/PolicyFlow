@@ -282,4 +282,75 @@ describe("OpportunityDetailPage", () => {
     ).toBe("POL-SUN-2026-ABCDEF");
     expect(submitApplicationMock).toHaveBeenCalledWith("app-1");
   });
+
+  it("re-enables quote selection after a decline", async () => {
+    getOpportunityBoardMock.mockResolvedValue(makeBoard([makeRow({})]));
+    requestQuotesMock.mockResolvedValue({
+      id: "qr-1",
+      opportunity_id: "opp-1",
+      status: "pending",
+      product_line: "final_expense",
+    });
+    getQuoteRequestMock.mockResolvedValue({
+      quote_request: { id: "qr-1", opportunity_id: "opp-1", status: "completed", product_line: "final_expense" },
+      quotes: [
+        {
+          id: "quote-1",
+          carrier: "Humana",
+          product_label: "Gold Plus HMO",
+          coverage_amount: 7500,
+          premium_monthly: 29,
+          premium_annual: 348,
+        },
+      ],
+      opportunity_stage: "Quoted",
+    });
+    const draft = {
+      id: "app-1",
+      opportunity_id: "opp-1",
+      product_line: "final_expense",
+      selected_quote_id: "quote-1",
+      status: "Draft",
+      carrier: "Humana",
+      product_label: "Gold Plus HMO",
+      coverage_amount: 7500,
+      premium_monthly: 29,
+      premium_annual: 348,
+      application_step: null,
+      beneficiary: null,
+      health_answers: null,
+      decision: null,
+      decided_at: null,
+    };
+    selectQuoteMock.mockResolvedValue(draft);
+    submitApplicationMock.mockResolvedValue({
+      application: { ...draft, status: "Declined", decision: "declined", decided_at: "2026-06-26T00:00:00Z" },
+      opportunity_stage: "Quoted",
+      policy: null,
+    });
+    renderAt("opp-1");
+
+    await waitFor(() => {
+      expect(document.getElementById("opportunity-detail-quotes-request")).toBeInTheDocument();
+    });
+    fireEvent.click(document.getElementById("opportunity-detail-quotes-request")!);
+    await waitFor(() => {
+      expect(document.getElementById("opportunity-detail-quotes-quote-quote-1-select")).toBeInTheDocument();
+    });
+    fireEvent.click(document.getElementById("opportunity-detail-quotes-quote-quote-1-select")!);
+    await waitFor(() => {
+      expect(document.getElementById("opportunity-detail-submit")).toBeInTheDocument();
+    });
+    fireEvent.click(document.getElementById("opportunity-detail-submit")!);
+
+    // After the decline the application shows Declined and Select re-appears.
+    await waitFor(() => {
+      expect(
+        document.getElementById("opportunity-detail-application-status")!.textContent,
+      ).toBe("Declined");
+    });
+    expect(
+      document.getElementById("opportunity-detail-quotes-quote-quote-1-select"),
+    ).toBeInTheDocument();
+  });
 });

@@ -108,6 +108,9 @@ export default function OpportunityDetailPage() {
       .then((created) => {
         setApplication(created);
         setStage("Application Started");
+        // A re-selection after a decline starts a fresh attempt — drop any prior
+        // issued policy from view.
+        setPolicy(null);
         setSelectingQuoteId(null);
       })
       .catch((error: unknown) => {
@@ -310,7 +313,11 @@ function OpportunityDetailBody({
         stage={currentStage}
         canRequest={canRequest}
         onOpportunityStageChange={onStageChange}
-        onSelectQuote={application ? undefined : onSelectQuote}
+        onSelectQuote={
+          application === null || application.status === "Declined"
+            ? onSelectQuote
+            : undefined
+        }
         selectingQuoteId={selectingQuoteId}
       />
     </>
