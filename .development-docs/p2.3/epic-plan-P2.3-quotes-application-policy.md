@@ -22,12 +22,16 @@ Source TDD: [./tdd-P2.3-quotes-application-policy.md](./tdd-P2.3-quotes-applicat
 - **Depends on:** none.
 - **Implementation notes:** _none — pure registry data. `QuoteOptionTemplate` (with derived `premium_annual` property) + `ProductLine.{application_step,quote_options}` + `TenantConfig.{carriers,collects_medicare_id}` consumed by Epic 3 (stub reads `quote_options`), Epic 6 (`application_step`), Epic 11 (`collects_medicare_id`)._
 
-## Epic 3 — Quote round-trip tracer [UI]
+## Epic 3 — Quote round-trip tracer [UI] — **COMPLETED** (34m00s)
 - **Goal:** The thinnest customer-visible end-to-end slice: from a *Qualified* opportunity an agent requests quotes, watches the broker round-trip go pending → completed, and sees the canned options attach — moving the opportunity to *Quoted*.
 - **Rough scope:** Migration 0016 for `quote_requests` + `quotes` (with grants); the new **non-terminal** `carrier.quote` consumer (parallel consume path running own-session as the tenant role, registry-driven option generation, `quote_request_id` dedupe, emits `quote.completed`); the request + poll endpoints; opportunity → *Quoted* on first completion; minimal agent-workspace UI (request control, polling status, quote list) reusing the P1.9 poll idiom.
-- **Open questions / decisions for stakeholders:** none expected — the round-trip mechanics, role choice, and dedupe are locked (TDD §5.4 / D2 / D2b / C1).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 1, Epic 2.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - _New `app/quotes/` service (`request_quotes` + `complete_quote_request`) + `QuoteRequest`/`Quote` ORM models + migration 0016 land here; Epics 5/7/8 extend the service and add the applications/policies tables in follow-on migrations._
+  - _The agent-workspace **opportunity detail page** (`/app/opportunities/:id`, reuses the board fetch — no single-opportunity GET endpoint) is introduced here; Epics 5/6/7/8/11 extend this same page._
+  - _**DEVIATION from TDD §5.4.4:** the opportunity → *Quoted* move rides the **`carrier.quote` consumer's** completing transaction, not the poll endpoint — this keeps the GET poll a pure read so a Read-Only viewer polling never triggers a mutation (resolving the §5.9 "Read-Only, no actions" tension). The consumer advances *Qualified → Quoted* directly (a normal forward stage, gate already cleared at request); Epic 5 formalizes this as the internal stage-setter for the automation-owned stages._
+  - _The `POST …/quote-requests` endpoint requires the opportunity at *Qualified* (409 otherwise) — the coherent round-trip precondition; re-quote from later stages is deferred (D11)._
 
 ## Epic 4 — Application state machine
 - **Goal:** The pure, framework-free application lifecycle machine — the single source of truth for valid status transitions — landed and tested before any code creates an application.

@@ -8,6 +8,7 @@
 // succeeds.
 
 import { fireEvent, render, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import OpportunityPipelinePage from "./OpportunityPipelinePage.tsx";
@@ -73,7 +74,11 @@ afterEach(() => {
 });
 
 function renderPage() {
-  const utils = render(<OpportunityPipelinePage />);
+  const utils = render(
+    <MemoryRouter>
+      <OpportunityPipelinePage />
+    </MemoryRouter>,
+  );
   const getById = (id: string): HTMLElement => {
     const element = utils.container.ownerDocument.getElementById(id);
     if (element === null) {

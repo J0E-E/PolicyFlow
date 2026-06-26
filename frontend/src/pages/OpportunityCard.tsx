@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import Button from "../components/Button.tsx";
 import Card from "../components/Card.tsx";
 import StampTag from "../components/StampTag.tsx";
@@ -82,6 +83,15 @@ export default function OpportunityCard({
       />
       <p id={`${id}-owner`} className="opportunity-card-owner">
         {`Owner: ${opportunity.owner_username ?? EM_DASH}`}
+      </p>
+      <p id={`${id}-open-row`} className="opportunity-card-open-row">
+        <Link
+          id={`opportunity-open-${opportunity.id}`}
+          to={`/app/opportunities/${opportunity.id}`}
+          className="opportunity-card-open"
+        >
+          Open opportunity →
+        </Link>
       </p>
       {opportunity.eligibility.medicare_gated && (
         <div

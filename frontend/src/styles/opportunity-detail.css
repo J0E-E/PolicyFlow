@@ -1,0 +1,178 @@
+/*
+ * Opportunity detail (P2.3 Epic 3) — the `/app/opportunities/:id` view: an
+ * opportunity header (contact / product line / stage) plus the carrier-quote
+ * round-trip panel. Lives INSIDE the AppShell chrome, so it carries its own Guide
+ * §5 page header (Besley headline + Oxford double rule), like the board and the
+ * leads list. Tokens only; no raw hex or spacing (Guide §2, §4). Later P2.3 epics
+ * add selection / the application step / submit / the policy view to this page.
+ */
+
+/* ---- Page + back link ---- */
+
+.opportunity-detail-page {
+  max-width: 720px;
+}
+
+.opportunity-detail-back-row {
+  margin: 0 0 var(--space-3);
+}
+
+.opportunity-detail-back {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface-variant);
+}
+
+/* ---- Guide §5 page header ---- */
+
+.opportunity-detail-header {
+  margin: 0 0 var(--space-5);
+}
+
+.opportunity-detail-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 32px;
+  color: var(--on-surface);
+}
+
+.opportunity-detail-product-line {
+  margin: var(--space-1) 0 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.opportunity-detail-stage {
+  margin: var(--space-1) 0 var(--space-3);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface-variant);
+}
+
+/* ---- Status / loading / error lines ---- */
+
+.opportunity-detail-status {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
+
+.opportunity-detail-error-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.opportunity-detail-retry {
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--primary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ---- The board card's "Open opportunity" link ---- */
+
+.opportunity-card-open-row {
+  margin: var(--space-2) 0 0;
+}
+
+.opportunity-card-open {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+/* ---- Carrier-quote round-trip panel ---- */
+
+.quote-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.quote-panel-heading {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.quote-panel-note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface-variant);
+}
+
+.quote-panel-request-row,
+.quote-panel-error-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+/* The returned options, a stacked card list. */
+.quote-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quote-option {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  background-color: var(--surface-2);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-1);
+}
+
+.quote-option-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.quote-option-carrier {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.quote-option-label {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface);
+}
+
+.quote-option-premium {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-surface-variant);
+}

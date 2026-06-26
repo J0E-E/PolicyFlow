@@ -3,6 +3,7 @@
 // the Lost lane shown only when there are Lost cards, and an empty-column marker.
 
 import { render } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import PipelineBoard from "./PipelineBoard.tsx";
@@ -41,13 +42,15 @@ function renderBoard(opportunities: OpportunityRow[]) {
     opportunities,
   };
   const utils = render(
-    <PipelineBoard
-      board={board}
-      canAdvance={true}
-      changingId={null}
-      onAdvance={vi.fn()}
-      onMarkLost={vi.fn()}
-    />,
+    <MemoryRouter>
+      <PipelineBoard
+        board={board}
+        canAdvance={true}
+        changingId={null}
+        onAdvance={vi.fn()}
+        onMarkLost={vi.fn()}
+      />
+    </MemoryRouter>,
   );
   const getById = (id: string): HTMLElement => {
     const element = utils.container.ownerDocument.getElementById(id);

@@ -4,6 +4,7 @@
 // capability, calling the handlers).
 
 import { fireEvent, render } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import OpportunityCard from "./OpportunityCard.tsx";
@@ -38,7 +39,11 @@ function renderCard(opportunity: OpportunityRow, overrides = {}) {
     labelForStage: (key: string) => (key === "Quoted" ? "Proposal Sent" : key),
     ...overrides,
   };
-  const utils = render(<OpportunityCard opportunity={opportunity} {...props} />);
+  const utils = render(
+    <MemoryRouter>
+      <OpportunityCard opportunity={opportunity} {...props} />
+    </MemoryRouter>,
+  );
   const getById = (id: string): HTMLElement => {
     const element = utils.container.ownerDocument.getElementById(id);
     if (element === null) {

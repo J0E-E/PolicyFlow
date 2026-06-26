@@ -53,15 +53,17 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 
 from app.db import session_factory
-from app.events.catalog import ENRICHMENT_STUB, SYNC_LOGGER
+from app.events.catalog import CARRIER_QUOTE, ENRICHMENT_STUB, SYNC_LOGGER
 from app.events.enrichment import enrichment_result_summary
 from app.events.envelope import EventEnvelope, from_message_body
 from app.models.processed_event import ProcessedEvent
+from app.quotes.service import complete_quote_request
 from app.tenancy.registry import EVENT_CONSUMER_ROLE, is_known_schema
 
 __all__ = [
     "CONSUMER_HANDLERS",
     "UnknownEventTenant",
+    "handle_carrier_quote",
     "handle_enrichment",
     "handle_sync_logger",
 ]
@@ -117,6 +119,32 @@ async def handle_sync_logger(message) -> None:
     await _consume(message, SYNC_LOGGER, _run_sync_logger_effect, _no_summary)
 
 
+async def handle_carrier_quote(message) -> None:
+    """Consume one `quote.requested` — generate options, complete the request, ack.
+
+    The **non-terminal** `carrier.quote` consumer (TDD §5.4 / D2b). Unlike the two
+    terminal stubs it cannot delegate to `_consume`: its effect writes domain rows
+    **and** enqueues a `quote.completed` event as the **tenant** `db_role`, not the
+    `event_consumer` role, so it owns its own parse/ack/dead-letter wrapper around
+    the `app.quotes.service` effect. The effect dedupes on the request status
+    (idempotent on redelivery), so this handler just routes the tenant schema in and
+    acks — or **nacks without requeue** on any failure, dead-lettering the message
+    exactly like the terminal core (a redelivery that will only fail again is not
+    re-queued).
+    """
+    try:
+        envelope = from_message_body(message.body)
+        schema_name = await _get_tenant_schema(envelope.tenant_id)
+        await complete_quote_request(envelope, schema_name)
+        await message.ack()
+    except Exception:
+        logger.exception(
+            "consumer %s failed to process a message; dead-lettering it",
+            CARRIER_QUOTE,
+        )
+        await message.nack(requeue=False)
+
+
 # The consumer registry — each queue name paired with the handler that reads it.
 # Epic 7's lifespan loops this to register one consumer per stub, so the set of
 # consumers lives in **one** place next to the handlers rather than being
@@ -125,6 +153,7 @@ async def handle_sync_logger(message) -> None:
 # consumer list can never drift from the handlers defined here.
 CONSUMER_HANDLERS = (
     (ENRICHMENT_STUB, handle_enrichment),
+    (CARRIER_QUOTE, handle_carrier_quote),
     (SYNC_LOGGER, handle_sync_logger),
 )
 

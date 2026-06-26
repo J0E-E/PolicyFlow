@@ -21,6 +21,8 @@ import type {
   OpportunityBoard,
   OpportunityRow,
   PublicIntakeRequest,
+  QuoteRequestPoll,
+  QuoteRequestSummary,
   PublicIntakeResult,
   RejectLeadRequest,
   ResolveDuplicateRequest,
@@ -257,6 +259,39 @@ export async function changeOpportunityStage(
     { target_stage: targetStage },
   );
   return responseBody.opportunity;
+}
+
+/**
+ * Open a carrier-quote round-trip via `POST /api/opportunities/{id}/quote-requests`,
+ * unwrapping the `{ quote_request }` envelope into the new `pending` request. The
+ * caller then polls it with `getQuoteRequest`. Throws an `ApiError` carrying the
+ * status for a refused request — `404` (unknown), `403` (not owner/admin), `409`
+ * (not a qualified opportunity), `422` (Medicare-gated under-65).
+ */
+export async function requestQuotes(
+  opportunityId: string,
+): Promise<QuoteRequestSummary> {
+  const responseBody = await request<{ quote_request: QuoteRequestSummary }>(
+    "POST",
+    `/api/opportunities/${opportunityId}/quote-requests`,
+  );
+  return responseBody.quote_request;
+}
+
+/**
+ * Poll one quote round-trip via `GET /api/opportunities/{id}/quote-requests/{rid}`.
+ * A pure read: the `quotes` array is empty until the request is `completed`, then
+ * carries the attached options, and `opportunity_stage` reflects the *Quoted* move.
+ * Throws an `ApiError` with `status` `404` for an unknown / cross-session request.
+ */
+export function getQuoteRequest(
+  opportunityId: string,
+  quoteRequestId: string,
+): Promise<QuoteRequestPoll> {
+  return request<QuoteRequestPoll>(
+    "GET",
+    `/api/opportunities/${opportunityId}/quote-requests/${quoteRequestId}`,
+  );
 }
 
 /**

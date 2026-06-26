@@ -89,6 +89,10 @@ def include_object(object_, name, type_, reflected, compare_to) -> bool:
         "contacts",
         "opportunities",
         "tasks",
+        # P2.3 carrier-quote round-trip twins — physical tables land in 0016, the
+        # ORM models alongside; excluded so neither surfaces as phantom drift.
+        "quote_requests",
+        "quotes",
     }:
         return False
     if (

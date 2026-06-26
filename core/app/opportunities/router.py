@@ -31,10 +31,13 @@ from ..auth.rbac import Capability
 from ..demo.session import current_demo_session
 from ..models.contact import Contact
 from ..models.opportunity import Opportunity
+from ..models.quote import Quote
+from ..models.quote_request import QuoteRequest
 from ..models.user import Role
+from ..quotes.service import STATUS_COMPLETED, request_quotes
 from ..tenancy.registry import ProductLine, TenantConfig, tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
-from .eligibility import ELIGIBLE_AGE_BAND, MedicareEligibilityError
+from .eligibility import ELIGIBLE_AGE_BAND, MedicareEligibilityError, is_blocked_for_medicare
 from .pipeline import enabled_stages_for, resolve_pipeline
 from .service import change_opportunity_stage
 from .state import (
@@ -332,4 +335,187 @@ async def change_stage(
         "opportunity": _opportunity_row(
             opportunity, contact, product_line, enabled_stages
         )
+    }
+
+
+def _quote_request_row(quote_request: QuoteRequest) -> dict:
+    """Serialize one `QuoteRequest` to the round-trip's pollable shape.
+
+    The `status` (`pending` → `completed`) is the column the agent polls; the `id`
+    is what the poll endpoint is keyed by. Non-PII throughout.
+    """
+    return {
+        "id": str(quote_request.id),
+        "opportunity_id": str(quote_request.opportunity_id),
+        "status": quote_request.status,
+        "product_line": quote_request.product_line,
+    }
+
+
+def _quote_row(quote: Quote) -> dict:
+    """Serialize one returned `Quote` option for the quote list (non-PII)."""
+    return {
+        "id": str(quote.id),
+        "carrier": quote.carrier,
+        "product_label": quote.product_label,
+        "coverage_amount": quote.coverage_amount,
+        "premium_monthly": quote.premium_monthly,
+        "premium_annual": quote.premium_annual,
+    }
+
+
+async def _product_line_for(
+    opportunity: Opportunity, tenant_config: TenantConfig
+) -> ProductLine:
+    """Resolve the opportunity's `ProductLine` from the tenant registry, or 409.
+
+    The registry is the source of truth for the product line the quote stub reads
+    its options by and the Medicare gate flags on. A missing line is corrupt data,
+    so it is a `409` naming the key (the `change_stage` precedent).
+    """
+    product_line = next(
+        (
+            line
+            for line in tenant_config.product_lines
+            if line.key == opportunity.product_line
+        ),
+        None,
+    )
+    if product_line is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"unknown product line: {opportunity.product_line}",
+        )
+    return product_line
+
+
+@router.post("/{opportunity_id}/quote-requests")
+async def create_quote_request(
+    opportunity_id: uuid.UUID,
+    request: Request,
+    identity: Identity = Depends(require_capability(Capability.CREATE_EDIT_RECORDS)),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Open a carrier-quote round-trip for one *Qualified* opportunity.
+
+    Guards in the `change_stage` order: load / `404`, demo-session write-isolation
+    (foreign `404`, seed `409`), holder (owner or Tenant Admin) / `403`. The
+    opportunity must be at *Qualified* — the coherent precondition for requesting
+    quotes — else `409`. The Medicare gate is **re-checked** here (BRD §7): a
+    `requires_medicare_age` line for an under-65 contact is a `422` before any write.
+    On success `request_quotes` writes the `pending` row and enqueues
+    `quote.requested` on the request transaction; the new request is returned under
+    `{"quote_request": …}`.
+    """
+    opportunity = (
+        await db.execute(select(Opportunity).where(Opportunity.id == opportunity_id))
+    ).scalar_one_or_none()
+    if opportunity is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    demo_session_id = await _guard_opportunity_for_session(opportunity, request, db)
+
+    is_owner = opportunity.owner_user_id == identity.user_id
+    is_tenant_admin = identity.role == Role.TENANT_ADMIN
+    if not (is_owner or is_tenant_admin):
+        raise HTTPException(
+            status_code=403,
+            detail="only the opportunity's owner or a tenant admin can request quotes",
+        )
+
+    if OpportunityStage(opportunity.stage) != OpportunityStage.QUALIFIED:
+        raise HTTPException(
+            status_code=409,
+            detail="quotes can only be requested for a qualified opportunity",
+        )
+
+    tenant_config = await _active_tenant_config(db)
+    product_line = await _product_line_for(opportunity, tenant_config)
+
+    # The contact's plaintext age band is the Medicare gate's age signal (no
+    # decryption), re-checked here so a blocked line never opens a round-trip.
+    contact = (
+        await db.execute(select(Contact).where(Contact.id == opportunity.contact_id))
+    ).scalar_one_or_none()
+    age_band = contact.age_band if contact is not None else None
+    if is_blocked_for_medicare(product_line, age_band):
+        raise HTTPException(
+            status_code=422, detail=str(MedicareEligibilityError(product_line.key, age_band))
+        )
+
+    quote_request = await request_quotes(
+        db,
+        identity.tenant_id,
+        opportunity_id=opportunity.id,
+        product_line=opportunity.product_line,
+        correlation_id=opportunity.correlation_id,
+        actor_user_id=identity.user_id,
+        actor_role=identity.role,
+        demo_session_id=demo_session_id,
+    )
+    return {"quote_request": _quote_request_row(quote_request)}
+
+
+@router.get("/{opportunity_id}/quote-requests/{quote_request_id}")
+async def get_quote_request(
+    opportunity_id: uuid.UUID,
+    quote_request_id: uuid.UUID,
+    request: Request,
+    identity: Identity = Depends(require_authenticated),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Poll one quote round-trip — its `status` and, once `completed`, its options.
+
+    A **pure read** any authenticated tenant user may poll (Read-Only included): the
+    *Quoted* stage move rides the consumer's completing transaction, not this
+    endpoint, so polling never mutates. Scoped to the seed baseline ∪ the caller's
+    demo session — an opportunity or request owned by another session is a `404`. The
+    `quotes` list is empty until the request is `completed`, then carries the
+    attached options. The opportunity's current `stage` is returned so the client can
+    reflect the *Quoted* move without a second call.
+    """
+    demo_session = await current_demo_session(request, db)
+    demo_session_id = demo_session.id if demo_session is not None else None
+
+    opportunity = (
+        await db.execute(
+            _scope_to_session(
+                select(Opportunity).where(Opportunity.id == opportunity_id),
+                demo_session_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if opportunity is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    quote_request = (
+        await db.execute(
+            select(QuoteRequest).where(
+                QuoteRequest.id == quote_request_id,
+                QuoteRequest.opportunity_id == opportunity_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if quote_request is None or (
+        quote_request.demo_session_id is not None
+        and quote_request.demo_session_id != demo_session_id
+    ):
+        raise HTTPException(status_code=404, detail="quote request not found")
+
+    quotes: list[Quote] = []
+    if quote_request.status == STATUS_COMPLETED:
+        quotes = list(
+            (
+                await db.execute(
+                    select(Quote)
+                    .where(Quote.quote_request_id == quote_request_id)
+                    .order_by(Quote.created_at, Quote.id)
+                )
+            ).scalars().all()
+        )
+
+    return {
+        "quote_request": _quote_request_row(quote_request),
+        "quotes": [_quote_row(quote) for quote in quotes],
+        "opportunity_stage": OpportunityStage(opportunity.stage).value,
     }

@@ -8,6 +8,7 @@
 // the empty board, a fetch error + retry, and the advance-error banner.
 
 import { fireEvent, render, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import OpportunityPipelinePage from "./OpportunityPipelinePage.tsx";
@@ -78,7 +79,11 @@ afterEach(() => {
 
 // Render and return id-scoped query helpers (every element has a unique id).
 function renderPage() {
-  const utils = render(<OpportunityPipelinePage />);
+  const utils = render(
+    <MemoryRouter>
+      <OpportunityPipelinePage />
+    </MemoryRouter>,
+  );
   const getById = (id: string): HTMLElement => {
     const element = utils.container.ownerDocument.getElementById(id);
     if (element === null) {

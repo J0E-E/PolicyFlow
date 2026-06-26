@@ -483,3 +483,45 @@ export interface OpportunityBoard {
   pipeline: { stages: PipelineStage[] };
   opportunities: OpportunityRow[];
 }
+
+/**
+ * The pollable carrier-quote round-trip (P2.3). `status` moves `pending` →
+ * `completed`; the agent polls a request by `id` until it completes.
+ */
+export interface QuoteRequestSummary {
+  /** Raw quote-request UUID string — the poll key. */
+  id: string;
+  /** The opportunity the round-trip was opened for. */
+  opportunity_id: string;
+  /** The round-trip status: `pending` until the broker stub returns options. */
+  status: string;
+  /** The product-line key the options were generated for. */
+  product_line: string;
+}
+
+/** One returned carrier option (P2.3). All amounts are whole dollars. */
+export interface QuoteOption {
+  /** Raw quote UUID string. */
+  id: string;
+  /** The carrier offering the option. */
+  carrier: string;
+  /** The carrier's plan name shown on the option card. */
+  product_label: string;
+  /** The coverage amount in whole dollars. */
+  coverage_amount: number;
+  /** The monthly premium in whole dollars. */
+  premium_monthly: number;
+  /** The annualized premium (twelve monthly premiums). */
+  premium_annual: number;
+}
+
+/**
+ * The poll response for one quote round-trip: the request's current `status`, the
+ * attached `quotes` (empty until `completed`), and the opportunity's current
+ * `stage` (so the client reflects the *Quoted* move without a second call).
+ */
+export interface QuoteRequestPoll {
+  quote_request: QuoteRequestSummary;
+  quotes: QuoteOption[];
+  opportunity_stage: string;
+}
