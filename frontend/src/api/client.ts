@@ -18,6 +18,7 @@ import type {
   DemoSessionState,
   Identity,
   MaskedLead,
+  OpportunityRow,
   PublicIntakeRequest,
   PublicIntakeResult,
   RejectLeadRequest,
@@ -227,6 +228,38 @@ export async function getLead(leadId: string): Promise<MaskedLead> {
     `/api/leads/${leadId}`,
   );
   return responseBody.lead;
+}
+
+/**
+ * List the caller's opportunities from `GET /api/opportunities`, unwrapping the
+ * `{ opportunities }` envelope into the board's rows. An empty array is a valid
+ * result — a session with no converted opportunities yet.
+ */
+export async function listOpportunities(): Promise<OpportunityRow[]> {
+  const responseBody = await request<{ opportunities: OpportunityRow[] }>(
+    "GET",
+    "/api/opportunities",
+  );
+  return responseBody.opportunities;
+}
+
+/**
+ * Advance one opportunity via `POST /api/opportunities/{id}/stage`, unwrapping the
+ * `{ opportunity }` envelope into the updated row. `targetStage` is the canonical
+ * stage value to move to (the row's `next_stage`). Throws an `ApiError` carrying
+ * the status for a refused move — `404` (unknown), `403` (not owner/admin), `409`
+ * (illegal transition), `422` (unknown stage).
+ */
+export async function changeOpportunityStage(
+  opportunityId: string,
+  targetStage: string,
+): Promise<OpportunityRow> {
+  const responseBody = await request<{ opportunity: OpportunityRow }>(
+    "POST",
+    `/api/opportunities/${opportunityId}/stage`,
+    { target_stage: targetStage },
+  );
+  return responseBody.opportunity;
 }
 
 /**

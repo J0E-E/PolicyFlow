@@ -32,6 +32,8 @@ EXPECTED_EVENT_TYPES: dict[str, str] = {
     "CONTACT_CREATED": "contact.created",
     "HOUSEHOLD_CREATED": "household.created",
     "OPPORTUNITY_CREATED": "opportunity.created",
+    "OPPORTUNITY_STAGE_CHANGED": "opportunity.stage_changed",
+    "OPPORTUNITY_LOST": "opportunity.lost",
 }
 
 # Independent transcription of the TDD §5.3 / §5.4 consumer→binding registry,
@@ -109,6 +111,17 @@ def test_conversion_events_fan_out_to_sync_logger_only():
         "household.created",
         "opportunity.created",
     ):
+        assert consumers_for_event_type(event_type) == (SYNC_LOGGER,), event_type
+
+
+def test_pipeline_events_fan_out_to_sync_logger_only():
+    """The two P2.2 pipeline events reach the sync logger alone (no enrichment bind).
+
+    `enrichment.stub` binds only `record.created` / `lead.created`, so each pipeline
+    event matches the `#` catch-all only — `opportunity.stage_changed` and
+    `opportunity.lost` fan out to the sync logger, no stub reaction.
+    """
+    for event_type in ("opportunity.stage_changed", "opportunity.lost"):
         assert consumers_for_event_type(event_type) == (SYNC_LOGGER,), event_type
 
 

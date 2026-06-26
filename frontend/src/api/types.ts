@@ -409,3 +409,24 @@ export interface DemoSessionResetResult {
   leads_deleted: number;
   ledger_deleted: number;
 }
+
+/**
+ * One opportunity row on the pipeline board, mirroring the backend's minimal
+ * tracer payload (`core/app/opportunities/router.py::_opportunity_row`). `stage`
+ * is the canonical stored stage value (e.g. `New`, `Qualified`); `next_stage` is
+ * the server-computed next enabled stage the Advance control targets, or `null`
+ * at a terminal stage. The richer card fields (value fields, contact name, owner,
+ * eligibility) arrive in a later P2.2 epic.
+ */
+export interface OpportunityRow {
+  /** Raw opportunity UUID string. */
+  id: string;
+  /** Raw contact UUID string the opportunity belongs to. */
+  contact_id: string;
+  /** The product-line key (e.g. `medicare_advantage`). */
+  product_line: string;
+  /** The canonical current stage value. */
+  stage: string;
+  /** The next enabled stage to advance to, or `null` when terminal. */
+  next_stage: string | null;
+}

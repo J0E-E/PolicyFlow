@@ -38,16 +38,21 @@ describe("isSectionVisible", () => {
 });
 
 describe("NAV_SECTIONS model", () => {
-  // The live items as of P1.7 (Epic 20): Demo home and Leads. Each carries a real
-  // route and false `comingLater`; every other section stays inert.
+  // The live items as of P2.2 (Epic 2): Demo home, Leads, and Opportunities. Each
+  // carries a real route and false `comingLater`; every other section stays inert.
   const LIVE_ROUTES: Record<string, string> = {
     "demo-home": "/app",
     leads: "/app/leads",
+    opportunities: "/app/opportunities",
   };
 
-  it("has exactly the live items Demo home → /app and Leads → /app/leads", () => {
+  it("has exactly the live items Demo home, Leads, and Opportunities", () => {
     const live = NAV_SECTIONS.filter((section) => !section.comingLater);
-    expect(live.map((section) => section.key)).toEqual(["demo-home", "leads"]);
+    expect(live.map((section) => section.key)).toEqual([
+      "demo-home",
+      "leads",
+      "opportunities",
+    ]);
     for (const section of live) {
       expect(section.to).toBe(LIVE_ROUTES[section.key]);
     }

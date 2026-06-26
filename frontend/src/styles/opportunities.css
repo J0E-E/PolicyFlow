@@ -1,0 +1,110 @@
+/*
+ * Opportunity pipeline board (P2.2 Epic 2 tracer) — the `/app/opportunities` view
+ * that lists the session's converted opportunities as cards, each with an Advance
+ * control. Lives INSIDE the AppShell chrome, so it carries its own Guide §5 page
+ * header (Besley headline + Oxford double rule) like the leads list. Tokens only;
+ * no raw hex or spacing (Guide §2, §4). The real stage-grouped columns + rich
+ * cards land in the later board epics — this tracer keeps a flat card grid.
+ */
+
+/* ---- Page + Guide §5 page header ---- */
+
+.opportunities-page {
+  max-width: 960px;
+}
+
+.opportunities-header {
+  margin: 0 0 var(--space-4);
+}
+
+.opportunities-title {
+  /* Headline register — Besley 24/32/600 (Guide §3). */
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 32px;
+  color: var(--on-surface);
+}
+
+/* ---- Status / loading lines ---- */
+
+.opportunities-status {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
+
+.opportunities-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+/* A non-destructive advance error: the board stays intact, the notice sits above. */
+.opportunities-advance-error {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--surface-1);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface-variant);
+}
+
+/* ---- Empty state: Guide §5 framed note ---- */
+
+.opportunities-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background-color: var(--surface-1);
+  border: 1px solid var(--outline);
+  border-radius: var(--radius-md);
+}
+
+.opportunities-empty-message {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--on-surface-variant);
+}
+
+/* ---- The flat card grid (tracer; stage columns are a later epic) ---- */
+
+.opportunities-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+
+.opportunity-card-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--on-surface-variant);
+}
+
+.opportunity-card-contact {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--on-surface-variant);
+}
+
+/* The terminal note where a card has no further forward move. */
+.opportunity-card-terminal {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--on-surface-variant);
+  font-style: italic;
+}

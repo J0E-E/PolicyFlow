@@ -37,9 +37,11 @@ class EventType(StrEnum):
     verbatim from the TDD §5.3 *Interfaces*; the `lead.*` lifecycle members are
     the P1.7 events from the TDD §5.4 *Interfaces*; the four conversion members
     (`lead.converted`, `contact.created`, `household.created`,
-    `opportunity.created`) are the P2.1 events the convert action emits. None of
-    the conversion members is bound by the enrichment stub, so each fans out to
-    the `#`-binding `sync.logger` alone (`CONSUMER_BINDINGS` is unchanged).
+    `opportunity.created`) are the P2.1 events the convert action emits; the two
+    pipeline members (`opportunity.stage_changed`, `opportunity.lost`) are the
+    P2.2 events the stage-change action emits. None of the conversion or pipeline
+    members is bound by the enrichment stub, so each fans out to the `#`-binding
+    `sync.logger` alone (`CONSUMER_BINDINGS` is unchanged).
     """
 
     RECORD_CREATED = "record.created"
@@ -53,6 +55,8 @@ class EventType(StrEnum):
     CONTACT_CREATED = "contact.created"
     HOUSEHOLD_CREATED = "household.created"
     OPPORTUNITY_CREATED = "opportunity.created"
+    OPPORTUNITY_STAGE_CHANGED = "opportunity.stage_changed"
+    OPPORTUNITY_LOST = "opportunity.lost"
 
 
 # The contract's schema version, stamped onto every envelope (TDD §5.3,

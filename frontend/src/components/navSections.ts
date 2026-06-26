@@ -116,7 +116,10 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Opportunities",
     icon: HandCash,
     gate: { capability: "view_tenant_records" },
-    comingLater: true,
+    // Live as of P2.2 (Epic 2) — the pipeline board landed, so this item links to
+    // /app/opportunities (the third live rail entry after Demo home and Leads).
+    comingLater: false,
+    to: "/app/opportunities",
   },
   {
     key: "policies",
