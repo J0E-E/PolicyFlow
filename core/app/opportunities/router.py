@@ -29,10 +29,12 @@ from ..auth.dependencies import require_authenticated, require_capability
 from ..auth.provider import Identity
 from ..auth.rbac import Capability
 from ..demo.session import current_demo_session
+from ..models.contact import Contact
 from ..models.opportunity import Opportunity
 from ..models.user import Role
-from ..tenancy.registry import tenant_by_schema
+from ..tenancy.registry import TenantConfig, tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
+from .eligibility import MedicareEligibilityError
 from .pipeline import enabled_stages_for, resolve_pipeline
 from .service import change_opportunity_stage
 from .state import (
@@ -50,18 +52,16 @@ class ChangeStageRequest(BaseModel):
     target_stage: str
 
 
-async def _active_enabled_stages(
-    db: AsyncSession,
-) -> frozenset[OpportunityStage]:
-    """Resolve the caller's tenant enabled-stage set from the scoped session.
+async def _active_tenant_config(db: AsyncSession) -> TenantConfig:
+    """Resolve the caller's tenant config from the scoped session's schema.
 
-    Reads the session's `current_schema()` (the convert endpoint's pattern),
-    maps it to the tenant config, and returns that tenant's enabled spine stages
-    so the machine skips any disabled optional stage. `get_tenant_db` only ever
-    admits a known tenant schema, so the lookup never misses.
+    Reads the session's `current_schema()` (the convert endpoint's pattern) and
+    maps it to the frozen `TenantConfig`. `get_tenant_db` only ever admits a known
+    tenant schema, so the lookup never misses. The config carries the enabled
+    stages, the stage labels, and the product-line registry the gate reads.
     """
     active_schema = (await db.execute(text("SELECT current_schema()"))).scalar_one()
-    return enabled_stages_for(tenant_by_schema(active_schema))
+    return tenant_by_schema(active_schema)
 
 
 def _opportunity_row(
@@ -100,11 +100,9 @@ async def list_opportunities(
     Full demo-session visibility scoping (NULL baseline ∪ the caller's session) is
     Epic 7; the tracer returns the schema's rows directly.
     """
-    # Resolve the caller's tenant config from the scoped session's schema (the
-    # convert endpoint's pattern) to build the board's pipeline columns and the
-    # enabled-stage set each row's `next_stage` is computed against.
-    active_schema = (await db.execute(text("SELECT current_schema()"))).scalar_one()
-    tenant_config = tenant_by_schema(active_schema)
+    # Resolve the caller's tenant config to build the board's pipeline columns and
+    # the enabled-stage set each row's `next_stage` is computed against.
+    tenant_config = await _active_tenant_config(db)
     enabled_stages = enabled_stages_for(tenant_config)
     pipeline_stages = [
         {"key": stage.key, "label": stage.label, "is_optional": stage.is_optional}
@@ -147,11 +145,14 @@ async def change_stage(
     2. **Holder** — the owner **or** any Tenant Admin may move it (D5); else `403`.
     3. **Transition** — `assert_transition` (via the service) rejects an illegal
        move with `InvalidStageTransition`, mapped to `409` naming current + target.
+    4. **Medicare gate** — a move to *Quoted* on a `requires_medicare_age` product
+       line for an under-65 contact raises `MedicareEligibilityError`, mapped to a
+       `422` (distinct from the 409) carrying a clear reason.
 
     An unknown `target_stage` string is a `422`. Demo-session write isolation
-    (Epic 7) and the Medicare gate (Epic 5) layer on here later. On success the
-    service sets the stage and emits the event on the request transaction; the
-    updated row is returned under `{"opportunity": …}` with a 200.
+    (Epic 7) layers on here later. On success the service sets the stage and emits
+    the event on the request transaction; the updated row is returned under
+    `{"opportunity": …}` with a 200.
     """
     try:
         target_stage = OpportunityStage(change.target_stage)
@@ -178,9 +179,32 @@ async def change_stage(
             detail="only the opportunity's owner or a tenant admin can change its stage",
         )
 
-    # The tenant's enabled-stage set drives the transition, so a disabled optional
-    # stage is skipped (Florida's Submitted advances straight to Policy Active).
-    enabled_stages = await _active_enabled_stages(db)
+    # The tenant config drives the transition (enabled-stage skip) and the Medicare
+    # gate (the product-line `requires_medicare_age` flag + the contact's age band).
+    tenant_config = await _active_tenant_config(db)
+    enabled_stages = enabled_stages_for(tenant_config)
+    product_line = next(
+        (
+            line
+            for line in tenant_config.product_lines
+            if line.key == opportunity.product_line
+        ),
+        None,
+    )
+    if product_line is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"unknown product line: {opportunity.product_line}",
+        )
+
+    # The contact's plaintext age band is the Medicare gate's age signal (no
+    # decryption). The opportunity always has a contact (convert creates it).
+    contact = (
+        await db.execute(
+            select(Contact).where(Contact.id == opportunity.contact_id)
+        )
+    ).scalar_one_or_none()
+    age_band = contact.age_band if contact is not None else None
 
     # Resolve the caller's demo session so the emitted event carries it (the tracer
     # does not yet *guard* on session — that isolation is Epic 7).
@@ -194,6 +218,8 @@ async def change_stage(
             opportunity=opportunity,
             target_stage=target_stage,
             enabled_stages=enabled_stages,
+            product_line=product_line,
+            age_band=age_band,
             actor_user_id=identity.user_id,
             actor_role=identity.role,
             demo_session_id=demo_session_id,
@@ -206,5 +232,7 @@ async def change_stage(
                 f"to {target_stage.value}"
             ),
         )
+    except MedicareEligibilityError as error:
+        raise HTTPException(status_code=422, detail=str(error))
 
     return {"opportunity": _opportunity_row(opportunity, enabled_stages)}

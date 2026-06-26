@@ -91,6 +91,18 @@ async def set_stage(database_engine, schema_name, opportunity_id, stage):
         )
 
 
+async def set_contact_age_band(database_engine, schema_name, opportunity_id, age_band):
+    """Set the age band on the opportunity's contact, to drive the Medicare gate."""
+    async with database_engine.begin() as connection:
+        await connection.execute(
+            text(
+                f"UPDATE {schema_name}.contacts SET age_band = :band WHERE id = "
+                f"(SELECT contact_id FROM {schema_name}.opportunities WHERE id = :id)"
+            ),
+            {"band": age_band, "id": opportunity_id},
+        )
+
+
 async def convert_one_opportunity(db_client, database_engine):
     """Convert a held `Qualified` Sunshine lead into one opportunity; return its ids.
 
@@ -359,3 +371,74 @@ async def test_sunshine_submitted_still_steps_through_approved(
     )
     assert advanced.status_code == 200
     assert advanced.json()["opportunity"]["stage"] == "Approved"
+
+
+# --- Medicare eligibility gate (Epic 5) --------------------------------------
+
+
+async def test_medicare_gate_blocks_under_65_entry_to_quoted(
+    seeded, db_client, database_engine
+):
+    """A Medicare line + under-65 contact → Quoted is refused with a 422."""
+    opportunity_id = await convert_opportunity_for_slug(
+        db_client, database_engine, SUNSHINE, "medicare_advantage"
+    )
+    await set_stage(database_engine, SUNSHINE.schema_name, opportunity_id, "Qualified")
+    await set_contact_age_band(
+        database_engine, SUNSHINE.schema_name, opportunity_id, "55-64"
+    )
+
+    response = await db_client.post(
+        f"/api/opportunities/{opportunity_id}/stage",
+        json={"target_stage": "Quoted"},
+    )
+    assert response.status_code == 422
+    assert "65" in response.json()["detail"]
+
+    # The blocked move never changed the stage.
+    stored = await read_one(
+        database_engine,
+        f"SELECT stage FROM {SUNSHINE.schema_name}.opportunities WHERE id = :id",
+        {"id": opportunity_id},
+    )
+    assert stored.stage == "Qualified"
+
+
+async def test_medicare_gate_allows_65_plus_entry_to_quoted(
+    seeded, db_client, database_engine
+):
+    """A Medicare line + a `65+` contact may enter Quoted (200)."""
+    opportunity_id = await convert_opportunity_for_slug(
+        db_client, database_engine, SUNSHINE, "medicare_advantage"
+    )
+    await set_stage(database_engine, SUNSHINE.schema_name, opportunity_id, "Qualified")
+    await set_contact_age_band(
+        database_engine, SUNSHINE.schema_name, opportunity_id, "65+"
+    )
+
+    response = await db_client.post(
+        f"/api/opportunities/{opportunity_id}/stage",
+        json={"target_stage": "Quoted"},
+    )
+    assert response.status_code == 200
+    assert response.json()["opportunity"]["stage"] == "Quoted"
+
+
+async def test_non_medicare_line_under_65_is_not_gated_into_quoted(
+    seeded, db_client, database_engine
+):
+    """A non-Medicare line never gates, so an under-65 contact enters Quoted (200)."""
+    opportunity_id = await convert_opportunity_for_slug(
+        db_client, database_engine, SUNSHINE, "final_expense"
+    )
+    await set_stage(database_engine, SUNSHINE.schema_name, opportunity_id, "Qualified")
+    await set_contact_age_band(
+        database_engine, SUNSHINE.schema_name, opportunity_id, "55-64"
+    )
+
+    response = await db_client.post(
+        f"/api/opportunities/{opportunity_id}/stage",
+        json={"target_stage": "Quoted"},
+    )
+    assert response.status_code == 200
+    assert response.json()["opportunity"]["stage"] == "Quoted"

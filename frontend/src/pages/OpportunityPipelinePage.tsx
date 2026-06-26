@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Button from "../components/Button.tsx";
 import Card from "../components/Card.tsx";
+import ExplainerPopover from "../components/ExplainerPopover.tsx";
+import { medicareGateExplainer } from "../components/explainerContent.ts";
 import { useCapability } from "../session";
-import { changeOpportunityStage, getOpportunityBoard } from "../api";
+import { ApiError, changeOpportunityStage, getOpportunityBoard } from "../api";
 import type { OpportunityBoard, OpportunityRow } from "../api";
 
 // The authenticated pipeline board at `/app/opportunities` (P2.2). It renders
@@ -27,13 +29,21 @@ type BoardLoadState =
   | { kind: "loaded"; board: OpportunityBoard }
   | { kind: "error" };
 
-// The page header — the same Besley headline + Oxford rule on every body state.
+// The page header — the same Besley headline + Oxford rule on every body state,
+// with the Medicare-gate explainer beside the title.
 function OpportunitiesHeader() {
   return (
     <header id="opportunities-header" className="opportunities-header">
-      <h1 id="opportunities-title" className="opportunities-title">
-        Opportunities
-      </h1>
+      <div id="opportunities-header-row" className="opportunities-header-row">
+        <h1 id="opportunities-title" className="opportunities-title">
+          Opportunities
+        </h1>
+        <ExplainerPopover
+          id="opportunities-medicare-explainer"
+          surfaceLabel="the Medicare eligibility gate"
+          content={medicareGateExplainer}
+        />
+      </div>
       <hr id="opportunities-rule" className="oxford-double-rule" />
     </header>
   );
@@ -89,8 +99,14 @@ export default function OpportunityPipelinePage() {
     try {
       await changeOpportunityStage(opportunity.id, opportunity.next_stage);
       loadBoard();
-    } catch {
-      setAdvanceError("Could not advance the opportunity. Please try again.");
+    } catch (error) {
+      // An ApiError carries the server's reason (e.g. the Medicare-gate 422), which
+      // is more useful inline than a generic message; fall back for anything else.
+      setAdvanceError(
+        error instanceof ApiError
+          ? error.message
+          : "Could not advance the opportunity. Please try again.",
+      );
     } finally {
       setAdvancingId(null);
     }

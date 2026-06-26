@@ -116,6 +116,35 @@ export const sessionModelExplainer: ExplainerContent = {
   ],
 };
 
+/** Opportunity board → the Medicare eligibility gate (P2.2). Why some opportunities
+ *  cannot be quoted, and how the per-tenant product rules drive it. */
+export const medicareGateExplainer: ExplainerContent = {
+  pattern: [
+    "Product eligibility rules: some products can only be sold to customers who meet a rule. Medicare Advantage and Medicare Supplement require the customer to be 65 or older, so an under-65 opportunity on those lines cannot be quoted.",
+  ],
+  how: [
+    "The server enforces the gate: a move to ",
+    { mono: "Quoted" },
+    " on a ",
+    { mono: "requires_medicare_age" },
+    " product line is rejected with a ",
+    { mono: "422" },
+    " (distinct from an invalid-move ",
+    { mono: "409" },
+    ") when the contact's stored age band is not ",
+    { mono: "65+" },
+    ". The rule reads the plaintext age band only — never the encrypted date of birth.",
+  ],
+  realVsSimulated: [
+    "The gate, the per-tenant product config, and the age check are real, server-side code. Which lines are Medicare-gated is seeded registry config (here, Sunshine's Medicare lines); Florida has no Medicare products, so the two tenants' boards differ.",
+  ],
+  crmParallel: [
+    "Salesforce ",
+    { mono: "validation rules" },
+    " on the Opportunity: block a stage change unless the record meets the product's eligibility criteria.",
+  ],
+};
+
 /** Surface toggle → the two-surface model (Epic 24). The "demo convenience" copy:
  *  one app split into a public storefront and a staff-only workspace; the one-click
  *  toggle changes surface, NOT identity / NOT a role. */

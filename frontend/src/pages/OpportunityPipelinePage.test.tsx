@@ -16,13 +16,21 @@ import type { OpportunityBoard, OpportunityRow, PipelineStage } from "../api";
 vi.mock("../api", () => ({
   getOpportunityBoard: vi.fn(),
   changeOpportunityStage: vi.fn(),
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(status: number, message: string) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+    }
+  },
 }));
 
 vi.mock("../session", () => ({
   useCapability: vi.fn(),
 }));
 
-import { changeOpportunityStage, getOpportunityBoard } from "../api";
+import { ApiError, changeOpportunityStage, getOpportunityBoard } from "../api";
 import { useCapability } from "../session";
 
 const getOpportunityBoardMock = vi.mocked(getOpportunityBoard);
@@ -198,7 +206,38 @@ describe("OpportunityPipelinePage", () => {
     fireEvent.click(getById("opportunity-advance-opp-1"));
 
     await waitFor(() => getById("opportunities-advance-error"));
+    // A non-ApiError shows the generic fallback, not the raw error text.
+    expect(getById("opportunities-advance-error").textContent).toContain(
+      "Could not advance",
+    );
     expect(getById("opportunity-card-opp-1")).toBeTruthy();
+  });
+
+  it("surfaces the server's reason inline when an advance is gated (422)", async () => {
+    useCapabilityMock.mockReturnValue(true);
+    getOpportunityBoardMock.mockResolvedValue(
+      makeBoard([makeRow({ stage: "Qualified", next_stage: "Quoted" })]),
+    );
+    const reason =
+      "Medicare-gated product line 'medicare_advantage' cannot be quoted for a customer under 65";
+    changeOpportunityStageMock.mockRejectedValue(new ApiError(422, reason));
+
+    const { getById } = renderPage();
+    await waitFor(() => getById("opportunity-advance-opp-1"));
+
+    fireEvent.click(getById("opportunity-advance-opp-1"));
+
+    await waitFor(() => getById("opportunities-advance-error"));
+    expect(getById("opportunities-advance-error").textContent).toBe(reason);
+  });
+
+  it("renders the Medicare-gate explainer trigger", async () => {
+    useCapabilityMock.mockReturnValue(true);
+    getOpportunityBoardMock.mockResolvedValue(makeBoard([makeRow({})]));
+
+    const { getById } = renderPage();
+    await waitFor(() => getById("opportunities-board"));
+    expect(getById("opportunities-medicare-explainer-trigger")).toBeTruthy();
   });
 
   it("renders the empty state when there are no opportunities", async () => {

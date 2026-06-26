@@ -25,6 +25,8 @@ from ..events.envelope import build_envelope
 from ..events.outbox import enqueue_event
 from ..models.opportunity import Opportunity
 from ..models.user import Role
+from ..tenancy.registry import ProductLine
+from .eligibility import is_blocked_for_medicare, MedicareEligibilityError
 from .state import OpportunityStage, assert_transition
 
 
@@ -69,6 +71,8 @@ async def change_opportunity_stage(
     opportunity: Opportunity,
     target_stage: OpportunityStage,
     enabled_stages: frozenset[OpportunityStage],
+    product_line: ProductLine,
+    age_band: str | None,
     actor_user_id: uuid.UUID | None,
     actor_role: Role | None,
     demo_session_id: uuid.UUID | None,
@@ -76,13 +80,21 @@ async def change_opportunity_stage(
     """Move `opportunity` to `target_stage`, validated, and emit the change event.
 
     Asserts the move is legal for the tenant's `enabled_stages` (raising
-    `InvalidStageTransition`, which the endpoint maps to 409), sets the new stage,
-    flushes, and emits `opportunity.stage_changed` on the request transaction.
-    Returns the same opportunity instance, now at the new stage. Does **not**
-    commit — the caller's `get_tenant_db` transaction owns that.
+    `InvalidStageTransition`, which the endpoint maps to 409), then enforces the
+    Medicare gate: a move to *Quoted* on a `requires_medicare_age` product line for
+    an under-65 contact raises `MedicareEligibilityError` (the endpoint maps it to
+    422) **before** any write, so a blocked move never changes the stage. Otherwise
+    sets the new stage, flushes, and emits `opportunity.stage_changed` on the
+    request transaction. Returns the same opportunity instance, now at the new
+    stage. Does **not** commit — the caller's `get_tenant_db` transaction owns that.
     """
     current_stage = OpportunityStage(opportunity.stage)
     assert_transition(current_stage, target_stage, enabled_stages)
+
+    if target_stage == OpportunityStage.QUOTED and is_blocked_for_medicare(
+        product_line, age_band
+    ):
+        raise MedicareEligibilityError(product_line.key, age_band)
 
     opportunity.stage = target_stage.value
     await db.flush()
