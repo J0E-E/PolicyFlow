@@ -12,22 +12,28 @@ insert-if-absent logic is exercised with no database.
 `@pytest.mark.asyncio` decorator.
 """
 
+from datetime import date
+
 import pytest
 
 from app.auth.passwords import verify_password
 from app.leads.state import LeadStatus
 from app.models import Role, Tenant, User
 from app.pii.masking import age_band_for
+from app.renewals.rules import anniversary_within, next_anniversary
 from app.seed import (
+    BASELINE_MONEY_PATH_HOUSEHOLDS,
+    BASELINE_NOTE_TASKS,
     PLATFORM_ADMIN_EMAIL,
     SESSION_LEAD_TEMPLATES,
     SHARED_HISTORICAL_LEADS,
+    baseline_issued_at,
     demo_tenants,
     demo_user_specs,
     demo_users_for,
     seed,
 )
-from app.tenancy.registry import SUNSHINE, TENANTS, tenant_by_slug
+from app.tenancy.registry import FLORIDA, SUNSHINE, TENANTS, tenant_by_slug
 
 
 class FakeResult:
@@ -296,6 +302,170 @@ def test_a_sunshine_session_lead_is_medicare_gated_and_under_65():
     )
 
 
+# --- The baseline money-path chain spec + issue-date helper (pure, no DB) -----
+
+# Reference "today"s the issue-date helper is checked against: a mid-year date and
+# two boundary dates where `today + N days` crosses the year end (so the leap /
+# roll-over branch of `next_anniversary` is exercised), plus a leap-day reference.
+_MID_YEAR = date(2026, 7, 18)
+_YEAR_END = date(2026, 12, 20)
+_LEAP_REFERENCE = date(2028, 1, 30)  # 2028 is a leap year; +30 days lands on Feb 29
+
+
+def test_recent_issue_is_placed_a_few_weeks_before_today():
+    """A "recent" policy is issued shortly before `today`, clear of any window."""
+    issued = baseline_issued_at("recent", _MID_YEAR)
+
+    assert issued < _MID_YEAR
+    # Its next anniversary is nearly a full year out — never inside the 60-day window.
+    assert anniversary_within(issued, _MID_YEAR, 60) is False
+
+
+def test_anniversary_in_window_issue_lands_mid_window():
+    """An "anniversary_in_window" issue date sits ~30 days out — inside 60, not on the edge."""
+    for today in (_MID_YEAR, _YEAR_END, _LEAP_REFERENCE):
+        issued = baseline_issued_at("anniversary_in_window", today)
+
+        days_out = (next_anniversary(issued, today) - today).days
+        assert 0 < days_out <= 60, today
+        # Mid-window, not hugging either edge (guards against an off-by-one that
+        # would make the window test brittle across a re-seed a day later).
+        assert 20 <= days_out <= 45, today
+        assert anniversary_within(issued, today, 60) is True
+
+
+def test_recent_out_of_window_issue_lands_beyond_the_window():
+    """A "recent_out_of_window" issue date's next anniversary is >60 days out."""
+    for today in (_MID_YEAR, _YEAR_END, _LEAP_REFERENCE):
+        issued = baseline_issued_at("recent_out_of_window", today)
+
+        days_out = (next_anniversary(issued, today) - today).days
+        assert days_out > 60, today
+        assert anniversary_within(issued, today, 60) is False
+
+
+def test_leap_day_anniversary_issue_is_observed_safely():
+    """A Feb-29 anniversary target back-dated into a non-leap year is Feb-28 (no crash).
+
+    2028 + 30 days is Feb 29; three years back (2025) is not a leap year, so the
+    issue date is observed on Feb 28 — the same leap rule `next_anniversary` applies,
+    and the policy still lands comfortably inside the 60-day window.
+    """
+    issued = baseline_issued_at("anniversary_in_window", _LEAP_REFERENCE)
+
+    assert issued == date(2025, 2, 28)
+    assert anniversary_within(issued, _LEAP_REFERENCE, 60) is True
+
+
+def test_unknown_issue_rule_raises():
+    """An unrecognised issue rule fails loudly rather than placing a policy today."""
+    with pytest.raises(ValueError):
+        baseline_issued_at("someday", _MID_YEAR)
+
+
+def test_baseline_household_spec_covers_both_tenants():
+    """The baseline money-path spec seeds one household per demo tenant."""
+    assert set(BASELINE_MONEY_PATH_HOUSEHOLDS) == {SUNSHINE.slug, FLORIDA.slug}
+
+
+def test_baseline_policy_lines_are_valid_registry_lines_owned_by_agent_one():
+    """Every seeded policy names a real tenant line; every chain is owned by agent.one."""
+    for tenant_slug, household in BASELINE_MONEY_PATH_HOUSEHOLDS.items():
+        assert household["owner_local_part"] == "agent.one"
+        valid_keys = {line.key for line in tenant_by_slug(tenant_slug).product_lines}
+        seeded_keys = {policy["product_line"] for policy in household["policies"]}
+        assert seeded_keys <= valid_keys
+
+
+def test_baseline_issue_rules_match_adr_0003_renewal_classification():
+    """Each seeded policy's issue rule matches its line's renewal rule (ADR 0003).
+
+    aep / no-renewal lines are issued "recent" (issue date is irrelevant to their
+    sweep); the Sunshine anniversary line is placed inside the window (a renewal
+    target); Florida's anniversary lines are placed outside it (full coverage, no
+    renewal). Keyed off the registry `renewal_rule`, so a reclassification that broke
+    the demo's intent would fail here.
+    """
+    rule_by_line = {
+        line.key: line.renewal_rule
+        for tenant in (SUNSHINE, FLORIDA)
+        for line in tenant.product_lines
+    }
+    for household in BASELINE_MONEY_PATH_HOUSEHOLDS.values():
+        for policy in household["policies"]:
+            renewal_rule = rule_by_line[policy["product_line"]]
+            issue_rule = policy["issue_rule"]
+            if renewal_rule == "anniversary":
+                assert issue_rule in (
+                    "anniversary_in_window",
+                    "recent_out_of_window",
+                )
+            else:
+                # aep and none lines never key off the anniversary window.
+                assert issue_rule == "recent"
+
+
+def test_exactly_one_sunshine_baseline_medicare_advantage_policy():
+    """Sunshine seeds exactly one baseline MA policy (Epic 6 depends on {1,0})."""
+    sunshine_lines = [
+        policy["product_line"]
+        for policy in BASELINE_MONEY_PATH_HOUSEHOLDS[SUNSHINE.slug]["policies"]
+    ]
+    assert sunshine_lines.count("medicare_advantage") == 1
+
+
+def test_sunshine_is_partially_covered_florida_is_fully_covered():
+    """Sunshine leaves one line uncovered (partial); Florida covers every line (full)."""
+    for tenant, expected_uncovered in ((SUNSHINE, 1), (FLORIDA, 0)):
+        tenant_lines = {line.key for line in tenant.product_lines}
+        covered = {
+            policy["product_line"]
+            for policy in BASELINE_MONEY_PATH_HOUSEHOLDS[tenant.slug]["policies"]
+        }
+        assert len(tenant_lines - covered) == expected_uncovered
+    # The single uncovered Sunshine line is `dental_vision_hearing` (the cross-sell
+    # prompt target).
+    sunshine_covered = {
+        policy["product_line"]
+        for policy in BASELINE_MONEY_PATH_HOUSEHOLDS[SUNSHINE.slug]["policies"]
+    }
+    sunshine_lines = {line.key for line in SUNSHINE.product_lines}
+    assert sunshine_lines - sunshine_covered == {"dental_vision_hearing"}
+
+
+def test_baseline_contact_pii_is_synthetic_and_not_the_duplicate_bait():
+    """Contact emails/phones are distinct, synthetic, and never the Jordan Rivera bait."""
+    emails = [
+        household["contact"]["email"]
+        for household in BASELINE_MONEY_PATH_HOUSEHOLDS.values()
+    ]
+    phones = [
+        household["contact"]["phone"]
+        for household in BASELINE_MONEY_PATH_HOUSEHOLDS.values()
+    ]
+    assert len(emails) == len(set(emails))
+    assert len(phones) == len(set(phones))
+    for email in emails:
+        assert email.endswith("@example.com")
+        assert email != "jordan.rivera@example.com"
+    for phone in phones:
+        assert phone != "(407) 555-0188"
+        digits = [character for character in phone if character.isdigit()]
+        assert digits and all(character.isascii() for character in digits)
+
+
+def test_baseline_note_tasks_split_assignees_for_the_queue_demo():
+    """Sunshine note-tasks split agent.one/agent.two; Florida seeds one agent.one note."""
+    sunshine_assignees = [
+        task["assignee_local_part"] for task in BASELINE_NOTE_TASKS[SUNSHINE.slug]
+    ]
+    assert set(sunshine_assignees) == {"agent.one", "agent.two"}
+    florida_assignees = [
+        task["assignee_local_part"] for task in BASELINE_NOTE_TASKS[FLORIDA.slug]
+    ]
+    assert florida_assignees == ["agent.one"]
+
+
 # --- Phase 3: seeding from empty inserts the full matrix ----------------------
 
 
@@ -306,12 +476,14 @@ def _empty_database_results():
     slugs, then usernames (the present-tenant lookup is skipped because nothing is
     present), then the existing data-key tenant ids for the key-seeding step, then
     one ``SELECT COUNT(*) FROM <schema>.pii_demo`` per tenant, then one
-    ``SELECT COUNT(*) FROM <schema>.leads WHERE demo_session_id IS NULL`` per tenant.
-    The four count rows are preset non-zero (`[2]` / `[1]`) so the `pii_demo` and
-    shared-historical-leads seeding both skip their encryption path on every tenant,
-    keeping this a pure no-DB unit test.
+    ``SELECT COUNT(*) FROM <schema>.leads WHERE demo_session_id IS NULL`` per tenant,
+    then one ``SELECT COUNT(*) FROM <schema>.households WHERE demo_session_id IS NULL``
+    per tenant (the count-based baseline money-path idempotency skip). The count rows
+    are preset non-zero (`[2]` / `[1]`) so the `pii_demo`, shared-historical-leads, and
+    baseline money-path seeding all skip their encryption path on every tenant, keeping
+    this a pure no-DB unit test.
     """
-    return [[], [], [], [2], [2], [1], [1]]
+    return [[], [], [], [2], [2], [1], [1], [1], [1]]
 
 
 async def test_seed_from_empty_inserts_two_tenants_and_nine_users():
@@ -412,12 +584,13 @@ async def test_seed_is_idempotent_when_everything_already_present():
         Tenant(id="id-" + slug, slug=slug, name=slug) for slug in all_slugs
     ]
     all_usernames = [email for email, _role, _tenant_slug in demo_user_specs()]
-    # Eight no-parameter SELECTs: existing slugs, present `Tenant` rows, existing
+    # Ten no-parameter SELECTs: existing slugs, present `Tenant` rows, existing
     # usernames, the existing data-key tenant ids, then one `pii_demo` count per
-    # tenant, then one shared-historical `leads` count per tenant. All tenant ids
-    # already have keys here, so no new key is added; the `pii_demo` counts are
-    # non-zero (`[2]`) and the `leads` counts non-zero (`[1]`), so neither a demo PII
-    # record nor a historical lead is added.
+    # tenant, then one shared-historical `leads` count per tenant, then one baseline
+    # `households` count per tenant. All tenant ids already have keys here, so no new
+    # key is added; the `pii_demo` counts are non-zero (`[2]`), the `leads` counts
+    # non-zero (`[1]`), and the `households` counts non-zero (`[1]`), so no demo PII
+    # record, historical lead, or baseline money-path chain is added.
     present_tenant_ids = [tenant.id for tenant in present_tenants]
     session = FakeAsyncSession(
         [
@@ -427,6 +600,8 @@ async def test_seed_is_idempotent_when_everything_already_present():
             present_tenant_ids,
             [2],
             [2],
+            [1],
+            [1],
             [1],
             [1],
         ]
@@ -455,12 +630,24 @@ async def test_seed_adds_only_missing_rows_on_partial_state():
     ]
     # The fourth execute is the existing data-key tenant ids; none exist yet,
     # so a wrapped key is minted for both registry tenants on this seed. The next
-    # two are the per-tenant `pii_demo` counts and the last two the per-tenant
-    # shared-historical `leads` counts, all preset non-zero (`[2]` / `[1]`) so the
-    # demo PII and historical-leads seeding skip their encryption path on both
-    # tenants.
+    # two are the per-tenant `pii_demo` counts, the next two the per-tenant
+    # shared-historical `leads` counts, and the last two the per-tenant baseline
+    # `households` counts, all preset non-zero (`[2]` / `[1]`) so the demo PII,
+    # historical-leads, and baseline money-path seeding skip their encryption path on
+    # both tenants.
     session = FakeAsyncSession(
-        [[present_slug], present_tenants, present_usernames, [], [2], [2], [1], [1]]
+        [
+            [present_slug],
+            present_tenants,
+            present_usernames,
+            [],
+            [2],
+            [2],
+            [1],
+            [1],
+            [1],
+            [1],
+        ]
     )
 
     await seed(session)

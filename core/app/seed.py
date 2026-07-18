@@ -42,7 +42,8 @@ from .models import Role, Tenant, TenantDataKey, User
 from .pii.crypto import normalize_email, normalize_phone, wrap_key
 from .pii.masking import age_band_for
 from .pii.service import compute_blind_index, encrypt_field
-from .tenancy.registry import TENANTS, tenant_by_slug
+from .policies.service import policy_number
+from .tenancy.registry import FLORIDA, SUNSHINE, TENANTS, tenant_by_slug
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -533,6 +534,203 @@ SHARED_HISTORICAL_LEADS: dict[str, list[dict]] = {
 }
 
 
+# --- Baseline money-path chains (P2.4 Epic 5) --------------------------------
+#
+# Whole baseline chains — lead → household → contact → opportunity → application →
+# policy — seeded into BOTH tenants as shared read-only rows (`demo_session_id IS
+# NULL`), so the renewal sweeps and the cross-sell prompt have real targets in a
+# fresh demo session (there are otherwise no baseline money-path entities — only
+# baseline leads). Money-path tables carry **no DB foreign keys** (app-enforced
+# integrity), so the chain is stitched by copying ids forward, mirroring what the
+# live conversion → application → policy path leaves behind.
+#
+# One household + one contact per tenant, with several issued policies rolling up
+# to it (exactly like a real lead conversion: one contact, one household, one
+# opportunity per product line). The coverage shape each household presents drives
+# the cross-sell demo (Epic 13): Sunshine's Ramirez household covers three of its
+# four lines (partial → a prompt for the uncovered `dental_vision_hearing`), while
+# Florida's Familia household covers all four lines (full → no prompt).
+#
+# `agent.one` owns every chain's opportunities and policies, so each generated
+# renewal-review Task lands on a deterministic assignee for the queue demo. The
+# synthetic contact PII is clearly fabricated — `example.com` emails and distinct,
+# all-decimal `555-01xx` phones — and never the Jordan Rivera duplicate-bait
+# identity, so the boot seed's backing leads never false-flag the duplicate matcher.
+
+# The three ways a baseline policy's `issued_at` is placed relative to the seed-run
+# date (`today`), each exercising one branch of the renewal sweeps:
+#   - "recent"                — issued a few weeks ago; well clear of any anniversary
+#                               window (used for AEP and no-renewal lines).
+#   - "anniversary_in_window" — back-dated so the next yearly anniversary is ~30 days
+#                               out, i.e. mid-way inside the 60-day anniversary window
+#                               → the anniversary sweep renews it (Epic 8 target).
+#   - "recent_out_of_window"  — back-dated so the next anniversary is >60 days out →
+#                               the anniversary sweep skips it (a full-coverage line
+#                               that must NOT generate a renewal).
+ISSUE_RULE_RECENT = "recent"
+ISSUE_RULE_ANNIVERSARY_IN_WINDOW = "anniversary_in_window"
+ISSUE_RULE_RECENT_OUT_OF_WINDOW = "recent_out_of_window"
+
+# A "recent" policy is issued this many days before the seed-run date.
+RECENT_ISSUE_OFFSET_DAYS = 30
+# An "anniversary_in_window" policy's next anniversary is placed this many days out —
+# comfortably inside the 60-day window and not on its very edge (mid-window).
+ANNIVERSARY_IN_WINDOW_DAYS = 30
+# A "recent_out_of_window" policy's next anniversary is placed this many days out —
+# comfortably beyond the 60-day window so the anniversary sweep never selects it.
+OUT_OF_WINDOW_ANNIVERSARY_DAYS = 120
+# How many whole years back a window-derived issue date is placed, so the policy
+# reads as issued a few years ago while its next anniversary lands where we want it.
+BASELINE_ISSUE_YEARS_BACK = 3
+
+
+def _issue_date_for_anniversary(next_anniversary_date: date) -> date:
+    """Return an issue date whose next anniversary is ``next_anniversary_date``.
+
+    Places the issue date ``BASELINE_ISSUE_YEARS_BACK`` whole years before the target
+    anniversary's year, sharing its month and day, so the policy reads as issued a
+    few years ago while `rules.next_anniversary` lands exactly on the target date. A
+    February 29 target falling in a non-leap issue year is observed on February 28 —
+    the same leap-year rule `rules.next_anniversary` applies, kept in step here so the
+    computed issue date and the sweep's anniversary math never disagree.
+    """
+    issue_year = next_anniversary_date.year - BASELINE_ISSUE_YEARS_BACK
+    try:
+        return date(issue_year, next_anniversary_date.month, next_anniversary_date.day)
+    except ValueError:
+        return date(issue_year, 2, 28)
+
+
+def baseline_issued_at(issue_rule: str, today: date) -> date:
+    """Return a baseline policy's `issued_at` date for ``issue_rule`` given ``today``.
+
+    Pure and clock-injected (``today`` is passed, never read) so the placement is
+    trivially unit-testable at each boundary. "recent" sits a few weeks in the past;
+    "anniversary_in_window" and "recent_out_of_window" are back-dated so the next
+    yearly anniversary lands ~30 days out (inside the 60-day window) or ~120 days out
+    (beyond it) respectively — matching `rules.anniversary_within` on the same date.
+    Any other rule raises ``ValueError`` so a typo fails loudly rather than silently
+    placing a policy today.
+    """
+    if issue_rule == ISSUE_RULE_RECENT:
+        return today - timedelta(days=RECENT_ISSUE_OFFSET_DAYS)
+    if issue_rule == ISSUE_RULE_ANNIVERSARY_IN_WINDOW:
+        return _issue_date_for_anniversary(
+            today + timedelta(days=ANNIVERSARY_IN_WINDOW_DAYS)
+        )
+    if issue_rule == ISSUE_RULE_RECENT_OUT_OF_WINDOW:
+        return _issue_date_for_anniversary(
+            today + timedelta(days=OUT_OF_WINDOW_ANNIVERSARY_DAYS)
+        )
+    raise ValueError(f"unknown baseline issue rule {issue_rule!r}")
+
+
+# The baseline household spec per tenant (pure data, no DB). Each tenant seeds one
+# household with one contact and several issued policies rolling up to it. `contact`
+# holds the synthetic PII the backing lead and the contact both carry (the contact
+# mirrors the lead, exactly as the live conversion does). Each `policies` entry names
+# a tenant product-line key and the `issue_rule` that places its `issued_at`; the
+# carrier / labels / premiums / coverage are read from that line's first registry
+# quote template at seed time, so the seeded terms can never drift from the catalog.
+BASELINE_MONEY_PATH_HOUSEHOLDS: dict[str, dict] = {
+    SUNSHINE.slug: {
+        "household_last_name": "Ramirez",
+        "owner_local_part": "agent.one",
+        "contact": {
+            "first_name": "Margaret",
+            "last_name": "Ramirez",
+            "email": "margaret.ramirez@example.com",
+            "phone": "(305) 555-0170",
+            "date_of_birth": date(1949, 3, 22),
+            "zip_code": "33139",
+            "street_address": "88 Coral Way",
+        },
+        # Covered {ma, medsupp, fe}; `dental_vision_hearing` left uncovered → a
+        # PARTIAL cross-sell household (Epic 13 prompts for the one open line).
+        "policies": [
+            {
+                "product_line": "medicare_advantage",  # aep — the SOLE Sunshine MA
+                "issue_rule": ISSUE_RULE_RECENT,        # policy (Epic 6 stays {1,0})
+            },
+            {
+                "product_line": "medicare_supplement",  # anniversary — inside the
+                "issue_rule": ISSUE_RULE_ANNIVERSARY_IN_WINDOW,  # 60-day window
+            },
+            {
+                "product_line": "final_expense",  # none — generates no renewal
+                "issue_rule": ISSUE_RULE_RECENT,
+            },
+        ],
+    },
+    FLORIDA.slug: {
+        "household_last_name": "Familia",
+        "owner_local_part": "agent.one",
+        "contact": {
+            "first_name": "Diego",
+            "last_name": "Familia",
+            "email": "diego.familia@example.com",
+            "phone": "(786) 555-0171",
+            "date_of_birth": date(1985, 6, 14),
+            "zip_code": "33602",
+            "street_address": "410 Bayshore Boulevard",
+        },
+        # All four Florida lines covered → a FULLY-covered household (Epic 13 prompt
+        # suppressed). `health` / `critical_illness` are issued out-of-window so the
+        # anniversary sweep never renews them; the life lines never renew at all.
+        "policies": [
+            {"product_line": "term_life", "issue_rule": ISSUE_RULE_RECENT},
+            {"product_line": "whole_life", "issue_rule": ISSUE_RULE_RECENT},
+            {"product_line": "health", "issue_rule": ISSUE_RULE_RECENT_OUT_OF_WINDOW},
+            {
+                "product_line": "critical_illness",
+                "issue_rule": ISSUE_RULE_RECENT_OUT_OF_WINDOW,
+            },
+        ],
+    },
+}
+
+# The baseline note-tasks per tenant (pure data, no DB). Plain `note` tasks hung off
+# the household's contact, so the agent task queue (Epic 10/11) renders non-trivially
+# from seed alone. Assignees split `agent.one` / `agent.two` in Sunshine to exercise
+# the role-scoped queue; Florida seeds a single `agent.one` note.
+BASELINE_NOTE_TASKS: dict[str, list[dict]] = {
+    SUNSHINE.slug: [
+        {
+            "assignee_local_part": "agent.one",
+            "body": "Follow up on Margaret's Medicare Advantage plan questions.",
+        },
+        {
+            "assignee_local_part": "agent.two",
+            "body": "Confirm the supplement premium payment method.",
+        },
+    ],
+    FLORIDA.slug: [
+        {
+            "assignee_local_part": "agent.one",
+            "body": "Review the Familia household's coverage after the new policy.",
+        },
+    ],
+}
+
+
+def _baseline_quote_template(tenant_slug: str, product_line_key: str):
+    """Return the first registry quote template for a tenant's product line.
+
+    The baseline policy copies its carrier / label / coverage / premiums from this
+    template, so the seeded issued terms are exactly a catalog option and can never
+    drift from the registry. Raises ``KeyError`` if the line has no template — a
+    misconfigured spec fails loudly rather than seeding a premium-less policy.
+    """
+    for product_line in tenant_by_slug(tenant_slug).product_lines:
+        if product_line.key == product_line_key:
+            if not product_line.quote_options:
+                raise KeyError(
+                    f"{product_line_key} has no quote template to seed a policy from"
+                )
+            return product_line.quote_options[0]
+    raise KeyError(f"{product_line_key} is not a {tenant_slug} product line")
+
+
 def demo_tenants() -> tuple[tuple[str, str], ...]:
     """Return the (slug, display name) pairs for the demo tenants."""
     return DEMO_TENANTS
@@ -967,6 +1165,339 @@ async def _seed_lead_event_trail(
             )
 
 
+async def seed_baseline_money_paths(
+    db: AsyncSession, slug_to_tenant_id: dict[str, uuid.UUID]
+) -> int:
+    """Insert whole baseline money-path chains into each tenant, insert-if-absent.
+
+    For each tenant, skips entirely if that tenant already holds any baseline
+    (`demo_session_id IS NULL`) household — count-based idempotency keyed on a
+    **money-path** entity, the same shape `seed_shared_historical_leads` uses. The key
+    is deliberately the household count, **not** the NULL-leads count: the chain's
+    backing leads below are also `NULL`, and `seed_shared_historical_leads` owns the
+    NULL-leads gate, so keying on leads here would let the two seeds defeat each
+    other's idempotency. Otherwise it builds each tenant's one household → contact →
+    N (opportunity → application → policy) chain, plus a few baseline `note` tasks hung
+    off the contact (so the agent task queue renders from seed), all as shared baseline
+    rows, and returns the total number of policy chains newly inserted.
+
+    Money-path tables carry **no DB foreign keys** (integrity is app-enforced), so the
+    chain is stitched by copying pre-minted ids forward. The contact PII is encrypted
+    via `encrypt_field` (contacts have no blind-index columns); the backing lead
+    additionally carries the `email`/`phone` blind indexes its schema requires. The
+    schema identifier is interpolated **only** from the registry (never user input),
+    exactly like `seed_shared_historical_leads`; every value is a bound parameter. The
+    per-tenant keys this resolves are read by `get_tenant_keys` through its **own**
+    session, so the caller must have already committed the seeded `tenant_data_keys`
+    before calling this — the same ordering the other encrypting seeds rely on.
+    """
+    today = datetime.now(timezone.utc).date()
+    chains_inserted = 0
+    for tenant_slug, tenant_id in slug_to_tenant_id.items():
+        household_spec = BASELINE_MONEY_PATH_HOUSEHOLDS.get(tenant_slug)
+        if household_spec is None:
+            continue
+        config = tenant_by_slug(tenant_slug)
+
+        existing_households = (
+            await db.execute(
+                text(
+                    f"SELECT COUNT(*) FROM {config.schema_name}.households "
+                    "WHERE demo_session_id IS NULL"
+                )
+            )
+        ).scalar_one()
+        if existing_households > 0:
+            continue
+
+        # Resolve the owning / assignee agents to seeded user ids + email-style
+        # usernames, built from the registry email domain exactly as `demo_users_for`
+        # builds them, so the lookup can never disagree with the seeded personas.
+        owner_username_by_local_part = {
+            local_part: f"{local_part}@{config.email_domain}"
+            for local_part in ("agent.one", "agent.two")
+        }
+        owner_id_by_username = {
+            username: user_id
+            for user_id, username in (
+                await db.execute(
+                    select(User.id, User.username).where(
+                        User.username.in_(owner_username_by_local_part.values())
+                    )
+                )
+            ).all()
+        }
+
+        owner_username = owner_username_by_local_part[
+            household_spec["owner_local_part"]
+        ]
+        owner_user_id = owner_id_by_username[owner_username]
+
+        contact_spec = household_spec["contact"]
+        last_name = household_spec["household_last_name"]
+        policy_specs = household_spec["policies"]
+
+        # Pre-mint every id so the backing lead can carry its converted refs and the
+        # whole FK-free chain can be stitched by copying ids forward.
+        household_id = uuid.uuid4()
+        contact_id = uuid.uuid4()
+        backing_lead_id = uuid.uuid4()
+        conversion_correlation_id = uuid.uuid4()
+        opportunity_ids = [uuid.uuid4() for _ in policy_specs]
+
+        # Encrypt the contact PII once — the backing lead and the contact carry the
+        # same values, exactly as a live conversion re-encrypts the lead's fields onto
+        # the new contact.
+        email_encrypted = await encrypt_field(tenant_id, contact_spec["email"])
+        phone_encrypted = await encrypt_field(tenant_id, contact_spec["phone"])
+        date_of_birth_encrypted = await encrypt_field(
+            tenant_id, contact_spec["date_of_birth"].isoformat()
+        )
+        street_address_encrypted = await encrypt_field(
+            tenant_id, contact_spec["street_address"]
+        )
+        age_band = age_band_for(contact_spec["date_of_birth"])
+
+        # The backing lead needs blind indexes (NOT NULL on `leads`); the contact has
+        # no blind-index columns.
+        email_blind_index = await compute_blind_index(
+            tenant_id, normalize_email(contact_spec["email"])
+        )
+        phone_blind_index = await compute_blind_index(
+            tenant_id, normalize_phone(contact_spec["phone"])
+        )
+
+        # --- household ---
+        await db.execute(
+            text(
+                f"INSERT INTO {config.schema_name}.households "
+                "(id, name, correlation_id, demo_session_id) "
+                "VALUES (:id, :name, :correlation_id, NULL)"
+            ),
+            {
+                "id": household_id,
+                "name": f"{last_name} Household",
+                "correlation_id": conversion_correlation_id,
+            },
+        )
+
+        # --- backing lead (a minimal `Converted` lead the contact chains back to) ---
+        await db.execute(
+            text(
+                f"INSERT INTO {config.schema_name}.leads "
+                "(id, first_name, last_name, email_encrypted, email_blind_index, "
+                "phone_encrypted, phone_blind_index, date_of_birth_encrypted, "
+                "age_band, zip_code, street_address_encrypted, "
+                "product_lines_of_interest, preferred_contact_method, lead_source, "
+                "status, owner_user_id, owner_username, converted_contact_id, "
+                "converted_opportunity_ids, correlation_id, demo_session_id) "
+                "VALUES (:id, :first_name, :last_name, :email_encrypted, "
+                ":email_blind_index, :phone_encrypted, :phone_blind_index, "
+                ":date_of_birth_encrypted, :age_band, :zip_code, "
+                ":street_address_encrypted, :product_lines_of_interest, "
+                ":preferred_contact_method, :lead_source, :status, :owner_user_id, "
+                ":owner_username, :converted_contact_id, :converted_opportunity_ids, "
+                ":correlation_id, NULL)"
+            ),
+            {
+                "id": backing_lead_id,
+                "first_name": contact_spec["first_name"],
+                "last_name": contact_spec["last_name"],
+                "email_encrypted": email_encrypted,
+                "email_blind_index": email_blind_index,
+                "phone_encrypted": phone_encrypted,
+                "phone_blind_index": phone_blind_index,
+                "date_of_birth_encrypted": date_of_birth_encrypted,
+                "age_band": age_band,
+                "zip_code": contact_spec["zip_code"],
+                "street_address_encrypted": street_address_encrypted,
+                "product_lines_of_interest": [
+                    policy_spec["product_line"] for policy_spec in policy_specs
+                ],
+                "preferred_contact_method": "email",
+                "lead_source": LeadSource.AGENT_ENTERED.value,
+                "status": LeadStatus.CONVERTED.value,
+                "owner_user_id": owner_user_id,
+                "owner_username": owner_username,
+                "converted_contact_id": contact_id,
+                "converted_opportunity_ids": opportunity_ids,
+                "correlation_id": conversion_correlation_id,
+            },
+        )
+
+        # --- contact (PII mirrors the lead; no blind-index columns) ---
+        await db.execute(
+            text(
+                f"INSERT INTO {config.schema_name}.contacts "
+                "(id, household_id, first_name, last_name, zip_code, age_band, "
+                "email_encrypted, phone_encrypted, date_of_birth_encrypted, "
+                "street_address_encrypted, lead_source, owner_user_id, "
+                "owner_username, source_lead_id, correlation_id, demo_session_id) "
+                "VALUES (:id, :household_id, :first_name, :last_name, :zip_code, "
+                ":age_band, :email_encrypted, :phone_encrypted, "
+                ":date_of_birth_encrypted, :street_address_encrypted, :lead_source, "
+                ":owner_user_id, :owner_username, :source_lead_id, :correlation_id, "
+                "NULL)"
+            ),
+            {
+                "id": contact_id,
+                "household_id": household_id,
+                "first_name": contact_spec["first_name"],
+                "last_name": contact_spec["last_name"],
+                "zip_code": contact_spec["zip_code"],
+                "age_band": age_band,
+                "email_encrypted": email_encrypted,
+                "phone_encrypted": phone_encrypted,
+                "date_of_birth_encrypted": date_of_birth_encrypted,
+                "street_address_encrypted": street_address_encrypted,
+                "lead_source": LeadSource.AGENT_ENTERED.value,
+                "owner_user_id": owner_user_id,
+                "owner_username": owner_username,
+                "source_lead_id": backing_lead_id,
+                "correlation_id": conversion_correlation_id,
+            },
+        )
+
+        # --- one opportunity → application → policy chain per covered line ---
+        # The policy number matches `policies.service.policy_number` (prefix = the
+        # first three schema-name letters, upper-cased), so a seeded policy reads the
+        # same shape as a live-issued one.
+        policy_prefix = config.schema_name[:3].upper()
+        for opportunity_id, policy_spec in zip(opportunity_ids, policy_specs):
+            product_line = policy_spec["product_line"]
+            quote = _baseline_quote_template(tenant_slug, product_line)
+            chain_correlation_id = uuid.uuid4()
+            application_id = uuid.uuid4()
+            policy_id = uuid.uuid4()
+            issued_date = baseline_issued_at(policy_spec["issue_rule"], today)
+            # `policies.issued_at` is a timestamptz; place the issue at UTC midnight.
+            issued_at = datetime(
+                issued_date.year,
+                issued_date.month,
+                issued_date.day,
+                tzinfo=timezone.utc,
+            )
+
+            # opportunity — a `conversion` opportunity already advanced to Policy
+            # Active, carrying the owner / contact / household the renewal sweep and
+            # cross-sell coverage join read forward.
+            await db.execute(
+                text(
+                    f"INSERT INTO {config.schema_name}.opportunities "
+                    "(id, contact_id, household_id, product_line, stage, "
+                    "owner_user_id, owner_username, estimated_annual_premium, "
+                    "origin, source_lead_id, correlation_id, demo_session_id) "
+                    "VALUES (:id, :contact_id, :household_id, :product_line, "
+                    "'Policy Active', :owner_user_id, :owner_username, "
+                    ":estimated_annual_premium, 'conversion', :source_lead_id, "
+                    ":correlation_id, NULL)"
+                ),
+                {
+                    "id": opportunity_id,
+                    "contact_id": contact_id,
+                    "household_id": household_id,
+                    "product_line": product_line,
+                    "owner_user_id": owner_user_id,
+                    "owner_username": owner_username,
+                    "estimated_annual_premium": quote.premium_annual,
+                    "source_lead_id": backing_lead_id,
+                    "correlation_id": chain_correlation_id,
+                },
+            )
+
+            # application — Approved, the frozen issued terms copied from the quote.
+            await db.execute(
+                text(
+                    f"INSERT INTO {config.schema_name}.applications "
+                    "(id, opportunity_id, contact_id, product_line, "
+                    "selected_quote_id, status, carrier, product_label, "
+                    "coverage_amount, premium_monthly, premium_annual, decision, "
+                    "decided_at, correlation_id, demo_session_id) "
+                    "VALUES (:id, :opportunity_id, :contact_id, :product_line, "
+                    ":selected_quote_id, 'Approved', :carrier, :product_label, "
+                    ":coverage_amount, :premium_monthly, :premium_annual, "
+                    "'approved', :decided_at, :correlation_id, NULL)"
+                ),
+                {
+                    "id": application_id,
+                    "opportunity_id": opportunity_id,
+                    "contact_id": contact_id,
+                    "product_line": product_line,
+                    # No quotes/quote_requests are seeded; `selected_quote_id` is NOT
+                    # NULL but FK-free, so a synthetic uuid satisfies the column.
+                    "selected_quote_id": uuid.uuid4(),
+                    "carrier": quote.carrier,
+                    "product_label": quote.product_label,
+                    "coverage_amount": quote.coverage_amount,
+                    "premium_monthly": quote.premium_monthly,
+                    "premium_annual": quote.premium_annual,
+                    "decided_at": datetime.now(timezone.utc),
+                    "correlation_id": chain_correlation_id,
+                },
+            )
+
+            # policy — Active, terms copied from the application, back-dated issue.
+            await db.execute(
+                text(
+                    f"INSERT INTO {config.schema_name}.policies "
+                    "(id, opportunity_id, application_id, contact_id, "
+                    "policy_number, carrier, product_label, coverage_amount, "
+                    "premium_monthly, premium_annual, status, correlation_id, "
+                    "demo_session_id, issued_at) "
+                    "VALUES (:id, :opportunity_id, :application_id, :contact_id, "
+                    ":policy_number, :carrier, :product_label, :coverage_amount, "
+                    ":premium_monthly, :premium_annual, 'Active', :correlation_id, "
+                    "NULL, :issued_at)"
+                ),
+                {
+                    "id": policy_id,
+                    "opportunity_id": opportunity_id,
+                    "application_id": application_id,
+                    "contact_id": contact_id,
+                    "policy_number": policy_number(
+                        policy_prefix, application_id, issued_date.year
+                    ),
+                    "carrier": quote.carrier,
+                    "product_label": quote.product_label,
+                    "coverage_amount": quote.coverage_amount,
+                    "premium_monthly": quote.premium_monthly,
+                    "premium_annual": quote.premium_annual,
+                    "correlation_id": chain_correlation_id,
+                    "issued_at": issued_at,
+                },
+            )
+            chains_inserted += 1
+
+        # --- baseline note-tasks hung off the household's contact ---
+        # Plain `note` tasks so the agent task queue (Epic 10/11) renders from seed
+        # alone. Assignees split agent.one / agent.two in Sunshine to exercise the
+        # role-scoped queue; they share the conversion correlation and stay `open`.
+        for note_task in BASELINE_NOTE_TASKS.get(tenant_slug, []):
+            assignee_username = owner_username_by_local_part[
+                note_task["assignee_local_part"]
+            ]
+            await db.execute(
+                text(
+                    f"INSERT INTO {config.schema_name}.tasks "
+                    "(id, related_entity_type, related_entity_id, task_type, body, "
+                    "assignee_user_id, assignee_username, status, correlation_id, "
+                    "demo_session_id) "
+                    "VALUES (:id, 'contact', :related_entity_id, 'note', :body, "
+                    ":assignee_user_id, :assignee_username, 'open', :correlation_id, "
+                    "NULL)"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "related_entity_id": contact_id,
+                    "body": note_task["body"],
+                    "assignee_user_id": owner_id_by_username[assignee_username],
+                    "assignee_username": assignee_username,
+                    "correlation_id": conversion_correlation_id,
+                },
+            )
+    return chains_inserted
+
+
 async def seed(db: AsyncSession) -> None:
     """Insert any missing demo tenants and users, then commit once.
 
@@ -1103,6 +1634,17 @@ async def seed(db: AsyncSession) -> None:
     historical_leads_inserted = await seed_shared_historical_leads(
         db, slug_to_tenant_id
     )
+
+    # --- Baseline money-path chains: whole household → contact → opportunity →
+    # application → policy chains per tenant (P2.4 Epic 5), so the renewal sweeps and
+    # the cross-sell prompt have real targets in a fresh session. Runs AFTER the
+    # shared-historical leads so that seed keeps ownership of the NULL-leads
+    # idempotency gate (the chains' backing leads are also NULL); its own gate is the
+    # baseline-household count. Like the seeds above it encrypts on write (needs the
+    # durable data keys committed above) and resolves owners to committed users.
+    money_path_chains_inserted = await seed_baseline_money_paths(
+        db, slug_to_tenant_id
+    )
     await db.commit()
 
     total_tenants = len(DEMO_TENANTS)
@@ -1111,7 +1653,7 @@ async def seed(db: AsyncSession) -> None:
         "seed complete: tenants inserted=%d already-present=%d; "
         "users inserted=%d already-present=%d; settings rows inserted=%d; "
         "data keys inserted=%d; pii_demo rows inserted=%d; "
-        "historical leads inserted=%d",
+        "historical leads inserted=%d; money-path chains inserted=%d",
         tenants_inserted,
         total_tenants - tenants_inserted,
         users_inserted,
@@ -1120,6 +1662,7 @@ async def seed(db: AsyncSession) -> None:
         keys_inserted,
         pii_demo_rows_inserted,
         historical_leads_inserted,
+        money_path_chains_inserted,
     )
 
 

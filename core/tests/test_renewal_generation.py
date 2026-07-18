@@ -46,12 +46,25 @@ async def _scoped_session(database_engine, schema_name):
     The `database_engine` connects as the container superuser, so setting the
     search path is enough for the service's schema-less ORM models to resolve into
     the tenant schema (the app does the same with `SET LOCAL search_path`). Nothing
-    is committed, so the whole transaction — fixture rows and the service's writes —
-    rolls back when the block ends, isolating each test on the shared substrate.
+    is committed, so the whole transaction — the clear below, the fixture rows, and
+    the service's writes — rolls back when the block ends, isolating each test on the
+    shared substrate.
+
+    Inside the transaction it first clears the schema's `opportunities`, `policies`,
+    and `tasks` so each test controls exactly which policies the sweep can see. The
+    boot seed (run by other tests on this session-scoped container) commits baseline
+    money-path policies (P2.4 Epic 5) with `demo_session_id IS NULL`, and those are
+    visible to *every* session's sweep — so without this clear a seeded baseline
+    policy would be renewed alongside a test's own fixtures and inflate the counts.
+    The deletes are part of this uncommitted transaction, so they roll back on exit
+    and never remove the committed baseline rows other tests rely on.
     """
     session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
     async with session_factory() as session:
         await session.execute(text(f"SET search_path TO {schema_name}"))
+        await session.execute(text("DELETE FROM tasks"))
+        await session.execute(text("DELETE FROM policies"))
+        await session.execute(text("DELETE FROM opportunities"))
         try:
             yield session
         finally:

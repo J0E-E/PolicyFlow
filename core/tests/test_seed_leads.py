@@ -49,35 +49,53 @@ async def _clear_demo_leads(db_session) -> None:
     await db_session.commit()
 
 
-async def _count_leads(db_session, schema_name: str) -> int:
-    """Return the number of rows in `<schema_name>.leads`."""
-    return (
-        await db_session.execute(
-            text(f"SELECT COUNT(*) FROM {schema_name}.leads")
-        )
-    ).scalar_one()
+# The boot seed also inserts one baseline money-path chain per tenant (P2.4 Epic 5),
+# whose backing lead is a `Converted`, `demo_session_id IS NULL` row. That row is part
+# of the shared baseline too, so these historical-lead assertions filter it out by
+# status — the shared **historical** set is exactly the Working / Qualified / Rejected
+# rows this file owns.
+_MONEY_PATH_BACKING_LEAD_STATUS = "Converted"
 
 
-async def _count_null_session_leads(db_session, schema_name: str) -> int:
-    """Return the number of shared-baseline (`demo_session_id IS NULL`) leads."""
+async def _count_historical_leads(db_session, schema_name: str) -> int:
+    """Return the number of shared historical (non-`Converted`) rows in `leads`."""
     return (
         await db_session.execute(
             text(
                 f"SELECT COUNT(*) FROM {schema_name}.leads "
-                "WHERE demo_session_id IS NULL"
-            )
+                "WHERE status <> :backing_status"
+            ),
+            {"backing_status": _MONEY_PATH_BACKING_LEAD_STATUS},
+        )
+    ).scalar_one()
+
+
+async def _count_null_session_historical_leads(db_session, schema_name: str) -> int:
+    """Return the shared-baseline (`NULL`) historical (non-`Converted`) lead count."""
+    return (
+        await db_session.execute(
+            text(
+                f"SELECT COUNT(*) FROM {schema_name}.leads "
+                "WHERE demo_session_id IS NULL AND status <> :backing_status"
+            ),
+            {"backing_status": _MONEY_PATH_BACKING_LEAD_STATUS},
         )
     ).scalar_one()
 
 
 async def _historical_rows(db_session, schema_name: str) -> list:
-    """Return the (status, owner_username, demo_session_id) of every seeded lead."""
+    """Return the (status, owner_username, demo_session_id) of every historical lead.
+
+    Excludes the money-path backing lead (`Converted`), so the rows are exactly the
+    shared historical set this file owns.
+    """
     return (
         await db_session.execute(
             text(
                 f"SELECT status, owner_username, demo_session_id "
-                f"FROM {schema_name}.leads"
-            )
+                f"FROM {schema_name}.leads WHERE status <> :backing_status"
+            ),
+            {"backing_status": _MONEY_PATH_BACKING_LEAD_STATUS},
         )
     ).all()
 
@@ -96,12 +114,12 @@ async def test_boot_seed_inserts_six_null_session_historical_leads_per_tenant(
 
     for schema_name in (SUNSHINE.schema_name, FLORIDA.schema_name):
         assert (
-            await _count_leads(db_session, schema_name)
+            await _count_historical_leads(db_session, schema_name)
             == EXPECTED_HISTORICAL_LEADS_PER_TENANT
         )
-        # Every seeded row is part of the shared `NULL` baseline.
+        # Every seeded historical row is part of the shared `NULL` baseline.
         assert (
-            await _count_null_session_leads(db_session, schema_name)
+            await _count_null_session_historical_leads(db_session, schema_name)
             == EXPECTED_HISTORICAL_LEADS_PER_TENANT
         )
 
@@ -121,7 +139,7 @@ async def test_re_seed_is_a_no_op_on_the_historical_leads(
 
     for schema_name in (SUNSHINE.schema_name, FLORIDA.schema_name):
         assert (
-            await _count_leads(db_session, schema_name)
+            await _count_historical_leads(db_session, schema_name)
             == EXPECTED_HISTORICAL_LEADS_PER_TENANT
         )
 
