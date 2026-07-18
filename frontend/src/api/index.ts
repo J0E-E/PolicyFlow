@@ -16,6 +16,7 @@ export {
   getLead,
   getLeadTimeline,
   getOpportunityBoard,
+  getOpportunityPolicy,
   listLeads,
   listTenants,
   qualifyLead,
@@ -27,12 +28,14 @@ export {
   submitApplication,
   revealMedicareId,
   resetDemoSession,
+  runAepSweep,
   resolveDuplicate,
   revealLeadField,
   signOut,
   submitPublicIntake,
 } from "./client";
 export type {
+  AepSweepResult,
   Application,
   Capability,
   ConversionPrefill,

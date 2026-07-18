@@ -30,11 +30,13 @@ from ..auth.provider import Identity
 from ..auth.rbac import Capability
 from ..applications.read import serialize_application
 from ..applications.service import OneActiveApplicationError, select_quote
+from ..policies.read import serialize_policy
 from ..applications.steps import application_step_for
 from ..demo.session import current_demo_session
 from ..models.application import Application
 from ..models.contact import Contact
 from ..models.opportunity import Opportunity
+from ..models.policy import Policy
 from ..models.quote import Quote
 from ..models.quote_request import QuoteRequest
 from ..models.user import Role
@@ -232,6 +234,74 @@ async def list_opportunities(
             )
             for opportunity in opportunities
         ],
+    }
+
+
+@router.get("/{opportunity_id}/policy")
+async def get_opportunity_policy(
+    opportunity_id: uuid.UUID,
+    request: Request,
+    identity: Identity = Depends(require_authenticated),
+    db: AsyncSession = Depends(get_tenant_db),
+) -> dict:
+    """Return the policy issued for one opportunity, overlay-aware (P2.4 Epic 6).
+
+    The thin read the opportunity-detail page uses to show an issued policy's current
+    status. Any authenticated tenant user may read; `get_tenant_db` scopes to the
+    caller's schema and `_scope_to_session` further scopes the opportunity to the
+    shared seed baseline ∪ the caller's demo session, so an opportunity owned by
+    another session is a `404` (indistinguishable from not-found). A visible
+    opportunity with no issued policy is likewise a `404`.
+
+    The policy's wire `status` runs through the derive-at-read *Renewal Due* overlay
+    (ADR 0005): a **baseline** policy (`demo_session_id IS NULL`) never takes the real
+    status write, so it reads *Renewal Due* only when the caller's session holds an
+    `origin='renewal'` opportunity for it — the `origin='renewal'` qualifier matters,
+    because a cross-sell opportunity (Epic 13) also sets `source_policy_id` and would
+    otherwise false-positive. A session-owned policy already carries the real status,
+    which `serialize_policy` surfaces without the flag.
+    """
+    demo_session = await current_demo_session(request, db)
+    demo_session_id = demo_session.id if demo_session is not None else None
+
+    opportunity = (
+        await db.execute(
+            _scope_to_session(
+                select(Opportunity).where(Opportunity.id == opportunity_id),
+                demo_session_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if opportunity is None:
+        raise HTTPException(status_code=404, detail="opportunity not found")
+
+    policy = (
+        await db.execute(
+            select(Policy).where(Policy.opportunity_id == opportunity_id)
+        )
+    ).scalar_one_or_none()
+    if policy is None:
+        raise HTTPException(status_code=404, detail="policy not found")
+
+    # The overlay only ever lifts a baseline policy: a session-owned policy already
+    # carries its real status. A baseline policy reads *Renewal Due* when the caller's
+    # session holds an `origin='renewal'` opportunity pointing at it (cross-sell also
+    # sets `source_policy_id`, so the origin qualifier is load-bearing).
+    overlay_renewal_due = False
+    if policy.demo_session_id is None and demo_session_id is not None:
+        renewal_exists = await db.scalar(
+            select(Opportunity.id)
+            .where(
+                Opportunity.source_policy_id == policy.id,
+                Opportunity.origin == "renewal",
+                Opportunity.demo_session_id == demo_session_id,
+            )
+            .limit(1)
+        )
+        overlay_renewal_due = renewal_exists is not None
+
+    return {
+        "policy": serialize_policy(policy, overlay_renewal_due=overlay_renewal_due)
     }
 
 

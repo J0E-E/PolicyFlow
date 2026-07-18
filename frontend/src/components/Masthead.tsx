@@ -4,6 +4,7 @@ import TenantSealMark from "./TenantSealMark.tsx";
 import RoleSwitcher from "./RoleSwitcher.tsx";
 import DemoSessionCountdown from "./DemoSessionCountdown.tsx";
 import WorkspaceResetControl from "./WorkspaceResetControl.tsx";
+import RenewalSweepControl from "./RenewalSweepControl.tsx";
 import ViewOnlyTag from "./ViewOnlyTag.tsx";
 import ExplainerPopover from "./ExplainerPopover.tsx";
 import SurfaceToggle from "./SurfaceToggle.tsx";
@@ -166,6 +167,11 @@ export default function Masthead({
               the `POST /api/demo/session/reset` call, and all its feedback, so the
               masthead stays props-only. */}
           {isPlatformAdmin && <WorkspaceResetControl />}
+          {/* Platform-Admin AEP renewal sweep (P2.4 Epic 6) — beside the workspace
+              reset, rendered ONLY for the Platform Admin persona. Self-contained:
+              it owns its own popover, the `POST /api/renewals/aep-sweep` call, and
+              its {generated, skipped} feedback, so the masthead stays props-only. */}
+          {isPlatformAdmin && <RenewalSweepControl />}
           {/* Session-model explainer (Epic 19) — after the DEMO SESSION stamp,
               explaining the sandboxed demo session (no CRM PARALLEL section). */}
           <ExplainerPopover

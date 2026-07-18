@@ -1,0 +1,200 @@
+"""DB proof of the overlay-aware policy read — `GET /api/opportunities/{id}/policy`.
+
+The thin read the opportunity-detail page uses to show an issued policy's status
+(P2.4 Epic 6). Drives the real DB-backed client (the `seeded` + `db_client`
+substrate), reading the **sole** seeded Sunshine `medicare_advantage` baseline
+policy through its originating (conversion) opportunity.
+
+Three cases pin the derive-at-read *Renewal Due* overlay (ADR 0005):
+
+- a baseline policy with **no** renewal opportunity in the caller's session reads
+  `Active`;
+- after an AEP sweep in the caller's session, the same baseline policy reads
+  `Renewal Due` — via the overlay, with no stored status change;
+- a **session-owned** policy already carrying the real `Renewal Due` status reads it
+  straight through, without the overlay.
+
+`pytest.ini` sets `asyncio_mode = auto`, so these async tests carry no decorator.
+The `seeded`/`db_client` fixtures + `assume` helper come from the shared suites.
+"""
+
+import uuid
+from datetime import datetime, timezone
+
+import pytest_asyncio
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from app.demo.session import DEMO_SESSION_COOKIE_NAME
+from app.models.opportunity import Opportunity
+from app.models.policy import Policy
+from app.models.user import Role
+from app.tenancy.registry import FLORIDA, SUNSHINE
+
+from .test_demo_assume_persona import assume
+from .test_endpoints_db import seeded  # noqa: F401 — used by name
+
+
+@pytest_asyncio.fixture
+async def cleanup_committed_renewals(database_engine):
+    """Delete every renewal the after-sweep test committed (see the sweep-endpoint suite).
+
+    The sweep commits `origin='renewal'` opportunities with a NULL `source_lead_id`,
+    which would otherwise break the migration round-trip tests that downgrade past
+    0020. Clears all renewals + renewal-review tasks across both tenant schemas at
+    teardown; safe because renewals are created only by these tests and pytest runs
+    sequentially.
+    """
+    yield
+    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    async with session_factory() as session:
+        for tenant in (SUNSHINE, FLORIDA):
+            await session.execute(
+                text(
+                    f"DELETE FROM {tenant.schema_name}.tasks "
+                    "WHERE task_type = 'renewal_review'"
+                )
+            )
+            await session.execute(
+                text(
+                    f"DELETE FROM {tenant.schema_name}.opportunities "
+                    "WHERE origin = 'renewal'"
+                )
+            )
+        await session.commit()
+
+
+async def _seeded_ma_opportunity_id(db_session) -> uuid.UUID:
+    """Return the originating opportunity id of the sole baseline Sunshine MA policy."""
+    return (
+        await db_session.execute(
+            text(
+                f"SELECT o.id FROM {SUNSHINE.schema_name}.opportunities o "
+                f"JOIN {SUNSHINE.schema_name}.policies p "
+                "ON p.opportunity_id = o.id "
+                "WHERE o.product_line = 'medicare_advantage' "
+                "AND o.demo_session_id IS NULL"
+            )
+        )
+    ).scalar_one()
+
+
+async def _insert_session_owned_renewal_due_policy(
+    database_engine, demo_session_id: uuid.UUID
+) -> uuid.UUID:
+    """Commit a session-owned opportunity + a `Renewal Due` policy; return the opp id.
+
+    Inserts into the Sunshine schema via a committed session so the request's
+    `get_tenant_db` sees it. The policy carries the **real** `Renewal Due` status and
+    is tagged with `demo_session_id`, so the read must surface it straight through
+    (never via the baseline overlay).
+    """
+    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    async with session_factory() as session:
+        await session.execute(text(f"SET search_path TO {SUNSHINE.schema_name}"))
+        opportunity = Opportunity(
+            contact_id=uuid.uuid4(),
+            household_id=uuid.uuid4(),
+            product_line="medicare_advantage",
+            stage="Policy Active",
+            origin="conversion",
+            owner_user_id=uuid.uuid4(),
+            owner_username="agent.one",
+            source_lead_id=uuid.uuid4(),
+            correlation_id=uuid.uuid4(),
+            demo_session_id=demo_session_id,
+        )
+        session.add(opportunity)
+        await session.flush()
+        session.add(
+            Policy(
+                opportunity_id=opportunity.id,
+                application_id=uuid.uuid4(),
+                contact_id=opportunity.contact_id,
+                policy_number="MA-SESSIONOWNED",
+                carrier="Humana",
+                product_label="Gold Plus HMO",
+                coverage_amount=7500,
+                premium_monthly=29,
+                premium_annual=348,
+                status="Renewal Due",
+                correlation_id=uuid.uuid4(),
+                demo_session_id=demo_session_id,
+                issued_at=datetime(2022, 3, 1, tzinfo=timezone.utc),
+            )
+        )
+        await session.commit()
+        return opportunity.id
+
+
+async def test_baseline_policy_without_a_renewal_reads_active(
+    seeded,  # noqa: F811 — fixture param, not a redefinition
+    db_client,
+    db_session,
+    container_keys_session_factory,
+):
+    """With no renewal opportunity in the caller's session, the policy reads Active."""
+    assert (
+        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    ).status_code == 200
+    opportunity_id = await _seeded_ma_opportunity_id(db_session)
+
+    response = await db_client.get(f"/api/opportunities/{opportunity_id}/policy")
+
+    assert response.status_code == 200
+    assert response.json()["policy"]["status"] == "Active"
+
+
+async def test_baseline_policy_reads_renewal_due_after_a_sweep(
+    seeded,  # noqa: F811 — fixture param, not a redefinition
+    db_client,
+    db_session,
+    container_keys_session_factory,
+    cleanup_committed_renewals,
+):
+    """After an AEP sweep in the caller's session, the baseline policy reads Renewal Due.
+
+    Agent → Platform Admin (runs the sweep in the shared demo session) → Agent again,
+    all one demo session — so the reader's session holds the renewal opportunity the
+    overlay keys on.
+    """
+    assert (
+        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    ).status_code == 200
+    assert (
+        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.PLATFORM_ADMIN)
+    ).status_code == 200
+    sweep = await db_client.post("/api/renewals/aep-sweep")
+    assert sweep.json() == {"generated": 1, "skipped": 0}
+
+    # Back to a tenant user in the same demo session to read the policy.
+    assert (
+        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    ).status_code == 200
+    opportunity_id = await _seeded_ma_opportunity_id(db_session)
+
+    response = await db_client.get(f"/api/opportunities/{opportunity_id}/policy")
+
+    assert response.status_code == 200
+    assert response.json()["policy"]["status"] == "Renewal Due"
+
+
+async def test_session_owned_policy_reads_its_stored_renewal_due_status(
+    seeded,  # noqa: F811 — fixture param, not a redefinition
+    db_client,
+    database_engine,
+    container_keys_session_factory,
+):
+    """A session-owned policy stored as Renewal Due reads it straight through."""
+    assert (
+        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    ).status_code == 200
+    demo_session_id = uuid.UUID(db_client.cookies[DEMO_SESSION_COOKIE_NAME])
+    opportunity_id = await _insert_session_owned_renewal_due_policy(
+        database_engine, demo_session_id
+    )
+
+    response = await db_client.get(f"/api/opportunities/{opportunity_id}/policy")
+
+    assert response.status_code == 200
+    assert response.json()["policy"]["status"] == "Renewal Due"

@@ -6,7 +6,13 @@ import ApplicationStep from "./ApplicationStep.tsx";
 import PolicySummary from "./PolicySummary.tsx";
 import Button from "../components/Button.tsx";
 import { useCapability } from "../session";
-import { ApiError, getOpportunityBoard, selectQuote, submitApplication } from "../api";
+import {
+  ApiError,
+  getOpportunityBoard,
+  getOpportunityPolicy,
+  selectQuote,
+  submitApplication,
+} from "../api";
 import type { Application, OpportunityRow, Policy } from "../api";
 
 // Whether a Draft application's product step is captured (or it has no step), so it
@@ -69,6 +75,10 @@ export default function OpportunityDetailPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   // The issued policy once an application is approved + submitted.
   const [policy, setPolicy] = useState<Policy | null>(null);
+  // The policy fetched for an already-issued opportunity on a fresh visit (no
+  // just-submitted policy in state) — its overlay-aware status may read *Renewal
+  // Due* (P2.4 Epic 6). The just-submitted `policy` above always takes precedence.
+  const [issuedPolicy, setIssuedPolicy] = useState<Policy | null>(null);
   const isMountedRef = useRef(true);
 
   const loadOpportunity = useCallback(() => {
@@ -102,6 +112,35 @@ export default function OpportunityDetailPage() {
       isMountedRef.current = false;
     };
   }, [loadOpportunity]);
+
+  // On a fresh visit to an already-issued opportunity (stage *Policy Active*) with
+  // no just-submitted policy in state, fetch the issued policy so its overlay-aware
+  // status renders (a swept baseline policy reads *Renewal Due*, P2.4 Epic 6). The
+  // just-submitted `policy` wins, so this never overrides a live submission; a failed
+  // fetch leaves `issuedPolicy` null and the rest of the page still renders.
+  useEffect(() => {
+    if (
+      detailLoad.kind !== "loaded" ||
+      policy !== null ||
+      detailLoad.opportunity.stage !== "Policy Active" ||
+      opportunityId === undefined
+    ) {
+      return;
+    }
+    let isCancelled = false;
+    getOpportunityPolicy(opportunityId)
+      .then((fetched) => {
+        if (!isCancelled) {
+          setIssuedPolicy(fetched);
+        }
+      })
+      .catch(() => {
+        // Leave `issuedPolicy` null — the header and quote panel still render.
+      });
+    return () => {
+      isCancelled = true;
+    };
+  }, [detailLoad, policy, opportunityId]);
 
   // Select a quote → create the Draft Application. On success the application
   // appears and the opportunity advances to *Application Started* server-side, so we
@@ -169,7 +208,7 @@ export default function OpportunityDetailPage() {
         canRequest={canRequest}
         opportunityId={opportunityId ?? ""}
         application={application}
-        policy={policy}
+        policy={policy ?? issuedPolicy}
         selectingQuoteId={selectingQuoteId}
         selectError={selectError}
         isSubmitting={isSubmitting}

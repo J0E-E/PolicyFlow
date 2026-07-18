@@ -9,6 +9,7 @@
 // out" from a real failure.
 
 import type {
+  AepSweepResult,
   ConversionPrefill,
   ConversionSummary,
   ConvertLeadRequest,
@@ -175,6 +176,19 @@ export function resetDemoSession(): Promise<DemoSessionResetResult> {
   return request<DemoSessionResetResult>("POST", "/api/demo/session/reset");
 }
 
+/**
+ * Run the AEP renewal sweep via `POST /api/renewals/aep-sweep` (P2.4 Epic 6).
+ *
+ * The Platform-Admin-only sweep: it runs `generate_renewals` for the AEP rule over
+ * the caller's demo session in its currently-selected tenant, bypassing the seasonal
+ * calendar, and returns the `{ generated, skipped }` counts. The `pf_demo_session`
+ * cookie rides the call via `credentials: "include"`; a re-run of an already-swept
+ * session reports every policy as `skipped` (idempotent).
+ */
+export function runAepSweep(): Promise<AepSweepResult> {
+  return request<AepSweepResult>("POST", "/api/renewals/aep-sweep");
+}
+
 /** Sign out via `POST /api/auth/logout`; the response body is ignored. */
 export async function signOut(): Promise<void> {
   await request<{ detail: string }>("POST", "/api/auth/logout");
@@ -294,6 +308,23 @@ export function getQuoteRequest(
     "GET",
     `/api/opportunities/${opportunityId}/quote-requests/${quoteRequestId}`,
   );
+}
+
+/**
+ * Get the policy issued for one opportunity via
+ * `GET /api/opportunities/{id}/policy`, unwrapping the `{ policy }` envelope. The
+ * policy's `status` is overlay-aware (P2.4 Epic 6): a baseline policy the caller's
+ * session has renewed reads *Renewal Due*. Throws an `ApiError` with `status` `404`
+ * for an opportunity not visible to the caller or one with no issued policy.
+ */
+export async function getOpportunityPolicy(
+  opportunityId: string,
+): Promise<Policy> {
+  const responseBody = await request<{ policy: Policy }>(
+    "GET",
+    `/api/opportunities/${opportunityId}/policy`,
+  );
+  return responseBody.policy;
 }
 
 /**

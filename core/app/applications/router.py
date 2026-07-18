@@ -340,7 +340,9 @@ async def submit(
         ),
         "opportunity_stage": opportunity.stage,
         "policy": (
-            serialize_policy(policy, medicare_id_masked) if policy is not None else None
+            serialize_policy(policy, medicare_id_masked, overlay_renewal_due=False)
+            if policy is not None
+            else None
         ),
     }
 

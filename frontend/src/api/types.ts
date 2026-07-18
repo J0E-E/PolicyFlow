@@ -411,6 +411,18 @@ export interface DemoSessionResetResult {
 }
 
 /**
+ * The summary returned by `POST /api/renewals/aep-sweep` (P2.4 Epic 6) — how many
+ * renewals the AEP sweep created versus skipped. `generated` counts the policies
+ * that gained a new renewal opportunity this run; `skipped` counts those already
+ * renewed this cycle (a re-run of an already-swept session reports every policy as
+ * `skipped`, the idempotency proof).
+ */
+export interface AepSweepResult {
+  generated: number;
+  skipped: number;
+}
+
+/**
  * One opportunity row on the pipeline board, mirroring the backend's minimal
  * tracer payload (`core/app/opportunities/router.py::_opportunity_row`). `stage`
  * is the canonical stored stage value (e.g. `New`, `Qualified`); `next_stage` is

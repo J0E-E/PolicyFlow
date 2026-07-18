@@ -8,20 +8,33 @@ All non-PII — the Tenant-1 Medicare ID is added masked by Epic 11, never raw h
 from ..models.policy import Policy
 
 
-def serialize_policy(policy: Policy, medicare_id_masked: str | None = None) -> dict:
+def serialize_policy(
+    policy: Policy,
+    medicare_id_masked: str | None = None,
+    *,
+    overlay_renewal_due: bool = False,
+) -> dict:
     """Return one policy's non-PII wire shape.
 
     `medicare_id_masked` is the masked Medicare ID of the policy's application (D9 —
     masked on Policy reads too), or `None` when the tenant does not collect one or the
     application captured none. The policy itself stores no Medicare ID; the reveal
     rides the linked `application_id`. Never the plaintext.
+
+    `overlay_renewal_due` is the derive-at-read *Renewal Due* overlay (P2.4 / ADR 0005):
+    a baseline policy (`demo_session_id IS NULL`) never takes the real status write, so
+    the caller passes `True` when the reading session holds a renewal opportunity for it,
+    and the wire `status` reads *Renewal Due* without any stored change. Session-owned
+    policies already carry the real `Renewal Due` status, which also wins here — so the
+    status is *Renewal Due* when it is stored that way **or** the overlay flag is set.
     """
+    status = "Renewal Due" if overlay_renewal_due or policy.status == "Renewal Due" else policy.status
     return {
         "id": str(policy.id),
         "opportunity_id": str(policy.opportunity_id),
         "application_id": str(policy.application_id),
         "policy_number": policy.policy_number,
-        "status": policy.status,
+        "status": status,
         "carrier": policy.carrier,
         "product_label": policy.product_label,
         "coverage_amount": policy.coverage_amount,

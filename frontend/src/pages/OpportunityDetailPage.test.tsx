@@ -12,6 +12,7 @@ import type { OpportunityBoard, OpportunityRow } from "../api";
 
 vi.mock("../api", () => ({
   getOpportunityBoard: vi.fn(),
+  getOpportunityPolicy: vi.fn(),
   requestQuotes: vi.fn(),
   getQuoteRequest: vi.fn(),
   selectQuote: vi.fn(),
@@ -162,6 +163,10 @@ describe("OpportunityDetailPage", () => {
       application_step: null,
       beneficiary: null,
       health_answers: null,
+      decision: null,
+      decided_at: null,
+      collects_medicare_id: false,
+      medicare_id_masked: null,
     });
     renderAt("opp-1");
 
