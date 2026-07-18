@@ -11,8 +11,16 @@ both ``contact_id`` and ``household_id`` (the household rollup), the ``product_l
 key, and a ``stage`` that defaults to the literal ``'New'`` — **no** state machine is
 pulled forward (P2.2 owns stage transitions). ``estimated_annual_premium`` (P2.3) and
 ``target_close_date`` (P2.2 / P2.4) are nullable placeholders later phases fill;
-``origin`` records how it was created (``'conversion'`` here), alongside the
-``source_lead_id`` and the ``correlation_id`` / ``demo_session_id`` trace columns.
+``origin`` records how it was created (``'conversion'`` / ``'renewal'`` /
+``'cross_sell'``, plain text), alongside the ``correlation_id`` / ``demo_session_id``
+trace columns.
+
+A renewal or cross-sell opportunity springs from a policy, not a lead (P2.4), so it
+carries the nullable ``source_policy_id`` (the originating policy) and, for renewals,
+the ``renewal_cycle`` key; and ``source_lead_id`` is **nullable** — only conversion
+opportunities set it, renewal / cross-sell ones leave it null. These columns and the
+one-renewal-per-policy-cycle partial unique index are owned by migration ``0020``;
+this model mirrors them for parity.
 """
 
 import uuid
@@ -55,7 +63,13 @@ class Opportunity(Base):
         sa.Date, nullable=True
     )
     origin: Mapped[str] = mapped_column(sa.Text, nullable=False)
-    source_lead_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
+    source_lead_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        sa.Uuid, nullable=True
+    )
+    source_policy_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        sa.Uuid, nullable=True
+    )
+    renewal_cycle: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     correlation_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
     demo_session_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         sa.Uuid, nullable=True

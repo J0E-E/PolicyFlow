@@ -4,7 +4,9 @@ Pure metadata introspection — no DB / no Docker / no async. Asserts that
 ``Household`` / ``Contact`` / ``Opportunity`` / ``Task`` are registered on
 ``Base.metadata``, are **schema-less** (resolved via ``search_path`` like ``Lead``,
 not bound to a schema), and carry the columns the Epic-1 migration ``0015`` created
-with the same nullability. The expected shapes are hand-transcribed from TDD §5.2,
+with the same nullability — plus, on ``Opportunity``, the renewal / cross-sell
+columns migration ``0020`` (P2.4) added and the ``source_lead_id`` nullability it
+relaxed. The expected shapes are hand-transcribed from TDD §5.2,
 so this is a genuine cross-check against the spec rather than a tautology over the
 models — the lock-step partner of the substrate test
 ``test_lead_conversion_migration.py``.
@@ -63,7 +65,13 @@ EXPECTED_MODELS = {
             "estimated_annual_premium": True,
             "target_close_date": True,
             "origin": False,
-            "source_lead_id": False,
+            # Relaxed to nullable by migration 0020 (P2.4): renewal / cross-sell
+            # opportunities have no originating lead.
+            "source_lead_id": True,
+            # Added by migration 0020 (P2.4): the renewal's source policy and its
+            # idempotency cycle key — both nullable (only renewal rows set them).
+            "source_policy_id": True,
+            "renewal_cycle": True,
             "correlation_id": False,
             "demo_session_id": True,
             "created_at": False,

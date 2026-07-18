@@ -21,12 +21,13 @@ Source TDD: [./tdd-P2.4-renewals-cross-sell.md](./tdd-P2.4-renewals-cross-sell.m
   - Contract for Epic 4: `renewal_deadline`/`renewal_cycle_key` raise `ValueError` on a non-renewing rule (`"none"`) — callers must pass only `"aep"`/`"anniversary"`.
   - Anniversary semantics: a Feb-29 issue date observes its anniversary on **Feb 28** in a non-leap year (matters for Epic 4/8 window filtering).
 
-## Epic 2 — Migration 0020 (renewal / cross-sell schema)
+## Epic 2 — Migration 0020 (renewal / cross-sell schema) — **COMPLETED** (16m · 11.5M tok · 702k tok/min)
 - **Goal:** Additive migration: `opportunities.source_policy_id` + `renewal_cycle` (both nullable), `source_lead_id` relaxed to nullable, `origin` gains `'renewal'` / `'cross_sell'`, and the partial unique index guarding one renewal opportunity per policy per cycle per session (ADR 0001/0004). Policy `status` allows a new `'Renewal Due'` value (plain text, no schema change).
 - **Rough scope:** One forward-only Alembic migration + model field additions. No behavior yet — mainline stays working on additive nullable columns.
 - **Open questions / decisions for stakeholders:** none expected — schema settled in TDD §5.2 (D3/D4).
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Contract for Epic 4/6/8: the idempotency backstop is the partial unique index `ux_opportunities_one_renewal_per_policy_cycle` on `(source_policy_id, renewal_cycle, demo_session_id) WHERE origin = 'renewal'` — it binds only when a row's `origin = 'renewal'`, so `generate_renewals` must set that origin for the DB guard to fire. `source_lead_id` is now nullable (renewal/cross-sell opportunities leave it null; conversion still sets it).
 
 ## Epic 3 — Renewal event vocabulary
 - **Goal:** Add `EventType.POLICY_RENEWAL_DUE = "policy.renewal_due"` to the catalog with **no** new consumer binding (rides `sync.logger` `#`), and a catalog test asserting the new member plus unchanged bindings.
