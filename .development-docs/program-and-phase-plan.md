@@ -625,7 +625,7 @@ ordered so the system stays runnable/deployable after each.
   visibly in stage labels/toggles (itself a demo requirement).
 - **Size:** M–L.
 
-#### P2.3 — Quotes → Application → Policy `[UI]`
+#### P2.3 — Quotes → Application → Policy `[UI]` COMPLETED
 
 - **Goal:** The opportunity-to-policy spine — quote generation, quote-selection →
   Application, application lifecycle + product-specific steps, simulated carrier decision,

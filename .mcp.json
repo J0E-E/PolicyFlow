@@ -16,8 +16,15 @@
       ]
     },
     "playwright": {
-      "type": "http",
-      "url": "http://localhost:8931/mcp"
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--browser",
+        "chromium",
+        "--headless",
+        "--ignore-https-errors"
+      ]
     }
   }
 }
