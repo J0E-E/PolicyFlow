@@ -29,12 +29,13 @@ Source TDD: [./tdd-P2.4-renewals-cross-sell.md](./tdd-P2.4-renewals-cross-sell.m
 - **Implementation notes:**
   - Contract for Epic 4/6/8: the idempotency backstop is the partial unique index `ux_opportunities_one_renewal_per_policy_cycle` on `(source_policy_id, renewal_cycle, demo_session_id) WHERE origin = 'renewal'` — it binds only when a row's `origin = 'renewal'`, so `generate_renewals` must set that origin for the DB guard to fire. `source_lead_id` is now nullable (renewal/cross-sell opportunities leave it null; conversion still sets it).
 
-## Epic 3 — Renewal event vocabulary
+## Epic 3 — Renewal event vocabulary — **COMPLETED** (11m · 11.1M tok · 975k tok/min)
 - **Goal:** Add `EventType.POLICY_RENEWAL_DUE = "policy.renewal_due"` to the catalog with **no** new consumer binding (rides `sync.logger` `#`), and a catalog test asserting the new member plus unchanged bindings.
 - **Rough scope:** The events catalog + its test. No emitters yet.
-- **Open questions / decisions for stakeholders:** none expected (D6).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Contract for Epic 4: `POLICY_RENEWAL_DUE` carries **no dedicated consumer binding** — it rides the `#`-binding `sync.logger` alone (D6), so the emitter needs **no `CONSUMER_BINDINGS` / broker-topology change**. Emitters set a **new** `correlation_id` and `causation_id=None`.
 
 ## Epic 4 — Renewal generation core
 - **Goal:** The `generate_renewals` service — select session-visible active policies on a given rule's lines, filter by the rule's window, skip on the idempotency key (any stage, ADR 0001), else create the Renewal Opportunity + renewal-review Task + both events (new correlation), and write the real `Renewal Due` status for session-owned policies. Returns `{generated, skipped}`. Unit-tested against a seeded pytest fixture.

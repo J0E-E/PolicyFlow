@@ -44,9 +44,11 @@ class EventType(StrEnum):
     (`quote.requested`, `quote.completed`, `application.started`,
     `application.submitted`, `application.approved`, `application.declined`,
     `policy.created`) are the P2.3 events the quote/application/policy flow emits
-    (TDD §5.8 / Decision 12). Of these, only `quote.requested` carries a literal
-    binding (the `carrier.quote` stub); every other conversion, pipeline, and
-    money-path member fans out to the `#`-binding `sync.logger` alone.
+    (TDD §5.8 / Decision 12); the renewal member (`policy.renewal_due`) is the
+    P2.4 event each renewal sweep emits when a policy comes due (TDD §5.3 /
+    Decision 6). Of these, only `quote.requested` carries a literal binding (the
+    `carrier.quote` stub); every other conversion, pipeline, money-path, and
+    renewal member fans out to the `#`-binding `sync.logger` alone.
     """
 
     RECORD_CREATED = "record.created"
@@ -69,6 +71,7 @@ class EventType(StrEnum):
     APPLICATION_APPROVED = "application.approved"
     APPLICATION_DECLINED = "application.declined"
     POLICY_CREATED = "policy.created"
+    POLICY_RENEWAL_DUE = "policy.renewal_due"
 
 
 # The contract's schema version, stamped onto every envelope (TDD §5.3,

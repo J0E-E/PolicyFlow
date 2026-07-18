@@ -42,6 +42,7 @@ EXPECTED_EVENT_TYPES: dict[str, str] = {
     "APPLICATION_APPROVED": "application.approved",
     "APPLICATION_DECLINED": "application.declined",
     "POLICY_CREATED": "policy.created",
+    "POLICY_RENEWAL_DUE": "policy.renewal_due",
 }
 
 # Independent transcription of the TDD §5.3 / §5.4 consumer→binding registry,
@@ -160,6 +161,16 @@ def test_other_money_path_events_fan_out_to_sync_logger_only():
         "policy.created",
     ):
         assert consumers_for_event_type(event_type) == (SYNC_LOGGER,), event_type
+
+
+def test_policy_renewal_due_fans_out_to_sync_logger_only():
+    """The P2.4 renewal event reaches the sync logger alone (no dedicated bind).
+
+    `policy.renewal_due` carries no literal binding — it rides the `#` catch-all
+    only (TDD §5.3 / Decision 6), so a renewal sweep's event fans out to the
+    sync logger and the binding registry stays unchanged.
+    """
+    assert consumers_for_event_type("policy.renewal_due") == (SYNC_LOGGER,)
 
 
 def test_unknown_event_type_still_reaches_the_catch_all_logger():
