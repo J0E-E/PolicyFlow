@@ -54,6 +54,11 @@ class ProductLine:
     machine blocks entry to *Quoted* for an under-65 contact on such a line. It
     defaults ``False`` so only the Medicare lines opt in.
 
+    ``renewal_rule`` classifies how this line renews (P2.4 / ADR 0003): ``"aep"``
+    (the seasonal Medicare Annual Enrollment sweep), ``"anniversary"`` (a rolling
+    60-day-before-the-issue-anniversary sweep), or ``"none"`` (lines that never
+    auto-renew). It defaults ``"none"`` so a line opts in to a sweep explicitly.
+
     ``application_step`` names the product-specific step a Draft application on
     this line must capture (P2.3 D10): ``"beneficiary"`` (life-style lines),
     ``"health"`` (health-style lines), or ``None`` for lines that submit with no
@@ -65,6 +70,7 @@ class ProductLine:
     key: str
     label: str
     requires_medicare_age: bool = False
+    renewal_rule: str = "none"
     application_step: str | None = None
     quote_options: tuple[QuoteOptionTemplate, ...] = ()
 
@@ -123,6 +129,7 @@ SUNSHINE = TenantConfig(
             key="medicare_advantage",
             label="Medicare Advantage",
             requires_medicare_age=True,
+            renewal_rule="aep",
             quote_options=(
                 QuoteOptionTemplate("Humana", "Gold Plus HMO", 7500, 29),
                 QuoteOptionTemplate("Aetna", "Medicare Eagle PPO", 9000, 49),
@@ -133,6 +140,7 @@ SUNSHINE = TenantConfig(
             key="medicare_supplement",
             label="Medicare Supplement",
             requires_medicare_age=True,
+            renewal_rule="anniversary",
             quote_options=(
                 QuoteOptionTemplate("Mutual of Omaha", "Plan G", 6000, 142),
                 QuoteOptionTemplate("Aetna", "Plan N", 6000, 118),
@@ -142,6 +150,7 @@ SUNSHINE = TenantConfig(
         ProductLine(
             key="final_expense",
             label="Final Expense",
+            renewal_rule="none",
             application_step="beneficiary",
             quote_options=(
                 QuoteOptionTemplate("Mutual of Omaha", "Living Promise Whole Life", 15000, 58),
@@ -152,6 +161,7 @@ SUNSHINE = TenantConfig(
         ProductLine(
             key="dental_vision_hearing",
             label="Dental, Vision & Hearing",
+            renewal_rule="anniversary",
             quote_options=(
                 QuoteOptionTemplate("Humana", "Dental Preventive Plus", 1500, 32),
                 QuoteOptionTemplate("Aetna", "Dental, Vision & Hearing Bundle", 2000, 45),
@@ -180,6 +190,7 @@ FLORIDA = TenantConfig(
         ProductLine(
             key="term_life",
             label="Term Life Insurance",
+            renewal_rule="none",
             application_step="beneficiary",
             quote_options=(
                 QuoteOptionTemplate("Prudential", "Term Essential 20", 250000, 28),
@@ -190,6 +201,7 @@ FLORIDA = TenantConfig(
         ProductLine(
             key="whole_life",
             label="Whole Life Insurance",
+            renewal_rule="none",
             application_step="beneficiary",
             quote_options=(
                 QuoteOptionTemplate("Prudential", "Whole Life Advantage", 100000, 96),
@@ -199,6 +211,7 @@ FLORIDA = TenantConfig(
         ProductLine(
             key="health",
             label="Health Insurance",
+            renewal_rule="anniversary",
             application_step="health",
             quote_options=(
                 QuoteOptionTemplate("Cigna", "Connect Bronze HMO", 9000, 312),
@@ -209,6 +222,7 @@ FLORIDA = TenantConfig(
         ProductLine(
             key="critical_illness",
             label="Critical Illness",
+            renewal_rule="anniversary",
             application_step="health",
             quote_options=(
                 QuoteOptionTemplate("Aflac", "Critical Care Protection", 20000, 34),

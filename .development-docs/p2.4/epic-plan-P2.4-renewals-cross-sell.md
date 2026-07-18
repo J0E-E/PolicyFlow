@@ -12,12 +12,14 @@ Source TDD: [./tdd-P2.4-renewals-cross-sell.md](./tdd-P2.4-renewals-cross-sell.m
 
 ## Section 1 — Renewal generation & overlay
 
-## Epic 1 — Renewal rules + pure predicates
+## Epic 1 — Renewal rules + pure predicates — **COMPLETED** (15m · 10.1M tok · 636k tok/min)
 - **Goal:** A `renewal_rule` attribute on every product line (aep / anniversary / none, classified per ADR 0003) plus a pure, clock-free/DB-free rules module (`in_aep_window`, `anniversary_within`, `renewal_deadline`, `renewal_cycle_key`), fully unit-tested.
 - **Rough scope:** Product-line registry + a new `app/renewals/rules.py` + its unit tests. No endpoints, no DB.
 - **Open questions / decisions for stakeholders:** none expected — classification and predicate semantics settled in the TDD (D1/ADR 0003) and confirmable by the unit tests (MA=aep, ancillary/health=anniversary-60d, life=never).
 - **Depends on:** none.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - Contract for Epic 4: `renewal_deadline`/`renewal_cycle_key` raise `ValueError` on a non-renewing rule (`"none"`) — callers must pass only `"aep"`/`"anniversary"`.
+  - Anniversary semantics: a Feb-29 issue date observes its anniversary on **Feb 28** in a non-leap year (matters for Epic 4/8 window filtering).
 
 ## Epic 2 — Migration 0020 (renewal / cross-sell schema)
 - **Goal:** Additive migration: `opportunities.source_policy_id` + `renewal_cycle` (both nullable), `source_lead_id` relaxed to nullable, `origin` gains `'renewal'` / `'cross_sell'`, and the partial unique index guarding one renewal opportunity per policy per cycle per session (ADR 0001/0004). Policy `status` allows a new `'Renewal Due'` value (plain text, no schema change).

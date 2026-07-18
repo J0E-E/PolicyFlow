@@ -173,6 +173,47 @@ EXPECTED_ENABLED_OPTIONAL: dict[str, set[str]] = {
 OPTIONAL_STAGE_VALUES = {"Quoted", "Approved"}
 
 
+# The renewal rule each product line carries (P2.4 D1 / ADR 0003), keyed by slug
+# then product-line key. Hand-built here separate from the registry so a drift in
+# either side is caught: Medicare Advantage renews on the AEP sweep; the ancillary
+# and health lines renew on the rolling anniversary sweep; the life-style and final-
+# expense lines never auto-renew. Epic 4's generation core keys its sweeps on this.
+EXPECTED_RENEWAL_RULES: dict[str, dict[str, str]] = {
+    "sunshine-senior-benefits": {
+        "medicare_advantage": "aep",
+        "medicare_supplement": "anniversary",
+        "final_expense": "none",
+        "dental_vision_hearing": "anniversary",
+    },
+    "florida-family-planning": {
+        "term_life": "none",
+        "whole_life": "none",
+        "health": "anniversary",
+        "critical_illness": "anniversary",
+    },
+}
+
+# The only renewal-rule values a product line may carry (P2.4 D1 / ADR 0003).
+VALID_RENEWAL_RULES = {"aep", "anniversary", "none"}
+
+
+def test_renewal_rule_matches_the_expected_value_per_line():
+    """Each product line's `renewal_rule` matches the hand-written expectation."""
+    for tenant in TENANTS:
+        actual = {
+            product_line.key: product_line.renewal_rule
+            for product_line in tenant.product_lines
+        }
+        assert actual == EXPECTED_RENEWAL_RULES[tenant.slug], tenant.slug
+
+
+def test_renewal_rule_is_always_one_of_the_valid_values():
+    """No product line carries a renewal rule outside the valid set."""
+    for tenant in TENANTS:
+        for product_line in tenant.product_lines:
+            assert product_line.renewal_rule in VALID_RENEWAL_RULES, product_line.key
+
+
 def test_requires_medicare_age_flags_only_the_expected_lines():
     """Each tenant flags `requires_medicare_age` on exactly its Medicare lines."""
     for tenant in TENANTS:
