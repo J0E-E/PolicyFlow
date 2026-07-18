@@ -75,12 +75,15 @@ Source TDD: [./tdd-P2.4-renewals-cross-sell.md](./tdd-P2.4-renewals-cross-sell.m
     - that teardown clears committed `origin='renewal'` opps + `renewal_review` tasks but **not** the outbox event rows (`opportunity.created` + `policy.renewal_due`) the sweep also commits — harmless today, but clear those alongside in Epic 8 so any future event-count test doesn't see a polluted shared container.
     - `core/app/policies/read.py` — the overlay `status = "Renewal Due" if … else …` line runs ~95 chars; backend lint (black) isn't in the configured gate but would rewrap it.
 
-## Epic 7 — Overlay hardening
+## Epic 7 — Overlay hardening — **COMPLETED** (26m · 19.5M tok · 747k tok/min)
 - **Goal:** Route **every** policy-status render through the overlay-aware `serialize_policy` so no surface shows stale `Active`, and take the real guarded `Active → Renewal Due` write for session-created policies (ADR 0005). Baseline rows stay untouched (overlay only).
 - **Rough scope:** `serialize_policy` overlay flag threaded through all policy-status surfaces + the guarded status-write path. Backend-focused (touches the surfaces from Epic 6 and any others).
-- **Open questions / decisions for stakeholders:** none expected — mechanics settled in TDD §5.2/§5.6 (D5).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 6 (thin overlay established).
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Plan/scope deviation (auto, vetted):** Epic 7 shipped **no product-code change** — Epics 4 (guarded `Active → Renewal Due` write, `renewals/service.py`) and 6 (the only current overlay render surface, `get_opportunity_policy`) already met both goal clauses, so the in-charter work was a **verify + lock** pass (audit the two `serialize_policy` surfaces; add the precision test the suite missed). A speculative single-caller helper extraction was adversarially refuted (premature; wrong per-policy shape for Epic 13's list consumer) and dropped.
+  - **Contract for Epic 13/14 (overlay):** lift the inlined `get_opportunity_policy` predicate into a shared helper shaped for **set/batch** lookup over the household's `source_policy_id`s (avoid N+1 across the policy list) — don't copy the per-policy inline; and keep the `origin='renewal'` qualifier load-bearing — a `cross_sell` opp also sets `source_policy_id`, so the overlay must keep ignoring non-renewal origins (now test-locked).
+  - **Gotcha for Epic 13 (committing cross-sell in shared-container tests):** an `origin='cross_sell'` opportunity carries `source_lead_id = NULL` too, so committing one into the shared container **breaks 0020's migration round-trip** (downgrade restores `source_lead_id NOT NULL`). Epic 7 added a `cleanup_committed_cross_sell` teardown in `test_opportunity_policy_read.py` (deletes `origin='cross_sell'` opps across both schemas; no cross-sell tasks to clear) — Epic 13's committing cross-sell tests must mirror it.
 
 ## Epic 8 — Anniversary sweep [UI]
 - **Goal:** `POST /api/renewals/anniversary-sweep` over anniversary-line policies inside the 60-day window + a Platform-Admin button, reusing the generation core; the seeded back-dated policy renews, and `final_expense`/life policies generate nothing (test-verified).

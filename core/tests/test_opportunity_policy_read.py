@@ -64,6 +64,30 @@ async def cleanup_committed_renewals(database_engine):
         await session.commit()
 
 
+@pytest_asyncio.fixture
+async def cleanup_committed_cross_sell(database_engine):
+    """Delete every `origin='cross_sell'` opportunity a test committed.
+
+    Mirrors `cleanup_committed_renewals`: a cross-sell opportunity also carries a NULL
+    `source_lead_id` (nullable post-0020), which would otherwise break the migration
+    round-trip tests that downgrade past 0020 (they restore `source_lead_id NOT NULL`).
+    Cross-sell creates no tasks, so only the opportunity rows need clearing. Both tenant
+    schemas; safe because these tests are the only cross-sell writers and pytest runs
+    sequentially.
+    """
+    yield
+    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    async with session_factory() as session:
+        for tenant in (SUNSHINE, FLORIDA):
+            await session.execute(
+                text(
+                    f"DELETE FROM {tenant.schema_name}.opportunities "
+                    "WHERE origin = 'cross_sell'"
+                )
+            )
+        await session.commit()
+
+
 async def _seeded_ma_opportunity_id(db_session) -> uuid.UUID:
     """Return the originating opportunity id of the sole baseline Sunshine MA policy."""
     return (
@@ -77,6 +101,83 @@ async def _seeded_ma_opportunity_id(db_session) -> uuid.UUID:
             )
         )
     ).scalar_one()
+
+
+async def _seeded_ma_policy_id(db_session) -> uuid.UUID:
+    """Return the id of the sole baseline Sunshine MA policy (the overlay's target)."""
+    return (
+        await db_session.execute(
+            text(
+                f"SELECT p.id FROM {SUNSHINE.schema_name}.policies p "
+                f"JOIN {SUNSHINE.schema_name}.opportunities o "
+                "ON p.opportunity_id = o.id "
+                "WHERE o.product_line = 'medicare_advantage' "
+                "AND o.demo_session_id IS NULL"
+            )
+        )
+    ).scalar_one()
+
+
+async def _insert_cross_sell_opportunity(
+    database_engine, demo_session_id: uuid.UUID, source_policy_id: uuid.UUID
+) -> None:
+    """Commit an `origin='cross_sell'` opportunity in `demo_session_id` for the baseline.
+
+    Cross-sell (Epic 13) sets `source_policy_id` just like a renewal does, so this pins
+    that the overlay's `origin='renewal'` qualifier is load-bearing. Carries a NULL
+    `source_lead_id` (nullable post-0020) → needs the `cleanup_committed_cross_sell`
+    teardown so it doesn't break the migration round-trip.
+    """
+    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    async with session_factory() as session:
+        await session.execute(text(f"SET search_path TO {SUNSHINE.schema_name}"))
+        session.add(
+            Opportunity(
+                contact_id=uuid.uuid4(),
+                household_id=uuid.uuid4(),
+                product_line="dental_vision_hearing",
+                stage="New",
+                origin="cross_sell",
+                owner_user_id=uuid.uuid4(),
+                owner_username="agent.one",
+                source_lead_id=None,
+                source_policy_id=source_policy_id,
+                correlation_id=uuid.uuid4(),
+                demo_session_id=demo_session_id,
+            )
+        )
+        await session.commit()
+
+
+async def _insert_renewal_opportunity(
+    database_engine, demo_session_id: uuid.UUID, source_policy_id: uuid.UUID
+) -> None:
+    """Commit an `origin='renewal'` opportunity in `demo_session_id` for the baseline.
+
+    Used to prove cross-session isolation — a renewal committed under *another* session
+    must not lift the baseline for the caller. NULL `source_lead_id` (nullable post-0020)
+    → cleaned by `cleanup_committed_renewals`.
+    """
+    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    async with session_factory() as session:
+        await session.execute(text(f"SET search_path TO {SUNSHINE.schema_name}"))
+        session.add(
+            Opportunity(
+                contact_id=uuid.uuid4(),
+                household_id=uuid.uuid4(),
+                product_line="medicare_advantage",
+                stage="New",
+                origin="renewal",
+                owner_user_id=uuid.uuid4(),
+                owner_username="agent.one",
+                source_lead_id=None,
+                source_policy_id=source_policy_id,
+                renewal_cycle="aep-2026",
+                correlation_id=uuid.uuid4(),
+                demo_session_id=demo_session_id,
+            )
+        )
+        await session.commit()
 
 
 async def _insert_session_owned_renewal_due_policy(
@@ -177,6 +278,66 @@ async def test_baseline_policy_reads_renewal_due_after_a_sweep(
 
     assert response.status_code == 200
     assert response.json()["policy"]["status"] == "Renewal Due"
+
+
+async def test_cross_sell_opportunity_does_not_trigger_the_overlay(
+    seeded,  # noqa: F811 — fixture param, not a redefinition
+    db_client,
+    db_session,
+    database_engine,
+    container_keys_session_factory,
+    cleanup_committed_cross_sell,
+):
+    """A `cross_sell` opportunity on the baseline policy leaves it reading Active.
+
+    Cross-sell (Epic 13) sets `source_policy_id` exactly like a renewal, but the overlay
+    predicate keys on `origin='renewal'`. With only a cross-sell opportunity in the
+    caller's session pointing at the baseline policy, that policy must STILL read Active
+    — proving the `origin='renewal'` qualifier is load-bearing (never a false positive
+    from a cross-sell origin).
+    """
+    assert (
+        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    ).status_code == 200
+    demo_session_id = uuid.UUID(db_client.cookies[DEMO_SESSION_COOKIE_NAME])
+    policy_id = await _seeded_ma_policy_id(db_session)
+    await _insert_cross_sell_opportunity(database_engine, demo_session_id, policy_id)
+    opportunity_id = await _seeded_ma_opportunity_id(db_session)
+
+    response = await db_client.get(f"/api/opportunities/{opportunity_id}/policy")
+
+    assert response.status_code == 200
+    assert response.json()["policy"]["status"] == "Active"
+
+
+async def test_renewal_in_another_session_does_not_leak_to_the_caller(
+    seeded,  # noqa: F811 — fixture param, not a redefinition
+    db_client,
+    db_session,
+    database_engine,
+    container_keys_session_factory,
+    cleanup_committed_renewals,
+):
+    """A renewal in a DIFFERENT demo session leaves the caller reading Active.
+
+    The overlay is session-scoped: it lifts a baseline policy only when the *reader's*
+    session holds the `origin='renewal'` opportunity. A renewal committed under another
+    session must not bleed across — the caller still reads Active.
+    """
+    assert (
+        await assume(db_client, tenant_slug=SUNSHINE.slug, role=Role.AGENT)
+    ).status_code == 200
+    caller_session_id = uuid.UUID(db_client.cookies[DEMO_SESSION_COOKIE_NAME])
+    policy_id = await _seeded_ma_policy_id(db_session)
+    other_session_id = uuid.uuid4()
+    assert other_session_id != caller_session_id
+    await _insert_renewal_opportunity(database_engine, other_session_id, policy_id)
+    opportunity_id = await _seeded_ma_opportunity_id(db_session)
+
+    response = await db_client.get(f"/api/opportunities/{opportunity_id}/policy")
+
+    assert response.status_code == 200
+    assert response.json()["policy"]["status"] == "Active"
 
 
 async def test_session_owned_policy_reads_its_stored_renewal_due_status(
