@@ -27,6 +27,22 @@ def in_aep_window(today: date) -> bool:
     return AEP_WINDOW_START <= (today.month, today.day) <= AEP_WINDOW_END
 
 
+def next_anniversary(issued_at: date, today: date) -> date:
+    """Return the next yearly anniversary of ``issued_at`` on or after ``today``.
+
+    Starts from this year's anniversary and rolls to next year's when this year's
+    has already passed, so the result is always the upcoming (or today's)
+    anniversary. The generation core (Epic 4) needs this concrete date for two
+    things: the anniversary renewal's deadline (`renewal_deadline`) and its cycle
+    year (`renewal_cycle_key`). Kept here beside `anniversary_within`, which shares
+    it, so the Feb-29 leap rule lives in exactly one place.
+    """
+    anniversary = _anniversary_in_year(issued_at, today.year)
+    if anniversary < today:
+        anniversary = _anniversary_in_year(issued_at, today.year + 1)
+    return anniversary
+
+
 def anniversary_within(issued_at: date, today: date, days: int = 60) -> bool:
     """Return whether the next yearly anniversary of ``issued_at`` is near.
 
@@ -34,10 +50,7 @@ def anniversary_within(issued_at: date, today: date, days: int = 60) -> bool:
     away (default 60). A policy issued exactly ``days`` from now is included;
     one issued a day further out is not.
     """
-    anniversary = _anniversary_in_year(issued_at, today.year)
-    if anniversary < today:
-        anniversary = _anniversary_in_year(issued_at, today.year + 1)
-    return (anniversary - today).days <= days
+    return (next_anniversary(issued_at, today) - today).days <= days
 
 
 def _anniversary_in_year(issued_at: date, year: int) -> date:

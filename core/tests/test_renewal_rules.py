@@ -14,6 +14,7 @@ import pytest
 from app.renewals.rules import (
     anniversary_within,
     in_aep_window,
+    next_anniversary,
     renewal_cycle_key,
     renewal_deadline,
 )
@@ -96,6 +97,28 @@ def test_feb_29_issue_date_observes_february_28_in_a_non_leap_year():
     today = date(2026, 2, 20)  # 2026 is not a leap year.
     assert anniversary_within(issued_at, today, days=8) is True
     assert anniversary_within(issued_at, today, days=7) is False
+
+
+# --- next_anniversary: the upcoming anniversary date on/after today -------------
+
+def test_next_anniversary_is_this_years_when_still_ahead():
+    """This year's anniversary is returned when it has not yet passed."""
+    assert next_anniversary(date(2019, 3, 2), date(2026, 1, 1)) == date(2026, 3, 2)
+
+
+def test_next_anniversary_is_today_when_the_anniversary_is_today():
+    """A policy whose anniversary is today returns today (zero days away)."""
+    assert next_anniversary(date(2010, 6, 15), date(2026, 6, 15)) == date(2026, 6, 15)
+
+
+def test_next_anniversary_rolls_to_next_year_when_this_years_has_passed():
+    """When this year's anniversary is behind today, next year's is returned."""
+    assert next_anniversary(date(2020, 1, 15), date(2026, 12, 1)) == date(2027, 1, 15)
+
+
+def test_next_anniversary_of_feb_29_is_february_28_in_a_non_leap_year():
+    """A Feb-29 issue date observes its anniversary on Feb 28 in a non-leap year."""
+    assert next_anniversary(date(2024, 2, 29), date(2026, 2, 20)) == date(2026, 2, 28)
 
 
 # --- renewal_deadline: AEP -> Dec 7 of cycle year; anniversary -> the date ------

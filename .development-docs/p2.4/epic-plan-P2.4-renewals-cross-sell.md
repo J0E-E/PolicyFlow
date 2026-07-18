@@ -37,12 +37,15 @@ Source TDD: [./tdd-P2.4-renewals-cross-sell.md](./tdd-P2.4-renewals-cross-sell.m
 - **Implementation notes:**
   - Contract for Epic 4: `POLICY_RENEWAL_DUE` carries **no dedicated consumer binding** — it rides the `#`-binding `sync.logger` alone (D6), so the emitter needs **no `CONSUMER_BINDINGS` / broker-topology change**. Emitters set a **new** `correlation_id` and `causation_id=None`.
 
-## Epic 4 — Renewal generation core
+## Epic 4 — Renewal generation core — **COMPLETED** (28m)
 - **Goal:** The `generate_renewals` service — select session-visible active policies on a given rule's lines, filter by the rule's window, skip on the idempotency key (any stage, ADR 0001), else create the Renewal Opportunity + renewal-review Task + both events (new correlation), and write the real `Renewal Due` status for session-owned policies. Returns `{generated, skipped}`. Unit-tested against a seeded pytest fixture.
 - **Rough scope:** New `app/renewals/service.py` + unit tests over a test fixture (not the app seed). No HTTP surface yet.
-- **Open questions / decisions for stakeholders:** none expected — flow settled in TDD §5.4–5.5 (D3/D4/D6).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 1 (rules/predicates), Epic 2 (schema), Epic 3 (event type).
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Contract for Epic 6/8:** `generate_renewals(db, tenant_config, *, tenant_id, rule, demo_session_id, today=None) -> {generated, skipped}` — the sweep router passes `identity.tenant_id` (a distinct param: the outbox envelope needs it and `TenantConfig` carries no id) and does **not** commit (the service runs on the caller's scoped write session). Each renewal emits its events under a **system actor** (`actor_user_id/role=None`), since the sweep is automation, not the triggering admin.
+  - Added a public `next_anniversary(issued_at, today) -> date` to Epic 1's `app/renewals/rules.py` (`anniversary_within` refactored to call it) so the Feb-29→Feb-28 leap rule stays in one place — a touch outside this epic's "new service.py" scope, needed for the anniversary deadline + cycle year.
+  - _(review, deferred nits)_ (a) the per-policy create body is inlined rather than a `_create_renewal` helper; (b) `_emit` duplicates `leads/conversion.py`'s private `_emit` (differs only in system actor) — fold into a shared `events.outbox` emit if a third caller ever appears.
 
 ## Epic 5 — Seed baseline money-path chains
 - **Goal:** Idempotent seed of whole baseline chains (household → contact → opportunity → application → policy) in **both** tenants, giving the sweeps and cross-sell real targets in a fresh session: a Sunshine MA policy (AEP), a back-dated anniversary-line policy inside the 60-day window, a none-line policy, and partially- and fully-covered cross-sell households (plus baseline note-tasks for the queue). Seeded rows stay byte-identical across re-seeds (except the documented back-dating drift).
