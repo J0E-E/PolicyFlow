@@ -41,6 +41,7 @@ from ..models.quote import Quote
 from ..models.quote_request import QuoteRequest
 from ..models.user import Role
 from ..quotes.service import STATUS_COMPLETED, request_quotes
+from ..renewals.overlay import renewal_due_policy_ids
 from ..tenancy.registry import ProductLine, TenantConfig, tenant_by_schema
 from ..tenancy.scoping import get_tenant_db
 from .eligibility import ELIGIBLE_AGE_BAND, MedicareEligibilityError, is_blocked_for_medicare
@@ -286,19 +287,12 @@ async def get_opportunity_policy(
     # The overlay only ever lifts a baseline policy: a session-owned policy already
     # carries its real status. A baseline policy reads *Renewal Due* when the caller's
     # session holds an `origin='renewal'` opportunity pointing at it (cross-sell also
-    # sets `source_policy_id`, so the origin qualifier is load-bearing).
+    # sets `source_policy_id`, so the origin qualifier is load-bearing). The shared batch
+    # helper (Epic 13) resolves this — here with a one-element set.
     overlay_renewal_due = False
-    if policy.demo_session_id is None and demo_session_id is not None:
-        renewal_exists = await db.scalar(
-            select(Opportunity.id)
-            .where(
-                Opportunity.source_policy_id == policy.id,
-                Opportunity.origin == "renewal",
-                Opportunity.demo_session_id == demo_session_id,
-            )
-            .limit(1)
-        )
-        overlay_renewal_due = renewal_exists is not None
+    if policy.demo_session_id is None:
+        overlay_ids = await renewal_due_policy_ids(db, {policy.id}, demo_session_id)
+        overlay_renewal_due = policy.id in overlay_ids
 
     return {
         "policy": serialize_policy(policy, overlay_renewal_due=overlay_renewal_due)
