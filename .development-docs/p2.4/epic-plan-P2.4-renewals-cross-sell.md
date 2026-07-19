@@ -137,12 +137,15 @@ Source TDD: [./tdd-P2.4-renewals-cross-sell.md](./tdd-P2.4-renewals-cross-sell.m
   - **Related-record link (auto):** `related_entity_type='opportunity'` tasks link to `/app/opportunities/{id}`; `'contact'` (note) tasks render **plain text** — no contact surface until **Epic 14**, which should make it a live link then (honest-inert convention).
   - **Nav-flip gotcha for Epic 14:** flipping a `NavSection` `comingLater→live` touches **two tests** beyond `navSections.ts` — `navSections.test.tsx` (key+route into `LIVE_ROUTES` and the exact live-keys `toEqual` list) and `LeftNav.test.tsx` (key into the inert-loop skip set **and** bump the live-links count/list). Epic 11 did this for `tasks` (the 4th live rail entry after demo-home/leads/opportunities).
 
-## Epic 12 — QA checklist: Agent task queue
-- **Goal:** Write the section's QA checklist — viewing (own vs all by role), the overdue flag, the record link, completing a task, and edge cases (empty queue, Read-Only cannot complete, completing another agent's task as Agent → 403, expired session). `- [ ]` steps with expected results, no code refs.
+## Epic 12 — QA checklist: Agent task queue — **COMPLETED** (20m)
+- **Goal:** Write the section's QA checklist — viewing (own vs all by role), the overdue flag, the record link, completing a task, and edge cases (empty queue, Read-Only cannot complete, an Agent never sees another agent's task in their own-scoped queue, expired session). `- [ ]` steps with expected results, no code refs.
 - **Rough scope:** `qa-checklist-P2.4-renewals-cross-sell-agent-task-queue.md`.
-- **Open questions / decisions for stakeholders:** none expected.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epics 10–11.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Format precedent (auto, vetted):** follows Epic 9's checklist shape — H1 + purpose blockquote + Preconditions/Setup + grouped `##` sections of titled `- [ ]` steps each ending in bold **Expected:**; strictly user-facing, no code/API refs. Epic 15 reuses this shape.
+  - **Goal reframed (auto, vetted):** the "another agent's task" case is **view-isolation**, not a UI `→ 403` — an Agent's queue is own-scoped (`assignee_user_id == caller`), so a foreign task never appears and its Complete button never renders; the `403` holder-guard is backend-only. The one genuine inline-error edge case is the seeded note-task **409** (a shared baseline row can't be modified from a live session).
+  - **Overdue not exercisable on fresh seed (auto, vetted):** note-tasks carry no due date and fresh renewals are future-dated (AEP deadline Dec 7; anniversary within 60d), so no row shows the red *Overdue* badge on today's data — the checklist verifies its absence and documents that the badge appears only once a due date has passed.
 
 ## Section 3 — Household & cross-sell
 
