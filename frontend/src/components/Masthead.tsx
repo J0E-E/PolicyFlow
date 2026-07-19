@@ -4,7 +4,10 @@ import TenantSealMark from "./TenantSealMark.tsx";
 import RoleSwitcher from "./RoleSwitcher.tsx";
 import DemoSessionCountdown from "./DemoSessionCountdown.tsx";
 import WorkspaceResetControl from "./WorkspaceResetControl.tsx";
-import RenewalSweepControl from "./RenewalSweepControl.tsx";
+import RenewalSweepControl, {
+  AEP_SWEEP_VARIANT,
+  ANNIVERSARY_SWEEP_VARIANT,
+} from "./RenewalSweepControl.tsx";
 import ViewOnlyTag from "./ViewOnlyTag.tsx";
 import ExplainerPopover from "./ExplainerPopover.tsx";
 import SurfaceToggle from "./SurfaceToggle.tsx";
@@ -167,11 +170,17 @@ export default function Masthead({
               the `POST /api/demo/session/reset` call, and all its feedback, so the
               masthead stays props-only. */}
           {isPlatformAdmin && <WorkspaceResetControl />}
-          {/* Platform-Admin AEP renewal sweep (P2.4 Epic 6) — beside the workspace
-              reset, rendered ONLY for the Platform Admin persona. Self-contained:
-              it owns its own popover, the `POST /api/renewals/aep-sweep` call, and
-              its {generated, skipped} feedback, so the masthead stays props-only. */}
-          {isPlatformAdmin && <RenewalSweepControl />}
+          {/* Platform-Admin renewal sweeps (P2.4 Epic 6/8) — beside the workspace
+              reset, rendered ONLY for the Platform Admin persona. Two self-contained
+              instances of one variant-driven control (AEP + anniversary): each owns
+              its own popover, its `POST /api/renewals/{rule}-sweep` call, and its
+              {generated, skipped} feedback, so the masthead stays props-only. */}
+          {isPlatformAdmin && (
+            <RenewalSweepControl variant={AEP_SWEEP_VARIANT} />
+          )}
+          {isPlatformAdmin && (
+            <RenewalSweepControl variant={ANNIVERSARY_SWEEP_VARIANT} />
+          )}
           {/* Session-model explainer (Epic 19) — after the DEMO SESSION stamp,
               explaining the sandboxed demo session (no CRM PARALLEL section). */}
           <ExplainerPopover

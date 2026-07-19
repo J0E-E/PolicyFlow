@@ -23,13 +23,10 @@ the demo suite.
 """
 
 import pytest
-import pytest_asyncio
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.demo.session import DEMO_SESSION_COOKIE_NAME
 from app.models.user import Role
-from app.tenancy.registry import FLORIDA, SUNSHINE
+from app.tenancy.registry import SUNSHINE
 
 from .test_demo_assume_persona import assume
 from .test_endpoints_db import (  # noqa: F401 — `seeded` fixture is used by name
@@ -37,36 +34,7 @@ from .test_endpoints_db import (  # noqa: F401 — `seeded` fixture is used by n
     seeded,
 )
 
-
-@pytest_asyncio.fixture
-async def cleanup_committed_renewals(database_engine):
-    """Delete every renewal the test committed, so the shared container stays clean.
-
-    The sweep endpoint commits its renewal opportunities on block exit, and those
-    carry a NULL `source_lead_id` (renewals leave it null). Left behind, they break
-    the migration round-trip tests that downgrade past 0020 (which restores
-    `source_lead_id NOT NULL`). Renewals are created only by these tests and pytest
-    runs sequentially, so clearing all `origin='renewal'` rows (and their
-    renewal-review tasks) across both tenant schemas at teardown fully isolates the
-    commit — mirroring the `_scoped_session` clear the pure service tests roll back.
-    """
-    yield
-    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
-    async with session_factory() as session:
-        for tenant in (SUNSHINE, FLORIDA):
-            await session.execute(
-                text(
-                    f"DELETE FROM {tenant.schema_name}.tasks "
-                    "WHERE task_type = 'renewal_review'"
-                )
-            )
-            await session.execute(
-                text(
-                    f"DELETE FROM {tenant.schema_name}.opportunities "
-                    "WHERE origin = 'renewal'"
-                )
-            )
-        await session.commit()
+# `cleanup_committed_renewals` now lives in conftest.py (shared across the sweep suites).
 
 
 # --- Phase 2: happy path + idempotent re-run ---------------------------------

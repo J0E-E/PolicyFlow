@@ -411,13 +411,14 @@ export interface DemoSessionResetResult {
 }
 
 /**
- * The summary returned by `POST /api/renewals/aep-sweep` (P2.4 Epic 6) — how many
- * renewals the AEP sweep created versus skipped. `generated` counts the policies
- * that gained a new renewal opportunity this run; `skipped` counts those already
- * renewed this cycle (a re-run of an already-swept session reports every policy as
- * `skipped`, the idempotency proof).
+ * The summary returned by the renewal sweep endpoints (`POST /api/renewals/aep-sweep`
+ * — P2.4 Epic 6 — and `POST /api/renewals/anniversary-sweep` — Epic 8), which share
+ * this `{generated, skipped}` shape. `generated` counts the policies that gained a new
+ * renewal opportunity this run; `skipped` counts those already renewed this cycle (a
+ * re-run of an already-swept session reports every policy as `skipped`, the
+ * idempotency proof).
  */
-export interface AepSweepResult {
+export interface RenewalSweepResult {
   generated: number;
   skipped: number;
 }

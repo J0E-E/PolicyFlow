@@ -9,7 +9,7 @@
 // out" from a real failure.
 
 import type {
-  AepSweepResult,
+  RenewalSweepResult,
   ConversionPrefill,
   ConversionSummary,
   ConvertLeadRequest,
@@ -185,8 +185,21 @@ export function resetDemoSession(): Promise<DemoSessionResetResult> {
  * cookie rides the call via `credentials: "include"`; a re-run of an already-swept
  * session reports every policy as `skipped` (idempotent).
  */
-export function runAepSweep(): Promise<AepSweepResult> {
-  return request<AepSweepResult>("POST", "/api/renewals/aep-sweep");
+export function runAepSweep(): Promise<RenewalSweepResult> {
+  return request<RenewalSweepResult>("POST", "/api/renewals/aep-sweep");
+}
+
+/**
+ * Run the anniversary renewal sweep via `POST /api/renewals/anniversary-sweep`
+ * (P2.4 Epic 8).
+ *
+ * The Platform-Admin-only sibling of `runAepSweep`: it runs `generate_renewals` for
+ * the anniversary rule over the caller's demo session in its currently-selected
+ * tenant, renewing only anniversary-line policies inside the rolling 60-day window,
+ * and returns the same `{ generated, skipped }` counts. Idempotent on re-run.
+ */
+export function runAnniversarySweep(): Promise<RenewalSweepResult> {
+  return request<RenewalSweepResult>("POST", "/api/renewals/anniversary-sweep");
 }
 
 /** Sign out via `POST /api/auth/logout`; the response body is ignored. */

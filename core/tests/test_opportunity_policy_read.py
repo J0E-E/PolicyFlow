@@ -35,33 +35,8 @@ from .test_demo_assume_persona import assume
 from .test_endpoints_db import seeded  # noqa: F401 — used by name
 
 
-@pytest_asyncio.fixture
-async def cleanup_committed_renewals(database_engine):
-    """Delete every renewal the after-sweep test committed (see the sweep-endpoint suite).
-
-    The sweep commits `origin='renewal'` opportunities with a NULL `source_lead_id`,
-    which would otherwise break the migration round-trip tests that downgrade past
-    0020. Clears all renewals + renewal-review tasks across both tenant schemas at
-    teardown; safe because renewals are created only by these tests and pytest runs
-    sequentially.
-    """
-    yield
-    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
-    async with session_factory() as session:
-        for tenant in (SUNSHINE, FLORIDA):
-            await session.execute(
-                text(
-                    f"DELETE FROM {tenant.schema_name}.tasks "
-                    "WHERE task_type = 'renewal_review'"
-                )
-            )
-            await session.execute(
-                text(
-                    f"DELETE FROM {tenant.schema_name}.opportunities "
-                    "WHERE origin = 'renewal'"
-                )
-            )
-        await session.commit()
+# `cleanup_committed_renewals` now lives in conftest.py (shared across the sweep suites);
+# `cleanup_committed_cross_sell` stays local — it is Epic 13's, not promoted yet.
 
 
 @pytest_asyncio.fixture

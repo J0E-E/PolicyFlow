@@ -34,6 +34,7 @@ import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import text
 from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
@@ -43,6 +44,7 @@ from app.audit import service as audit_service_module
 from app.db import get_db
 from app.main import app
 from app.pii import keys as pii_keys_module
+from app.tenancy.registry import FLORIDA, SUNSHINE
 
 # The container images are pinned to match production (docker-compose.yml).
 POSTGRES_IMAGE = "postgres:16-alpine"
@@ -243,3 +245,46 @@ async def db_client(
             yield client
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+@pytest_asyncio.fixture
+async def cleanup_committed_renewals(database_engine):
+    """Delete every renewal a sweep-endpoint test committed to the shared container.
+
+    Promoted here from the per-file copies once a third test file needed it (P2.4
+    Epic 8's anniversary-sweep suite joins Epic 6's AEP-sweep + opportunity-policy-read
+    suites). A sweep endpoint commits its `origin='renewal'` opportunities on block
+    exit, and those carry a NULL `source_lead_id` (renewals leave it null). Left behind,
+    they break the migration round-trip tests that downgrade past 0020 (which restores
+    `source_lead_id NOT NULL`). Renewals are created only by these tests and pytest runs
+    sequentially, so clearing every `origin='renewal'` opportunity, its renewal-review
+    tasks, **and** the outbox event rows the sweep committed (`policy.renewal_due` plus
+    the `opportunity.created` events tagged `origin='renewal'`) across both tenant
+    schemas at teardown fully isolates the commit — mirroring the `_scoped_session`
+    clear the pure service tests roll back.
+    """
+    yield
+    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    async with session_factory() as session:
+        for tenant in (SUNSHINE, FLORIDA):
+            await session.execute(
+                text(
+                    f"DELETE FROM {tenant.schema_name}.outbox "
+                    "WHERE event_type = 'policy.renewal_due' "
+                    "OR (event_type = 'opportunity.created' "
+                    "AND payload->>'origin' = 'renewal')"
+                )
+            )
+            await session.execute(
+                text(
+                    f"DELETE FROM {tenant.schema_name}.tasks "
+                    "WHERE task_type = 'renewal_review'"
+                )
+            )
+            await session.execute(
+                text(
+                    f"DELETE FROM {tenant.schema_name}.opportunities "
+                    "WHERE origin = 'renewal'"
+                )
+            )
+        await session.commit()

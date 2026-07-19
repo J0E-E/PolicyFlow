@@ -29,13 +29,14 @@ export {
   revealMedicareId,
   resetDemoSession,
   runAepSweep,
+  runAnniversarySweep,
   resolveDuplicate,
   revealLeadField,
   signOut,
   submitPublicIntake,
 } from "./client";
 export type {
-  AepSweepResult,
+  RenewalSweepResult,
   Application,
   Capability,
   ConversionPrefill,
