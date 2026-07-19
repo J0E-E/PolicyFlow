@@ -99,12 +99,15 @@ Source TDD: [./tdd-P2.4-renewals-cross-sell.md](./tdd-P2.4-renewals-cross-sell.m
   - _(review, deferred nits)_ (a) `RenewalSweepControl` destructures `variant.key` as `key` — reads awkwardly beside React's reserved prop (never used as a JSX key; rename to `variantKey` if touched again). (b) AEP's inner ids moved from unprefixed to `aep-`-prefixed — no live consumer broke (CSS targets classNames; tests updated), but any external E2E selector on the old ids would be stale.
 - **Gate:** backend pytest **909 passed**; frontend **tsc clean + vite build + vitest 412 passed**. Migration round-trip verified green alongside the committing sweep test.
 
-## Epic 9 — QA checklist: Renewal generation & overlay
+## Epic 9 — QA checklist: Renewal generation & overlay — **COMPLETED** (9m · 5.0M tok · 523k tok/min)
 - **Goal:** Write the section's QA checklist — exhaustive user-facing test scenarios for both sweeps, idempotent re-runs, the *Renewal Due* overlay on every policy surface, seeded-rows-untouched, and the none-line/life no-renewal cases. Expected use plus edge cases (no demo session → 409, wrong tenant, re-run skip counts, expired session), `- [ ]` steps with expected results, no code refs.
 - **Rough scope:** `qa-checklist-P2.4-renewals-cross-sell-renewal-generation-and-overlay.md`.
 - **Open questions / decisions for stakeholders:** none expected.
 - **Depends on:** Epics 1–8.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **Format precedent for Epics 12/15:** first QA checklist in the repo — sets the de-facto shape the sibling QA-checklist epics (Epic 12 task queue, Epic 15 household/cross-sell) reuse: H1 + purpose blockquote + Preconditions/Setup block + grouped `##` sections of titled `- [ ]` steps, each ending in a bold **Expected:**; user-facing only, no code refs.
+  - **Scope note for Epic 11/14:** at Section 1's state the "Renewal Due" overlay has exactly ONE user-facing surface (the Opportunity detail page's linked-policy view), so this checklist verifies the badge only there. The Task Queue (Epic 11) and Household (Epic 14) badge surfaces get their own checklists (Epics 12/15) once built.
+  - The one review nit (two overlay steps didn't name the viewing surface) was fixed in-epic, not deferred.
 
 ## Section 2 — Agent task queue
 
