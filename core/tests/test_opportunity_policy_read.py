@@ -21,7 +21,6 @@ The `seeded`/`db_client` fixtures + `assume` helper come from the shared suites.
 import uuid
 from datetime import datetime, timezone
 
-import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -29,38 +28,14 @@ from app.demo.session import DEMO_SESSION_COOKIE_NAME
 from app.models.opportunity import Opportunity
 from app.models.policy import Policy
 from app.models.user import Role
-from app.tenancy.registry import FLORIDA, SUNSHINE
+from app.tenancy.registry import SUNSHINE
 
 from .test_demo_assume_persona import assume
 from .test_endpoints_db import seeded  # noqa: F401 — used by name
 
 
-# `cleanup_committed_renewals` now lives in conftest.py (shared across the sweep suites);
-# `cleanup_committed_cross_sell` stays local — it is Epic 13's, not promoted yet.
-
-
-@pytest_asyncio.fixture
-async def cleanup_committed_cross_sell(database_engine):
-    """Delete every `origin='cross_sell'` opportunity a test committed.
-
-    Mirrors `cleanup_committed_renewals`: a cross-sell opportunity also carries a NULL
-    `source_lead_id` (nullable post-0020), which would otherwise break the migration
-    round-trip tests that downgrade past 0020 (they restore `source_lead_id NOT NULL`).
-    Cross-sell creates no tasks, so only the opportunity rows need clearing. Both tenant
-    schemas; safe because these tests are the only cross-sell writers and pytest runs
-    sequentially.
-    """
-    yield
-    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
-    async with session_factory() as session:
-        for tenant in (SUNSHINE, FLORIDA):
-            await session.execute(
-                text(
-                    f"DELETE FROM {tenant.schema_name}.opportunities "
-                    "WHERE origin = 'cross_sell'"
-                )
-            )
-        await session.commit()
+# Both `cleanup_committed_renewals` and `cleanup_committed_cross_sell` now live in
+# conftest.py (shared across the sweep / cross-sell suites) and resolve here by name.
 
 
 async def _seeded_ma_opportunity_id(db_session) -> uuid.UUID:

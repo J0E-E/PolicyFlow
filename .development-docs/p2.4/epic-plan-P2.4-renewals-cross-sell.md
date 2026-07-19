@@ -195,9 +195,15 @@ Source TDD: [./tdd-P2.4-renewals-cross-sell.md](./tdd-P2.4-renewals-cross-sell.m
   - **Renewal Due badge (2nd overlay surface, auto):** the detail Policies list is the checklist's second overlay surface (after Epic 9's opportunity-detail one) — run the AEP sweep as Platform Admin, switch to agent.one in the same demo session (the `pf_demo_session` cookie persists across persona switch), open Ramirez → the MA policy reads *Renewal Due* (warning/amber `StampTag`); the dental prompt still shows (a Renewal-Due policy still covers its own line).
 - **Gate:** doc-only epic — no product code touched, so the code gate is unaffected (backend/frontend suites unchanged; the commit hook re-runs the full gate). Deliverable `qa-checklist-P2.4-renewals-cross-sell-household-and-cross-sell.md` (24 `- [ ]` steps across 6 sections). Every quoted UI string, route, seed fact, and scenario adversarially reviewed **clean** against the shipped pages (`HouseholdsListPage`/`HouseholdDetailPage`/`PolicySummary`), the accept endpoint, and the seed (0 defects, 0 Required).
 
-## Epic 16 — Acceptance suite
+## Epic 16 — Acceptance suite — **COMPLETED** (21m · 14.8M tok · 681k tok/min)
 - **Goal:** Automated acceptance proving all three threads end-to-end (AEP sweep, anniversary sweep, cross-sell accept), task-queue completion, and the byte-identical-seed assertion after the threads run.
 - **Rough scope:** A named acceptance test module over the real substrate; no product code changes expected.
-- **Open questions / decisions for stakeholders:** none expected.
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** the feature epics (Epics 5–14).
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **As-built:** none — last epic, test-only, zero product code. New `core/tests/test_renewals_cross_sell_acceptance.py`: two tests over a shared `_drive_three_threads` helper — the three threads composing in one demo session, and the baseline seed staying byte-identical after they run.
+  - **Reusable convention (kept):** `cleanup_committed_cross_sell` promoted to `core/tests/conftest.py` (recorded third `origin='cross_sell'` committer; mirrors Epic 8's `cleanup_committed_renewals`) — future cross-sell committers get it by name, no local def/import.
+  - _(review, deferred nits — clean review, not fixed)_
+    - `test_household_cross_sell_accept.py:11` — module docstring still says `cleanup_committed_cross_sell` is "imported from `test_opportunity_policy_read`"; it now resolves from `conftest.py` (the L32 inline comment was already updated). Doc-comment staleness only.
+    - byte-identical fingerprint is `(id, policy_number, issued_at)` — the plan-vetted same-DB re-seed seam, not literally every column. Correct as-is; informational.
+    - `_opportunity_lines_by_origin` reads opps tenant-wide relying on the shared teardowns; established convention, set-equality is self-guarding. Informational.

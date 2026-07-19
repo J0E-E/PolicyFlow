@@ -288,3 +288,29 @@ async def cleanup_committed_renewals(database_engine):
                 )
             )
         await session.commit()
+
+
+@pytest_asyncio.fixture
+async def cleanup_committed_cross_sell(database_engine):
+    """Delete every `origin='cross_sell'` opportunity a test committed to the container.
+
+    Promoted here from `test_opportunity_policy_read.py` once a third test file needed it
+    (P2.4 Epic 16's acceptance suite joins Epic 7's overlay-read + Epic 13's accept
+    suites) — the `cleanup_committed_renewals` precedent one epic earlier. Mirrors that
+    fixture: a cross-sell opportunity also carries a NULL `source_lead_id` (nullable
+    post-0020), which would otherwise break the migration round-trip tests that downgrade
+    past 0020 (they restore `source_lead_id NOT NULL`). Cross-sell creates no tasks, so
+    only the opportunity rows need clearing. Both tenant schemas; safe because these tests
+    are the only cross-sell writers and pytest runs sequentially.
+    """
+    yield
+    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    async with session_factory() as session:
+        for tenant in (SUNSHINE, FLORIDA):
+            await session.execute(
+                text(
+                    f"DELETE FROM {tenant.schema_name}.opportunities "
+                    "WHERE origin = 'cross_sell'"
+                )
+            )
+        await session.commit()

@@ -27,10 +27,9 @@ from .test_endpoints_db import login_as, seeded  # noqa: F401 — used by name
 from .test_household_detail import _baseline_household_id
 from .test_household_search import convert_one_lead
 from .test_lead_reads import mint_live_demo_session
-from .test_opportunity_policy_read import (  # noqa: F401 — fixture used by name
-    cleanup_committed_cross_sell,
-)
 from .test_task_queue_endpoint import AGENT_TWO_USERNAME, _login_username
+
+# `cleanup_committed_cross_sell` now lives in conftest.py — resolved by name below.
 
 
 async def _open_line_opportunity(database_engine, tenant, product_line: str):
