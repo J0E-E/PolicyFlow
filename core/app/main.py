@@ -1,7 +1,7 @@
 """Core FastAPI application entry point.
 
 Creates the FastAPI app and mounts the health, auth, tenant, platform, pii-demo,
-audit, demo, agent-leads, public-leads, opportunities, and renewals routers. uvicorn serves this `app`
+audit, demo, agent-leads, public-leads, opportunities, renewals, and tasks routers. uvicorn serves this `app`
 object inside the container (see core/Dockerfile).
 
 The app carries a **composed lifespan stack** (`app_lifespan`): on a real boot it
@@ -32,6 +32,7 @@ from .opportunities.router import router as opportunities_router
 from .pii_demo.router import router as pii_demo_router
 from .platform.router import router as platform_router
 from .renewals.router import router as renewals_router
+from .tasks.router import router as tasks_router
 from .tenant.router import router as tenant_router
 
 
@@ -64,3 +65,4 @@ app.include_router(public_leads_router)
 app.include_router(opportunities_router)
 app.include_router(applications_router)
 app.include_router(renewals_router)
+app.include_router(tasks_router)
