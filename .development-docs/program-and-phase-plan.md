@@ -659,7 +659,7 @@ ordered so the system stays runnable/deployable after each.
   `demo_session_id`.
 - **Size:** L (split likely at epic-plan time).
 
-#### P2.4 — Renewals & cross-sell `[UI]`
+#### P2.4 — Renewals & cross-sell `[UI]` COMPLETED
 
 - **Goal:** Per-product renewal generation (anniversary job + AEP sweep) with demo time
   controls, plus the cross-sell prompt — the two "post-policy opportunity generation"
