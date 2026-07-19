@@ -14,6 +14,8 @@ import {
   getConversion,
   getConversionPrefill,
   getHouseholds,
+  getHouseholdDetail,
+  acceptCrossSell,
   createLead,
   getCurrentIdentity,
   getLead,
@@ -357,6 +359,61 @@ describe("lead client calls", () => {
     expect(options.method).toBe("GET");
     expect(options.credentials).toBe("include");
     expect(result).toEqual(households);
+  });
+
+  it("getHouseholdDetail GETs /api/households/{id} and returns the flat detail", async () => {
+    const detail = {
+      household: { id: "household-1", name: "Ramirez Household" },
+      contacts: [
+        { id: "contact-1", first_name: "Rosa", last_name: "Ramirez" },
+      ],
+      policies: [] as unknown[],
+      cross_sell: [
+        {
+          product_line: "dental_vision_hearing",
+          product_line_label: "Dental, Vision & Hearing",
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", mockJsonResponse(detail));
+
+    const result = await getHouseholdDetail("household-1");
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe("/api/households/household-1");
+    expect(options.method).toBe("GET");
+    expect(options.credentials).toBe("include");
+    expect(result).toEqual(detail);
+  });
+
+  it("acceptCrossSell POSTs /api/households/{id}/cross-sell with the line and unwraps { opportunity }", async () => {
+    const opportunity = {
+      id: "opp-1",
+      household_id: "household-1",
+      contact_id: "contact-1",
+      product_line: "dental_vision_hearing",
+      product_line_label: "Dental, Vision & Hearing",
+      stage: "New",
+      origin: "cross_sell",
+      source_policy_id: "policy-1",
+      owner_username: "agent.one",
+    };
+    vi.stubGlobal("fetch", mockJsonResponse({ opportunity }));
+
+    const result = await acceptCrossSell(
+      "household-1",
+      "dental_vision_hearing",
+    );
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe("/api/households/household-1/cross-sell");
+    expect(options.method).toBe("POST");
+    expect(options.credentials).toBe("include");
+    expect(options.headers).toEqual({ "Content-Type": "application/json" });
+    expect(JSON.parse(options.body as string)).toEqual({
+      product_line: "dental_vision_hearing",
+    });
+    expect(result).toEqual(opportunity);
   });
 
   it("getConversionPrefill GETs /api/leads/{id}/conversion-prefill and returns it flat", async () => {

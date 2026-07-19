@@ -14,6 +14,8 @@ import type {
   ConversionSummary,
   ConvertLeadRequest,
   CreateLeadRequest,
+  CrossSellOpportunity,
+  HouseholdDetail,
   HouseholdSearchResult,
   DemoSessionResetResult,
   DemoSessionState,
@@ -521,6 +523,38 @@ export async function getHouseholds(
     `/api/households?q=${encodeURIComponent(query)}`,
   );
   return responseBody.households;
+}
+
+/**
+ * Get one household's detail from `GET /api/households/{id}` (P2.4 Epic 13) — its
+ * contacts, active overlay-aware policies, and cross-sell suggestions. Returned flat
+ * (no envelope). Throws an `ApiError` with `status` `404` for a household not visible
+ * to the caller (unknown / cross-tenant / cross-session — all indistinguishable).
+ */
+export function getHouseholdDetail(
+  householdId: string,
+): Promise<HouseholdDetail> {
+  return request<HouseholdDetail>("GET", `/api/households/${householdId}`);
+}
+
+/**
+ * Accept a cross-sell suggestion via `POST /api/households/{id}/cross-sell`,
+ * unwrapping the `{ opportunity }` envelope into the new `cross_sell` opportunity. The
+ * body names the tenant product line to open it on. Throws an `ApiError` carrying the
+ * status for a refused accept — `403` (Read-Only, or not the source policy's owner /
+ * a tenant admin), `404` (household not visible), `409` (no demo session, unknown
+ * line, line already covered, or no active policy to cross-sell from).
+ */
+export async function acceptCrossSell(
+  householdId: string,
+  productLine: string,
+): Promise<CrossSellOpportunity> {
+  const responseBody = await request<{ opportunity: CrossSellOpportunity }>(
+    "POST",
+    `/api/households/${householdId}/cross-sell`,
+    { product_line: productLine },
+  );
+  return responseBody.opportunity;
 }
 
 /**

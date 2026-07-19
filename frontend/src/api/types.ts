@@ -264,6 +264,59 @@ export interface HouseholdSearchResult {
 }
 
 /**
+ * One contact in a household detail read (`GET /api/households/{id}`), mirroring the
+ * backend shape — the contact's id and plaintext name only (no encrypted PII).
+ */
+export interface HouseholdContact {
+  id: string;
+  first_name: string;
+  last_name: string;
+}
+
+/**
+ * One cross-sell suggestion on a household detail read — an uncovered tenant product
+ * line the household could be sold. `product_line` is the stored snake_case key (the
+ * value posted to accept it); `product_line_label` is this tenant's display label.
+ */
+export interface CrossSellSuggestion {
+  product_line: string;
+  product_line_label: string;
+}
+
+/**
+ * The household detail read from `GET /api/households/{id}` (P2.4 Epic 13), returned
+ * flat (no envelope). `policies` are the household's **active** policies only, each
+ * already overlay-aware (a baseline policy the caller's session has renewed reads
+ * *Renewal Due*, P2.4 Epic 6/7). `cross_sell` lists one suggestion per uncovered
+ * tenant product line — empty when the household is fully covered **or** has no active
+ * policy (ADR 0002), which the page treats as "show no prompt".
+ */
+export interface HouseholdDetail {
+  household: { id: string; name: string };
+  contacts: HouseholdContact[];
+  policies: Policy[];
+  cross_sell: CrossSellSuggestion[];
+}
+
+/**
+ * The opportunity created by accepting a cross-sell suggestion
+ * (`POST /api/households/{id}/cross-sell`), mirroring the backend's minimal
+ * `_cross_sell_row`: the ids, the line + its label, the `New` stage, the `cross_sell`
+ * origin, the source policy it was copied from, and the owning agent's username.
+ */
+export interface CrossSellOpportunity {
+  id: string;
+  household_id: string;
+  contact_id: string;
+  product_line: string;
+  product_line_label: string;
+  stage: string;
+  origin: string;
+  source_policy_id: string | null;
+  owner_username: string | null;
+}
+
+/**
  * The duplicate pre-select from `GET /api/leads/{id}/conversion-prefill`. When the lead
  * is flagged a duplicate of a converted prior, `preselected_household` is that prior's
  * household (so the convert screen can pre-select it); otherwise `null` (the screen

@@ -150,10 +150,12 @@ describe("LeftNav", () => {
     renderRail("agent", AGENT_CAPABILITIES);
 
     for (const key of ALL_KEYS) {
-      // Demo home, Leads, Opportunities, and Tasks are the live links — not inert.
+      // Demo home, Leads, Households, Opportunities, and Tasks are the live links —
+      // not inert.
       if (
         key === "demo-home" ||
         key === "leads" ||
+        key === "households" ||
         key === "opportunities" ||
         key === "tasks"
       )
@@ -171,19 +173,21 @@ describe("LeftNav", () => {
     }
   });
 
-  it("has the live links in focus/DOM order: Demo home, Leads, Opportunities, Tasks", () => {
+  it("has the live links in focus/DOM order: Demo home, Leads, Households, Opportunities, Tasks", () => {
     renderRail("agent", AGENT_CAPABILITIES);
     const nav = document.getElementById("left-nav")!;
     // The focusable controls in the rail are the live links (inert items are
-    // non-focusable spans): Demo home, then Leads (P1.7), then Opportunities
-    // (P2.2), then Tasks (P2.4), all in the rail's DOM order (Guide §7 focus order).
+    // non-focusable spans): Demo home, then Leads (P1.7), then Households (P2.4),
+    // then Opportunities (P2.2), then Tasks (P2.4), all in the rail's DOM order
+    // (Guide §7 focus order).
     const links = within(nav).getAllByRole("link");
-    expect(links).toHaveLength(4);
+    expect(links).toHaveLength(5);
     expect(links[0]).toBe(document.getElementById("left-nav-item-demo-home"));
     expect(links[1]).toBe(document.getElementById("left-nav-item-leads"));
-    expect(links[2]).toBe(
+    expect(links[2]).toBe(document.getElementById("left-nav-item-households"));
+    expect(links[3]).toBe(
       document.getElementById("left-nav-item-opportunities"),
     );
-    expect(links[3]).toBe(document.getElementById("left-nav-item-tasks"));
+    expect(links[4]).toBe(document.getElementById("left-nav-item-tasks"));
   });
 });

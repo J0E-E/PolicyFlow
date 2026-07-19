@@ -109,7 +109,12 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Households",
     icon: Community,
     gate: { capability: "view_tenant_records" },
-    comingLater: true,
+    // Live as of P2.4 (Epic 14) — the household detail page + cross-sell prompt
+    // landed, so this item links to /app/households (the household index). It is the
+    // fifth section to go live overall, but sits 3rd in render/focus order — between
+    // Leads and Opportunities (the tests encode this DOM order).
+    comingLater: false,
+    to: "/app/households",
   },
   {
     key: "opportunities",
