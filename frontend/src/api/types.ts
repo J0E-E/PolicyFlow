@@ -492,6 +492,37 @@ export interface PipelineStage {
 }
 
 /**
+ * One row in the agent task queue (`GET /api/tasks` / `POST /api/tasks/{id}/complete`),
+ * mirroring the backend wire row exactly (`core/app/tasks/router.py::_task_row`). Surfaces
+ * both the seeded/conversion `note` tasks and the sweeps' `renewal_review` tasks. `body` is
+ * the human-readable task text; `is_overdue` is the server's read-time flag (`due_date < now`,
+ * always `false` for a null-due note task). `related_entity_type` is `"opportunity"` (the
+ * detail page exists — the queue links to it) or `"contact"` (no contact page yet — rendered as
+ * plain text). `status` is passed through verbatim: `null` (a live conversion note-task),
+ * `"open"` (a seeded note / renewal-review task), or `"completed"`.
+ */
+export interface Task {
+  /** Raw task UUID string. */
+  id: string;
+  /** The task kind, e.g. `"note"` or `"renewal_review"`. */
+  task_type: string;
+  /** The human-readable task text shown in the queue. */
+  body: string;
+  /** ISO 8601 timestamp string of the due date, or `null` (note tasks have none). */
+  due_date: string | null;
+  /** `true` when `due_date` is in the past — the server's read-time overdue flag. */
+  is_overdue: boolean;
+  /** The related record's type — `"opportunity"` (linkable) or `"contact"` (plain text). */
+  related_entity_type: string;
+  /** Raw UUID string of the related record. */
+  related_entity_id: string;
+  /** The assignee's username, or `null` when unassigned. */
+  assignee_username: string | null;
+  /** The task status verbatim — `null`, `"open"`, or `"completed"`. */
+  status: string | null;
+}
+
+/**
  * The pipeline board payload from `GET /api/opportunities`: the tenant's enabled,
  * labeled `pipeline.stages` (the columns, in canonical order) plus the
  * `opportunities` rows the board groups into those columns by `stage`.

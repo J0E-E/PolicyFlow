@@ -133,7 +133,11 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Tasks",
     icon: ListSelect,
     gate: { capability: "view_tenant_records" },
-    comingLater: true,
+    // Live as of P2.4 (Epic 11) — the task queue landed, so this item links to
+    // /app/tasks (the fourth live rail entry after Demo home, Leads, and
+    // Opportunities).
+    comingLater: false,
+    to: "/app/tasks",
   },
   {
     key: "dashboards",

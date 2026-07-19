@@ -10,6 +10,7 @@ import LeadDetailPage from "./pages/LeadDetailPage.tsx";
 import ConvertLeadPage from "./pages/ConvertLeadPage.tsx";
 import OpportunityPipelinePage from "./pages/OpportunityPipelinePage.tsx";
 import OpportunityDetailPage from "./pages/OpportunityDetailPage.tsx";
+import TasksPage from "./pages/TasksPage.tsx";
 import RequireSession from "./components/RequireSession.tsx";
 
 // Route table for the SPA shell. `/`, `/select-tenant`, `/how-its-built`, and the
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="leads/:id/convert" element={<ConvertLeadPage />} />
         <Route path="opportunities" element={<OpportunityPipelinePage />} />
         <Route path="opportunities/:id" element={<OpportunityDetailPage />} />
+        <Route path="tasks" element={<TasksPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -125,12 +125,17 @@ Source TDD: [./tdd-P2.4-renewals-cross-sell.md](./tdd-P2.4-renewals-cross-sell.m
   - **Gotcha for Epic 16 (acceptance, committing task completion):** `test_task_queue_endpoint.py` mirrors `test_anniversary_sweep_endpoint` conventions; the complete-happy-path runs an AEP sweep then completes the renewal task, which **commits**, so it uses the shared `cleanup_committed_renewals` teardown. Tests that insert session-scoped tasks directly (NULL-status/foreign-session/ordering proofs) add a **local** `cleanup_inserted_tasks` teardown deleting `note` tasks with a non-null `demo_session_id` across both schemas (the seed's own note-tasks are all `demo_session_id IS NULL`). Promote it to `conftest.py` if a third file inserts session-scoped tasks.
   - _(review, deferred nits)_ (a) no test for the Tenant-Admin-completes-another-agent's-task holder branch (only the assignee branch is covered); (b) `?assignee=` filter tested for Tenant Admin but not Read-Only; (c) `POST /complete` has no "already completed" check — re-completing a completed task is a silent 200 no-op (unreachable via GET, which filters completed out; a 409 would be tighter if Epic 11/16 surfaces a stale id).
 
-## Epic 11 — Task queue page [UI]
+## Epic 11 — Task queue page [UI] — **COMPLETED** (20m · 24.7M tok · 1.2M tok/min)
 - **Goal:** A Task Queue page + nav entry: the list with an overdue badge, a link to the related record, and a one-click Complete that clears the task.
 - **Rough scope:** New page + route + nav entry + the data layer to `GET /api/tasks` / complete. All elements carry unique descriptive `id`s.
-- **Open questions / decisions for stakeholders:** UI/UX Guide components for the list rows, overdue badge, and Complete action — confirmed at plan time (frontend-design craft within the Guide).
+- **Open questions / decisions for stakeholders:** none — resolved at plan time.
 - **Depends on:** Epic 10.
-- **Implementation notes:** _none yet_
+- **Implementation notes:**
+  - **List surface (auto):** a **dense data table** (Guide §5 operational list, `--row-height-dense`) mirroring `LeadsListPage`'s `leads-list-table` idiom — Epic 14's household page reuses this idiom + the pure `pages/tasksPresentation.ts` helper-split.
+  - **Overdue badge (auto):** a `StampTag status="error"` reading *Overdue* when `is_overdue` — the `error` hue is deliberately distinct from the `warning` the *Renewal Due* policy overlay owns (Epic 6); Epic 14's badges reuse the split. Note-tasks (null `due_date`) are never overdue.
+  - **Complete + role views (auto):** Complete is gated on `create_edit_records` (Read-Only sees **no** button, mirrors the endpoint 403) and **refetches** on success so the completed task leaves the list — which also sidesteps Epic 10 deferred-nit (c) (never holds a stale completed id). Agent → own queue (no Assignee column); Tenant Admin / Read-Only → all + an **Assignee column**. `listTasks(assignee?)` carries `?assignee=`, but the filter **control** is **deferred** (backend supports it) to hold this page at Goal scope.
+  - **Related-record link (auto):** `related_entity_type='opportunity'` tasks link to `/app/opportunities/{id}`; `'contact'` (note) tasks render **plain text** — no contact surface until **Epic 14**, which should make it a live link then (honest-inert convention).
+  - **Nav-flip gotcha for Epic 14:** flipping a `NavSection` `comingLater→live` touches **two tests** beyond `navSections.ts` — `navSections.test.tsx` (key+route into `LIVE_ROUTES` and the exact live-keys `toEqual` list) and `LeftNav.test.tsx` (key into the inert-loop skip set **and** bump the live-links count/list). Epic 11 did this for `tasks` (the 4th live rail entry after demo-home/leads/opportunities).
 
 ## Epic 12 — QA checklist: Agent task queue
 - **Goal:** Write the section's QA checklist — viewing (own vs all by role), the overdue flag, the record link, completing a task, and edge cases (empty queue, Read-Only cannot complete, completing another agent's task as Agent → 403, expired session). `- [ ]` steps with expected results, no code refs.

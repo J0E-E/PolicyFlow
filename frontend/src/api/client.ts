@@ -32,6 +32,7 @@ import type {
   RevealLeadRequest,
   RevealLeadResponse,
   Role,
+  Task,
   Tenant,
   TimelineRow,
 } from "./types";
@@ -200,6 +201,37 @@ export function runAepSweep(): Promise<RenewalSweepResult> {
  */
 export function runAnniversarySweep(): Promise<RenewalSweepResult> {
   return request<RenewalSweepResult>("POST", "/api/renewals/anniversary-sweep");
+}
+
+/**
+ * List the agent task queue from `GET /api/tasks`, unwrapping the `{ tasks }` envelope.
+ *
+ * The server scopes the rows by role: an Agent sees only their own non-completed tasks; a
+ * Tenant Admin / Read-Only sees every non-completed task. Pass `assignee` (a username) to
+ * narrow an admin/read-only view to one assignee; the `?assignee=<encoded>` query is appended
+ * **only** when given, mirroring `listLeads`'s absent/param convention.
+ */
+export async function listTasks(assignee?: string): Promise<Task[]> {
+  const path =
+    assignee !== undefined
+      ? `/api/tasks?assignee=${encodeURIComponent(assignee)}`
+      : "/api/tasks";
+  const responseBody = await request<{ tasks: Task[] }>("GET", path);
+  return responseBody.tasks;
+}
+
+/**
+ * Complete one task via `POST /api/tasks/{id}/complete`, unwrapping the `{ task }` envelope
+ * into the updated row (now `status: "completed"`). Throws an `ApiError` carrying the status
+ * for a refused completion — `403` (Read-Only, or not the assignee / a tenant admin), `404`
+ * (unknown / cross-session), `409` (a shared seed task).
+ */
+export async function completeTask(taskId: string): Promise<Task> {
+  const responseBody = await request<{ task: Task }>(
+    "POST",
+    `/api/tasks/${taskId}/complete`,
+  );
+  return responseBody.task;
 }
 
 /** Sign out via `POST /api/auth/logout`; the response body is ignored. */

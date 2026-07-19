@@ -9,6 +9,7 @@ import {
   ApiError,
   assumePersona,
   claimLead,
+  completeTask,
   convertLead,
   getConversion,
   getConversionPrefill,
@@ -17,6 +18,7 @@ import {
   getCurrentIdentity,
   getLead,
   listLeads,
+  listTasks,
   listTenants,
   qualifyLead,
   rejectLead,
@@ -31,6 +33,7 @@ import type {
   MaskedLead,
   PublicIntakeRequest,
   RevealLeadResponse,
+  Task,
   Tenant,
 } from "./types";
 
@@ -94,6 +97,18 @@ const sampleMaskedLead: MaskedLead = {
   updated_at: "2026-06-20T12:00:00Z",
   is_seed: false,
   is_session_record: false,
+};
+
+const sampleTask: Task = {
+  id: "44444444-4444-4444-4444-444444444444",
+  task_type: "renewal_review",
+  body: "Review the Ramirez Medicare Advantage renewal",
+  due_date: "2026-07-20T12:00:00Z",
+  is_overdue: false,
+  related_entity_type: "opportunity",
+  related_entity_id: "55555555-5555-5555-5555-555555555555",
+  assignee_username: "agent.one",
+  status: "open",
 };
 
 const sampleCreateLeadRequest: CreateLeadRequest = {
@@ -426,6 +441,55 @@ describe("lead client calls", () => {
     expect(options.credentials).toBe("include");
     expect(JSON.parse(options.body as string)).toEqual({ field: "email" });
     expect(result).toEqual(revealed);
+  });
+});
+
+describe("task client calls", () => {
+  it("listTasks GETs /api/tasks (no query) and unwraps { tasks } by default", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ tasks: [sampleTask] }));
+
+    const tasks = await listTasks();
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe("/api/tasks");
+    expect(options.method).toBe("GET");
+    expect(options.credentials).toBe("include");
+    expect(tasks).toEqual([sampleTask]);
+  });
+
+  it("listTasks appends the encoded ?assignee= query only when assignee is given", async () => {
+    vi.stubGlobal("fetch", mockJsonResponse({ tasks: [sampleTask] }));
+
+    await listTasks("agent one");
+
+    const [url] = lastFetchCall();
+    expect(url).toBe("/api/tasks?assignee=agent%20one");
+  });
+
+  it("completeTask POSTs /api/tasks/{id}/complete and unwraps { task }", async () => {
+    const completed: Task = { ...sampleTask, status: "completed" };
+    vi.stubGlobal("fetch", mockJsonResponse({ task: completed }));
+
+    const task = await completeTask(sampleTask.id);
+
+    const [url, options] = lastFetchCall();
+    expect(url).toBe(`/api/tasks/${sampleTask.id}/complete`);
+    expect(options.method).toBe("POST");
+    expect(options.credentials).toBe("include");
+    expect(options.body).toBeUndefined();
+    expect(task).toEqual(completed);
+  });
+
+  it("completeTask surfaces an ApiError on a 403 refusal", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockErrorResponse(403, { detail: "only the task's assignee can complete it" }),
+    );
+
+    await expect(completeTask(sampleTask.id)).rejects.toMatchObject({
+      status: 403,
+      message: "only the task's assignee can complete it",
+    });
   });
 });
 
